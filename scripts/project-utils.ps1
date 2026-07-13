@@ -25,3 +25,17 @@ function Get-ProjectDescription {
 
     return $descriptionMap[$ProjectType]
 }
+
+function Get-ComposeFile {
+    param([string]$ProjectType)
+
+    $composeMap = @{
+        "laravel" = $null
+        "nextjs"  = $null
+        "django"  = $null
+        "python"  = $null
+        "fastapi" = $null
+    }
+
+    return $composeMap[$ProjectType]
+}

@@ -114,58 +114,32 @@ ensure_gui() {
     "$SCRIPT_DIR/db-manager.sh" "$tool"
 }
 
-# Main
-main() {
-    local project_dir="${1:-.}"
-    local template="${2:-}"
+# Start databases and GUI tools, print connection info
+start_deps() {
+    local dbs="$1"
+    local guis="$2"
 
-    # Auto-detect if no template specified
-    if [ -z "$template" ]; then
-        template=$(detect_project_type "$project_dir")
-    fi
-
-    if [ -z "$template" ]; then
-        echo "Could not detect project type in: $project_dir"
-        echo "Usage: setup-deps [project-dir] [template-name]"
-        echo "Templates: laravel, django, fastapi, symfony, express, rails, go, phoenix, ai-stack, ml-pipeline, microservices, multiuser, fullstack, fullstack-minio"
-        return 1
-    fi
-
-    echo "========================================="
-    echo "Setting up dependencies for: $template"
-    echo "========================================="
-    echo ""
-
-    # Start required databases
-    local dbs
-    dbs=$(get_deps "$template")
     if [ -n "$dbs" ]; then
+        echo ""
         echo "Starting databases..."
         for db in $dbs; do
             ensure_db "$db"
         done
-        echo ""
-    else
-        echo "No database dependencies for this template."
-        echo ""
     fi
 
-    # Start GUI tools
-    local guis
-    guis=$(get_guis "$template")
     if [ -n "$guis" ]; then
+        echo ""
         echo "Starting GUI tools..."
         for gui in $guis; do
             ensure_gui "$gui"
         done
-        echo ""
     fi
 
+    echo ""
     echo "========================================="
     echo "Dependencies ready!"
     echo "========================================="
 
-    # Print connection info
     if [ -n "$dbs" ]; then
         echo ""
         echo "Connection info:"
@@ -174,10 +148,137 @@ main() {
                 mysql)    echo "  MySQL:      host=mysql    port=3306  (no auth)" ;;
                 postgres) echo "  PostgreSQL: host=postgres port=5432  (no auth)" ;;
                 redis)    echo "  Redis:      host=redis    port=6379  (no auth)" ;;
-                mongo)    echo "  MongoDB:    host=mongo    port=27017 (no auth)" ;;
             esac
         done
     fi
+}
+
+# Setup a single template
+setup_template() {
+    local template="$1"
+    local dbs
+    local guis
+
+    dbs=$(get_deps "$template")
+    guis=$(get_guis "$template")
+
+    echo ""
+    echo "========================================="
+    echo "Setting up: $template"
+    echo "========================================="
+
+    start_deps "$dbs" "$guis"
+}
+
+# Scan directory and return "name type" pairs for all detected projects
+scan_directory() {
+    local dir="$1"
+    local name type
+
+    type=$(detect_project_type "$dir")
+    if [ -n "$type" ]; then
+        name=$(basename "$dir")
+        echo "$name $type"
+    fi
+
+    for subdir in "$dir"/*/; do
+        [ -d "$subdir" ] || continue
+        type=$(detect_project_type "$subdir")
+        if [ -n "$type" ]; then
+            name=$(basename "$subdir")
+            echo "$name $type"
+        fi
+    done
+}
+
+# Show interactive menu for project selection
+show_menu() {
+    local projects="$1"
+    local count
+    count=$(echo "$projects" | wc -l)
+    local i=1
+
+    # Display menu to stderr so it's not captured by $()
+    echo "" >&2
+    echo "=========================================" >&2
+    echo "Detected projects in workspace:" >&2
+    echo "=========================================" >&2
+    echo "" >&2
+
+    while IFS= read -r line; do
+        local name
+        local type
+        name=$(echo "$line" | awk '{print $1}')
+        type=$(echo "$line" | awk '{print $2}')
+        printf "  %d) %s (%s)\n" "$i" "$name" "$type" >&2
+        i=$((i + 1))
+    done <<< "$projects"
+
+    echo "" >&2
+    echo "  a) All projects" >&2
+    echo "" >&2
+
+    # Selection goes to stdout (captured by caller)
+    while true; do
+        read -r -p "Select project (1-$count or a): " choice
+        if [ "$choice" = "a" ] || [ "$choice" = "A" ]; then
+            echo "$projects" | awk '{print $2}'
+            return
+        fi
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
+            echo "$projects" | sed -n "${choice}p" | awk '{print $2}'
+            return
+        fi
+        echo "Invalid choice. Enter 1-$count or a." >&2
+    done
+}
+
+# Main
+main() {
+    local project_dir="${1:-.}"
+    local template="${2:-}"
+
+    # Default to /workspace/workspace if no dir specified
+    if [ "$project_dir" = "." ] && [ -z "$template" ]; then
+        if [ -d "/workspace/workspace" ]; then
+            project_dir="/workspace/workspace"
+        fi
+    fi
+
+    if [ -n "$template" ]; then
+        # Explicit template — single project mode
+        setup_template "$template"
+        return
+    fi
+
+    # Auto-detect all projects
+    local projects
+    projects=$(scan_directory "$project_dir")
+
+    if [ -z "$projects" ]; then
+        echo "Could not detect any projects in: $project_dir"
+        echo "Usage: setup-deps [project-dir] [template-name]"
+        echo "Templates: laravel, django, fastapi, symfony, express, rails, go, phoenix, ai-stack, ml-pipeline, microservices, multiuser, fullstack, fullstack-minio"
+        return 1
+    fi
+
+    local count
+    count=$(echo "$projects" | wc -l)
+    local selected
+
+    if [ "$count" -eq 1 ]; then
+        # Only one project — use it directly
+        selected=$(echo "$projects" | awk '{print $2}')
+    else
+        # Multiple projects — show selection menu
+        selected=$(show_menu "$projects")
+    fi
+
+    # Setup each selected template
+    while IFS= read -r t; do
+        [ -z "$t" ] && continue
+        setup_template "$t"
+    done <<< "$selected"
 }
 
 main "$@"
