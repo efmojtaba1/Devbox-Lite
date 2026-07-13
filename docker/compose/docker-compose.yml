@@ -1,0 +1,34 @@
+name: devbox
+
+services:
+
+  devbox:
+
+    image: devbox-lite
+
+    container_name: devbox-lite
+
+    hostname: devbox-lite
+
+    working_dir: /workspace
+
+    stdin_open: true
+
+    tty: true
+
+    restart: unless-stopped
+
+    volumes:
+      - ../../:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    environment:
+      TZ: Asia/Tehran
+
+    networks:
+      - devbox-network
+
+networks:
+  devbox-network:
+    name: devbox-network
+    driver: bridge

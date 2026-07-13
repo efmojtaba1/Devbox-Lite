@@ -1,0 +1,15 @@
+.DS_Store
+# نادیده گرفتن کدهای شخصی درون ورک‌پیس
+workspace/*
+!workspace/.gitkeep
+
+# نادیده گرفتن فایل‌های پشتیبان
+backups/*
+!backups/.gitkeep
+
+# نادیده گرفتن فایل‌های لاگ داکر
+*.log
+
+*.exe
+.mimocode
+prebuilt

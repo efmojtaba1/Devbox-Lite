@@ -1,0 +1,9 @@
+{
+    "terminal.integrated.profiles.windows": {
+        "DevBox PowerShell": {
+            "source": "PowerShell",
+            "args": ["-NoExit", "-File", "${workspaceFolder}/.vscode/init.ps1"]
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "DevBox PowerShell"
+}
