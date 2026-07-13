@@ -123,7 +123,6 @@ docker run --rm devbox-lite:test bash -c "
 
 | مستند | توضیحات |
 |-------|---------|
-| [راهنمای استفاده](docs/usage.md) | گردش کار روزمره و دستورات کاربردی |
-| [مرجع Docker](docs/docker.md) | دستورات کامل Docker |
-| [عیب‌یابی](docs/troubleshooting.md) | رفع اشکال و خطاهای متداول |
-| [راهنمای توسعه](docs/development.md) | توسعه و نگهداری DevBox |
+| [راهنمای استفاده](usage.md) | گردش کار روزمره و دستورات کاربردی |
+| [مرجع Docker](docker.md) | دستورات کامل Docker |
+| [عیب‌یابی](troubleshooting.md) | رفع اشکال و خطاهای متداول |
