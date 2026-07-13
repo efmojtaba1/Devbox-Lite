@@ -133,7 +133,6 @@ pip install flask
 | [راهنمای استفاده](docs/usage.md) | گردش کار روزمره و دستورات کاربردی |
 | [مرجع Docker](docs/docker.md) | دستورات کامل Docker |
 | [عیب‌یابی](docs/troubleshooting.md) | رفع اشکال و خطاهای متداول |
-| [تاریخچه تغییرات](docs/changelog.md) | تاریخچه نسخه‌ها |
 | [راهنمای توسعه](docs/development.md) | توسعه و نگهداری DevBox |
 
 ---

@@ -121,7 +121,9 @@ docker run --rm devbox-lite:test bash -c "
 
 ## مستندات
 
-- `docs/usage.md` - راهنمای استفاده
-- `docs/docker.md` - مرجع Docker
-- `docs/troubleshooting.md` - عیب‌یابی
-- `docs/changelog.md` - تاریخچه تغییرات
+| مستند | توضیحات |
+|-------|---------|
+| [راهنمای استفاده](docs/usage.md) | گردش کار روزمره و دستورات کاربردی |
+| [مرجع Docker](docs/docker.md) | دستورات کامل Docker |
+| [عیب‌یابی](docs/troubleshooting.md) | رفع اشکال و خطاهای متداول |
+| [راهنمای توسعه](docs/development.md) | توسعه و نگهداری DevBox |

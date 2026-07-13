@@ -10,11 +10,11 @@
 ```powershell
 .\scripts\up
 ```
-اگر از محیط گرافیکی Docker Desktop استفاده میکنید :
+- اگر از محیط گرافیکی Docker Desktop استفاده میکنید :
 
-با رفتن به  بخش ایمیج ها با کلیک روی علامت ▶ میتونید یک کانتینر از ایمیج دوباکس بسازید.
+- با رفتن به  بخش ایمیج ها با کلیک روی علامت ▶ میتونید یک کانتینر از ایمیج دوباکس بسازید.
 
-سپس به بخش کانتینر ها برید و مجدد با کلیک روی علامت ▶ کانتینر رو بالا بیارید.
+- سپس به بخش کانتینر ها برید و مجدد با کلیک روی علامت ▶ کانتینر رو بالا بیارید.
 
 4. ‏VS Code را باز کرده و از طریق Remote Explorer به کانتینر وصل شوید
 
@@ -84,12 +84,12 @@ pip install flask
 
 | دستور | کاربرد |
 |-------|--------|
-| `create mysql` | ایجاد و اجرای MySQL |
-| `create postgres` | ایجاد و اجرای PostgreSQL |
-| `create redis` | ایجاد و اجرای Redis |
-| `create mongo` | ایجاد و اجرای MongoDB |
-| `create mariadb` | ایجاد و اجرای MariaDB |
-| `create memcached` | ایجاد و اجرای Memcached |
+| `create mysql` | MySQL ایجاد و اجرای |
+| `create postgres` | PostgreSQL  ایجاد و اجرای |
+| `create redis` | Redis  ایجاد و اجرای |
+| `create mongo` | MongoDB  ایجاد و اجرای |
+| `create mariadb` | MariaDB  ایجاد و اجرای |
+| `create memcached` |Memcached  ایجاد و اجرای |
 
 ### مدیریت کانتینرها
 
@@ -103,9 +103,9 @@ pip install flask
 
 | دستور | آدرس وب | کاربرد |
 |-------|---------|--------|
-| `phpmyadmin` | http://localhost:8081 | مدیریت MySQL/MariaDB |
+| `phpmyadmin` | http://localhost:8081 |MySQL/MariaDB  مدیریت |
 | `adminer` | http://localhost:8082 | مدیریت چند دیتابیس |
-| `pgadmin` | http://localhost:8083 | مدیریت PostgreSQL |
+| `pgadmin` | http://localhost:8083 | PostgreSQL  مدیریت |
 
 ---
 
