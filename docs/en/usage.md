@@ -50,6 +50,24 @@ With these settings, instead of typing full paths like `scripts\up.ps1`, develop
 
 ## Creating New Projects
 
+> **Important:** All development commands run **inside the container**. Use `run` for single commands or `shell` for an interactive terminal.
+
+### Using `run` (single commands)
+
+```powershell
+run pnpm create next-app my-app
+run composer install
+run python3 -m venv my-env
+```
+
+### Using `shell` (interactive terminal)
+
+```powershell
+shell
+# Now inside the container:
+cd /workspace
+```
+
 ### Laravel
 
 ```bash

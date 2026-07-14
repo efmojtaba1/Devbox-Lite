@@ -100,6 +100,33 @@ cd D:\DevBox
 
 ## ساخت پروژه جدید
 
+> **نکته مهم:** تمام دستورات توسعه (python, pnpm, composer, php و...) **داخل کانتینر** اجرا میشن، نه روی سیستم عامل میزبان. از `run` برای دستورات تکی یا `shell` برای ترمینال تعاملی استفاده کنید.
+
+### استفاده از `run` (دستورات تکی)
+
+```powershell
+run pnpm create next-app my-app
+```
+```powershell
+run composer install
+```
+```powershell
+run python3 -m venv my-env
+```
+
+### استفاده از `shell` (ترمینال تعاملی)
+ابتدا با دستور زیر وارد ترمینال کانتینر بشید:
+```powershell
+shell
+```
+حالا داخل کانتینر:
+```powershell
+cd /workspace
+python3 -m venv my-env
+source my-env/bin/activate
+pip install flask
+```
+
 ### Laravel
 
 ```bash
@@ -118,7 +145,7 @@ cd /workspace
 pnpm create next-app my-app
 cd my-app
 pnpm install
-pnpm dev --hostname 0.0.0.0 --port 3000
+pnpm dev --hostname 0.0.0.0 --port=3000
 ```
 
 ### Python

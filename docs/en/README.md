@@ -99,6 +99,27 @@ You can type these commands directly in the VS Code terminal:
 
 ## Creating New Projects
 
+> **Important:** All development commands (python, pnpm, composer, php, etc.) run **inside the container**, not on your host machine. Use `run` for single commands or `shell` for an interactive terminal.
+
+### Using `run` (single commands)
+
+```powershell
+run pnpm create next-app my-app
+run composer install
+run python3 -m venv my-env
+```
+
+### Using `shell` (interactive terminal)
+
+```powershell
+shell
+# Now inside the container:
+cd /workspace
+python3 -m venv my-env
+source my-env/bin/activate
+pip install flask
+```
+
 ### Laravel
 
 ```bash
@@ -117,7 +138,7 @@ cd /workspace
 pnpm create next-app my-app
 cd my-app
 pnpm install
-pnpm dev --hostname 0.0.0.0 --port 3000
+pnpm dev --hostname 0.0.0.0 --port=3000
 ```
 
 ### Python
