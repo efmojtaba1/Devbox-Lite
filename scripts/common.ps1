@@ -1,4 +1,5 @@
-$ComposeFile = "docker/compose/docker-compose.yml"
+$ScriptDir = Split-Path -Parent $PSScriptRoot
+$ComposeFile = Join-Path $ScriptDir "docker/compose/docker-compose.yml"
 $ContainerName = "devbox-lite"
 $ImageName = "devbox-lite"
 
