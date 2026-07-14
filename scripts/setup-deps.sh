@@ -171,6 +171,18 @@ start_deps() {
             esac
         done
     fi
+
+    if [ -n "$guis" ]; then
+        echo ""
+        echo "GUI tools:"
+        for gui in $guis; do
+            case "$gui" in
+                phpmyadmin) echo "  phpMyAdmin: http://localhost:8081" ;;
+                adminer)    echo "  Adminer:    http://localhost:8082" ;;
+                pgadmin)    echo "  pgAdmin:    http://localhost:8083" ;;
+            esac
+        done
+    fi
 }
 
 # Setup a single template
