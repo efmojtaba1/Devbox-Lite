@@ -123,6 +123,30 @@ ensure_gui() {
     "$SCRIPT_DIR/db-manager.sh" "$tool"
 }
 
+# Install npm/pnpm dependencies for Node.js projects
+install_node_deps() {
+    local dir="$1"
+    local template="$2"
+
+    case "$template" in
+        nextjs|react|express)
+            if [ -f "$dir/package.json" ]; then
+                echo ""
+                echo "Installing Node.js dependencies..."
+                cd "$dir"
+                if command -v pnpm &>/dev/null && [ -f "pnpm-lock.yaml" ]; then
+                    echo "  Using pnpm (lock file found)..."
+                    pnpm install
+                elif command -v npm &>/dev/null; then
+                    echo "  Using npm..."
+                    npm install
+                fi
+                cd - > /dev/null
+            fi
+            ;;
+    esac
+}
+
 # Start databases and GUI tools, print connection info
 start_deps() {
     local dbs="$1"
@@ -165,6 +189,7 @@ start_deps() {
 # Setup a single template
 setup_template() {
     local template="$1"
+    local project_dir="${2:-}"
     local dbs
     local guis
 
@@ -177,9 +202,14 @@ setup_template() {
     echo "========================================="
 
     start_deps "$dbs" "$guis"
+
+    # Install Node.js dependencies if applicable
+    if [ -n "$project_dir" ]; then
+        install_node_deps "$project_dir" "$template"
+    fi
 }
 
-# Scan directory and return "name type" pairs for all detected projects
+# Scan directory and return "fullpath name type" triples for all detected projects
 scan_directory() {
     local dir="$1"
     local name type
@@ -187,7 +217,7 @@ scan_directory() {
     type=$(detect_project_type "$dir")
     if [ -n "$type" ]; then
         name=$(basename "$dir")
-        echo "$name $type"
+        echo "$dir $name $type"
     fi
 
     for subdir in "$dir"/*/; do
@@ -195,7 +225,7 @@ scan_directory() {
         type=$(detect_project_type "$subdir")
         if [ -n "$type" ]; then
             name=$(basename "$subdir")
-            echo "$name $type"
+            echo "$subdir $name $type"
         fi
     done
 }
@@ -217,8 +247,8 @@ show_menu() {
     while IFS= read -r line; do
         local name
         local type
-        name=$(echo "$line" | awk '{print $1}')
-        type=$(echo "$line" | awk '{print $2}')
+        name=$(echo "$line" | awk '{print $2}')
+        type=$(echo "$line" | awk '{print $3}')
         printf "  %d) %s (%s)\n" "$i" "$name" "$type" >&2
         i=$((i + 1))
     done <<< "$projects"
@@ -231,11 +261,11 @@ show_menu() {
     while true; do
         read -r -p "Select project (1-$count or a): " choice
         if [ "$choice" = "a" ] || [ "$choice" = "A" ]; then
-            echo "$projects" | awk '{print $2}'
+            echo "$projects" | awk '{print $1 " " $3}'
             return
         fi
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
-            echo "$projects" | sed -n "${choice}p" | awk '{print $2}'
+            echo "$projects" | sed -n "${choice}p" | awk '{print $1 " " $3}'
             return
         fi
         echo "Invalid choice. Enter 1-$count or a." >&2
@@ -256,7 +286,7 @@ main() {
 
     if [ -n "$template" ]; then
         # Explicit template — single project mode
-        setup_template "$template"
+        setup_template "$template" "$project_dir"
         return
     fi
 
@@ -267,7 +297,7 @@ main() {
     if [ -z "$projects" ]; then
         echo "Could not detect any projects in: $project_dir"
         echo "Usage: setup-deps [project-dir] [template-name]"
-        echo "Templates: laravel, django, fastapi, symfony, express, rails, go, phoenix, ai-stack, ml-pipeline, microservices, multiuser, fullstack, fullstack-minio"
+        echo "Templates: laravel, django, fastapi, symfony, express, rails, go, phoenix, ai-stack, ml-pipeline, microservices, multiuser, fullstack, fullstack-minio, nextjs, react"
         return 1
     fi
 
@@ -276,17 +306,21 @@ main() {
     local selected
 
     if [ "$count" -eq 1 ]; then
-        # Only one project — use it directly
-        selected=$(echo "$projects" | awk '{print $2}')
+        # Only one project — use it directly (path + type)
+        selected=$(echo "$projects" | awk '{print $1 " " $3}')
     else
-        # Multiple projects — show selection menu
+        # Multiple projects — show selection menu (returns "path type" pairs)
         selected=$(show_menu "$projects")
     fi
 
-    # Setup each selected template
-    while IFS= read -r t; do
-        [ -z "$t" ] && continue
-        setup_template "$t"
+    # Setup each selected project
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        local dir_path
+        local tmpl
+        dir_path=$(echo "$line" | awk '{print $1}')
+        tmpl=$(echo "$line" | awk '{print $2}')
+        setup_template "$tmpl" "$dir_path"
     done <<< "$selected"
 }
 
