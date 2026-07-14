@@ -13,3 +13,8 @@ backups/*
 *.exe
 .mimocode
 prebuilt
+
+# Python virtual environments
+my-env/
+venv/
+.venv/
