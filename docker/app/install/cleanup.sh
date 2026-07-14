@@ -54,6 +54,17 @@ find /usr/local/lib/python3* -name '*.dist-info' -type d -exec rm -rf {} + 2>/de
 rm -rf /usr/local/lib/node_modules/*/docs 2>/dev/null || true
 rm -rf /usr/local/lib/node_modules/*/test 2>/dev/null || true
 
+# Remove Postman unnecessary files (saves ~200MB)
+rm -rf /opt/Postman/resources/*.pak 2>/dev/null || true
+rm -rf /opt/Postman/resources/*.bin 2>/dev/null || true
+rm -rf /opt/Postman/chrome-sandbox 2>/dev/null || true
+
+# Remove Bruno unnecessary files
+rm -rf /opt/Bruno/resources/*.pak 2>/dev/null || true
+
+# Remove VNC related unnecessary files
+rm -rf /usr/share/novnc/*.md 2>/dev/null || true
+
 # Strip debug symbols from large binaries (~500MB-1GB savings)
 for bin in trivy cosign prometheus promtool k9s skaffold jaeger kn kubectl helm sops pack faas-cli crane; do
     if [ -f "/usr/local/bin/$bin" ]; then

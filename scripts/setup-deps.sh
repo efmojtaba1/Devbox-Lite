@@ -22,6 +22,8 @@ get_deps() {
         microservices)    echo "postgres redis" ;;
         multiuser)        echo "postgres redis" ;;
         fullstack-minio)  echo "mysql" ;;
+        nextjs)           echo "" ;;
+        react)            echo "" ;;
         *)                echo "" ;;
     esac
 }
@@ -35,6 +37,7 @@ get_guis() {
         django|fastapi|express)   echo "adminer" ;;
         rails|go|phoenix)         echo "adminer" ;;
         ai-stack|ml-pipeline)     echo "adminer" ;;
+        nextjs|react)             echo "" ;;
         *)                        echo "" ;;
     esac
 }
@@ -48,9 +51,15 @@ detect_project_type() {
     if [ -f "$dir/Gemfile" ]; then echo "rails"; return; fi
     if [ -f "$dir/go.mod" ]; then echo "go"; return; fi
     if [ -f "$dir/mix.exs" ]; then echo "phoenix"; return; fi
-    if [ -f "$dir/next.config"* ] 2>/dev/null || [ -d "$dir/.next" ]; then echo "nextjs"; return; fi
+    if ls "$dir"/next.config* 1>/dev/null 2>&1 || [ -d "$dir/.next" ]; then echo "nextjs"; return; fi
     if [ -f "$dir/pubspec.yaml" ]; then echo "flutter"; return; fi
-    if [ -f "$dir/package.json" ]; then echo "express"; return; fi
+    if [ -f "$dir/package.json" ]; then
+        if grep -q '"react"' "$dir/package.json" 2>/dev/null; then
+            echo "react"; return
+        else
+            echo "express"; return
+        fi
+    fi
     echo ""
 }
 
