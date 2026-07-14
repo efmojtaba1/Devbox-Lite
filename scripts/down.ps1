@@ -2,6 +2,10 @@
 
 Show-Header "Stopping DevBox"
 
+Write-Host "⚠ Note: Collections are stored in workspace/data/bruno and workspace/data/postman."
+Write-Host "  Do NOT use 'docker compose down -v' as it will remove volumes."
+Write-Host ""
+
 # ۱. توقف تمام کانتینرهای devbox- (به جز کانتینر اصلی)
 $dbContainers = docker ps -a --format '{{.Names}}' | Where-Object { $_ -match '^devbox-' -and $_ -ne $ContainerName }
 

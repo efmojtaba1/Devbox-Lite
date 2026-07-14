@@ -25,18 +25,14 @@ services:
     volumes:
       - ../../:/workspace
       - /var/run/docker.sock:/var/run/docker.sock
-      - devbox-postman-data:/root/.config/Postman
-      - devbox-bruno-data:/root/.bruno
+      - ../../workspace/data/postman:/root/.config/Postman
+      - ../../workspace/data/bruno:/root/.bruno
 
     environment:
       TZ: Asia/Tehran
 
     networks:
       - devbox-network
-
-volumes:
-  devbox-postman-data:
-  devbox-bruno-data:
 
 networks:
   devbox-network:

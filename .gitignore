@@ -2,6 +2,15 @@
 # نادیده گرفتن کدهای شخصی درون ورک‌پیس
 workspace/*
 !workspace/.gitkeep
+!workspace/data/
+workspace/data/*
+!workspace/data/.gitkeep
+!workspace/data/bruno/
+workspace/data/bruno/*
+!workspace/data/bruno/.gitkeep
+!workspace/data/postman/
+workspace/data/postman/*
+!workspace/data/postman/.gitkeep
 
 # نادیده گرفتن فایل‌های پشتیبان
 backups/*
