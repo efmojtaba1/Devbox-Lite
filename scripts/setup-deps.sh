@@ -22,8 +22,8 @@ get_deps() {
         microservices)    echo "postgres redis" ;;
         multiuser)        echo "postgres redis" ;;
         fullstack-minio)  echo "mysql" ;;
-        nextjs)           echo "" ;;
-        react)            echo "" ;;
+        nextjs|react)           echo "postgres" ;;
+        python)           echo "postgres" ;;
         *)                echo "" ;;
     esac
 }
@@ -37,7 +37,7 @@ get_guis() {
         django|fastapi|express)   echo "adminer" ;;
         rails|go|phoenix)         echo "adminer" ;;
         ai-stack|ml-pipeline)     echo "adminer" ;;
-        nextjs|react)             echo "" ;;
+        nextjs|react|python)      echo "adminer" ;;
         *)                        echo "" ;;
     esac
 }
@@ -59,6 +59,12 @@ detect_project_type() {
         else
             echo "express"; return
         fi
+    fi
+    if [ -f "$dir/requirements.txt" ] || [ -f "$dir/pyproject.toml" ] || [ -f "$dir/setup.py" ] || [ -f "$dir/Pipfile" ]; then
+        echo "python"; return
+    fi
+    if ls "$dir"/*.py 1>/dev/null 2>&1; then
+        echo "python"; return
     fi
     echo ""
 }
