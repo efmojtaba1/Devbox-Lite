@@ -23,6 +23,14 @@ rm -rf /root/.cache/pipx
 rm -rf /root/.gradle/caches
 rm -rf /root/.m2/repository
 
+# Remove Composer and Bun caches
+rm -rf /root/.config/composer/cache 2>/dev/null || true
+rm -rf /root/.bun/install/cache 2>/dev/null || true
+rm -rf /root/.npm 2>/dev/null || true
+
+# Remove system logs
+rm -rf /var/log/* 2>/dev/null || true
+
 # Remove documentation (saves significant space)
 rm -rf /usr/share/doc/*
 rm -rf /usr/share/man/*
@@ -30,6 +38,13 @@ rm -rf /usr/share/info/*
 rm -rf /usr/share/lintian/*
 rm -rf /usr/share/linda/*
 rm -rf /usr/share/locale/*
+
+# Remove C/C++ development headers (only needed at compile time)
+rm -rf /usr/include/* 2>/dev/null || true
+
+# Remove static libraries
+find /usr/lib -name '*.a' -delete 2>/dev/null || true
+find /usr/lib/x86_64-linux-gnu -name '*.a' -delete 2>/dev/null || true
 
 # Remove Java source files (not needed at runtime)
 rm -rf /usr/lib/jvm/java-*/lib/src.zip 2>/dev/null || true
@@ -65,10 +80,17 @@ rm -rf /opt/Bruno/resources/*.pak 2>/dev/null || true
 # Remove VNC related unnecessary files
 rm -rf /usr/share/novnc/*.md 2>/dev/null || true
 
-# Strip debug symbols from large binaries (~500MB-1GB savings)
-for bin in trivy cosign prometheus promtool k9s skaffold jaeger kn kubectl helm sops pack faas-cli crane; do
+# Strip debug symbols from large binaries
+for bin in trivy cosign prometheus promtool k9s skaffold jaeger kn kubectl helm sops pack faas-cli crane \
+    gh docker docker-compose docker-buildx \
+    mysql psql redis-cli \
+    nginx supervisord pm2 \
+    node npm pnpm bun php composer pip pipx; do
     if [ -f "/usr/local/bin/$bin" ]; then
         strip --strip-unneeded "/usr/local/bin/$bin" 2>/dev/null || true
+    fi
+    if [ -f "/usr/bin/$bin" ]; then
+        strip --strip-unneeded "/usr/bin/$bin" 2>/dev/null || true
     fi
 done
 

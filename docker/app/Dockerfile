@@ -110,12 +110,29 @@ ENV PATH="/root/.local/bin:/root/.cargo/bin:/root/.config/composer/vendor/bin:${
 
 WORKDIR /workspace
 
-COPY --from=cleanup /usr /usr
-COPY --from=cleanup /root /root
+# Copy /usr subdirectories (exclude /usr/include which is build-time only)
+COPY --from=cleanup /usr/bin /usr/bin
+COPY --from=cleanup /usr/sbin /usr/sbin
+COPY --from=cleanup /usr/local /usr/local
+COPY --from=cleanup /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
+COPY --from=cleanup /usr/lib/node_modules /usr/lib/node_modules
+COPY --from=cleanup /usr/share /usr/share
+
+# Copy root home (exclude caches)
+COPY --from=cleanup /root/.bun /root/.bun
+COPY --from=cleanup /root/.config /root/.config
+COPY --from=cleanup /root/.local /root/.local
+COPY --from=cleanup /root/.bashrc /root/.bashrc
+
+# Copy system configs
 COPY --from=cleanup /etc/apt /etc/apt
 COPY --from=cleanup /etc/ssl /etc/ssl
 COPY --from=cleanup /etc/alternatives /etc/alternatives
 COPY --from=cleanup /etc/php /etc/php
+COPY --from=cleanup /etc/timezone /etc/timezone
+COPY --from=cleanup /etc/localtime /etc/localtime
+
+# Copy GUI applications
 COPY --from=cleanup /opt /opt
 
 COPY entrypoint.sh /entrypoint.sh

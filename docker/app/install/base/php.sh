@@ -8,8 +8,6 @@ set -e
 
 echo "Installing PHP ${PHP_VERSION}..."
 
-apt install -y --no-install-recommends software-properties-common ca-certificates curl gnupg
-
 add-apt-repository ppa:ondrej/php -y
 
 apt install -y --no-install-recommends \
