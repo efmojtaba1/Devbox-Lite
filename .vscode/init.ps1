@@ -15,11 +15,13 @@ function scan { & "$DevBoxRoot\scripts\scan.ps1" }
 function setup-deps {
     . "$DevBoxRoot\scripts\common.ps1"
     Show-Header "Setting up Dependencies"
-    docker exec $ContainerName bash -c "/workspace/scripts/setup-deps.sh $args"
+    docker exec -it $ContainerName bash -c "/workspace/scripts/setup-deps.sh $args"
 }
+function test-api { & "$DevBoxRoot\scripts\test-api.ps1" }
+function run { & "$DevBoxRoot\scripts\run.ps1" $args }
 
 # پاک‌سازی ترمینال و نمایش پیام خوش‌آمادگویی اختصاصی پروژه
 Clear-Host
 Write-Host "📦 DevBox Environment Loaded Successfully!" -ForegroundColor Green
-Write-Host "🚀 Available commands: up, down, shell, logs, restart, status, build, rebuild, clean, scan, setup-deps" -ForegroundColor Cyan
+Write-Host "🚀 Available commands: up, down, shell, logs, restart, status, build, rebuild, clean, scan, setup-deps, test-api, run" -ForegroundColor Cyan
 Write-Host "🔍 Type 'up' to auto-detect projects and start database services" -ForegroundColor Yellow
