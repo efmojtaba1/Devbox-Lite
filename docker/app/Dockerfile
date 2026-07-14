@@ -114,8 +114,7 @@ WORKDIR /workspace
 COPY --from=cleanup /usr/bin /usr/bin
 COPY --from=cleanup /usr/sbin /usr/sbin
 COPY --from=cleanup /usr/local /usr/local
-COPY --from=cleanup /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
-COPY --from=cleanup /usr/lib/node_modules /usr/lib/node_modules
+COPY --from=cleanup /usr/lib /usr/lib
 COPY --from=cleanup /usr/share /usr/share
 
 # Copy root home (exclude caches)
