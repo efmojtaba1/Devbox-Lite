@@ -53,8 +53,8 @@ if ! pgrep -x x11vnc > /dev/null 2>&1; then
     sleep 1
 fi
 
-# Stop old websockify and restart fresh
-pkill -f websockify 2>/dev/null || true
+# Stop websockify on this port only (don't kill other tool's websockify)
+fuser -k 6081/tcp 2>/dev/null || true
 sleep 1
 nohup websockify --web=/usr/share/novnc 6081 localhost:5900 > /dev/null 2>&1 &
 sleep 1
