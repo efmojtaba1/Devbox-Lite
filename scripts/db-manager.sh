@@ -250,7 +250,7 @@ gui_phpmyadmin() {
     docker run -d \
         --name devbox-phpmyadmin \
         --network "$NETWORK" \
-        -e PMA_HOST=mysql \
+        -e PMA_HOST=devbox-mysql \
         -e PMA_PORT=3306 \
         -p 8081:80 \
         phpmyadmin:latest

@@ -165,9 +165,9 @@ start_deps() {
         echo "Connection info:"
         for db in $dbs; do
             case "$db" in
-                mysql)    echo "  MySQL:      host=mysql    port=3306  (no auth)" ;;
-                postgres) echo "  PostgreSQL: host=postgres port=5432  (no auth)" ;;
-                redis)    echo "  Redis:      host=redis    port=6379  (no auth)" ;;
+                mysql)    echo "  MySQL:      host=devbox-mysql port=3306  (no auth)" ;;
+                postgres) echo "  PostgreSQL: host=devbox-postgres port=5432  (no auth)" ;;
+                redis)    echo "  Redis:      host=devbox-redis port=6379  (no auth)" ;;
             esac
         done
     fi
@@ -202,7 +202,7 @@ setup_template() {
     start_deps "$dbs" "$guis"
 }
 
-# Scan directory and return "name type" pairs for all detected projects
+# Scan directory and return "fullpath name type" triples for all detected projects
 scan_directory() {
     local dir="$1"
     local name type
@@ -210,7 +210,7 @@ scan_directory() {
     type=$(detect_project_type "$dir")
     if [ -n "$type" ]; then
         name=$(basename "$dir")
-        echo "$name $type"
+        echo "$dir $name $type"
     fi
 
     for subdir in "$dir"/*/; do
@@ -218,7 +218,7 @@ scan_directory() {
         type=$(detect_project_type "$subdir")
         if [ -n "$type" ]; then
             name=$(basename "$subdir")
-            echo "$name $type"
+            echo "$subdir $name $type"
         fi
     done
 }
@@ -240,8 +240,8 @@ show_menu() {
     while IFS= read -r line; do
         local name
         local type
-        name=$(echo "$line" | awk '{print $1}')
-        type=$(echo "$line" | awk '{print $2}')
+        name=$(echo "$line" | awk '{print $2}')
+        type=$(echo "$line" | awk '{print $3}')
         printf "  %d) %s (%s)\n" "$i" "$name" "$type" >&2
         i=$((i + 1))
     done <<< "$projects"
@@ -250,15 +250,15 @@ show_menu() {
     echo "  a) All projects" >&2
     echo "" >&2
 
-    # Selection goes to stdout (captured by caller)
+    # Selection goes to stdout (captured by caller) — returns "fullpath type" pairs
     while true; do
         read -r -p "Select project (1-$count or a): " choice
         if [ "$choice" = "a" ] || [ "$choice" = "A" ]; then
-            echo "$projects" | awk '{print $2}'
+            echo "$projects" | awk '{print $1 " " $3}'
             return
         fi
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
-            echo "$projects" | sed -n "${choice}p" | awk '{print $2}'
+            echo "$projects" | sed -n "${choice}p" | awk '{print $1 " " $3}'
             return
         fi
         echo "Invalid choice. Enter 1-$count or a." >&2
@@ -299,18 +299,31 @@ main() {
     local selected
 
     if [ "$count" -eq 1 ]; then
-        # Only one project — use it directly
-        selected=$(echo "$projects" | awk '{print $2}')
+        # Only one project — use it directly (path + type)
+        selected=$(echo "$projects" | awk '{print $1 " " $3}')
     else
-        # Multiple projects — show selection menu
+        # Multiple projects — show selection menu (returns "fullpath type" pairs)
         selected=$(show_menu "$projects")
     fi
 
-    # Setup each selected template
-    while IFS= read -r t; do
-        [ -z "$t" ] && continue
-        setup_template "$t"
+    # Setup each selected project and cd to last one
+    local last_dir=""
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        local dir_path
+        local tmpl
+        dir_path=$(echo "$line" | awk '{print $1}')
+        tmpl=$(echo "$line" | awk '{print $2}')
+        setup_template "$tmpl"
+        last_dir="$dir_path"
     done <<< "$selected"
+
+    # Cd to the last selected project directory
+    if [ -n "$last_dir" ] && [ -d "$last_dir" ]; then
+        cd "$last_dir" || true
+        echo ""
+        echo "Changed directory to: $last_dir"
+    fi
 }
 
 main "$@"
