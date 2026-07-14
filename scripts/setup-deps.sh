@@ -146,7 +146,12 @@ start_deps() {
 
     echo ""
     echo "========================================="
-    echo "Dependencies ready!"
+    if [ -z "$dbs" ] && [ -z "$guis" ]; then
+        echo "No database dependencies needed for this project."
+        echo "You can start developing right away!"
+    else
+        echo "Dependencies ready!"
+    fi
     echo "========================================="
 
     if [ -n "$dbs" ]; then
