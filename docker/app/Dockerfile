@@ -113,6 +113,7 @@ WORKDIR /workspace
 COPY --from=cleanup /usr /usr
 COPY --from=cleanup /root /root
 COPY --from=cleanup /etc/apt /etc/apt
+COPY --from=cleanup /etc/ssl /etc/ssl
 COPY --from=cleanup /etc/alternatives /etc/alternatives
 COPY --from=cleanup /etc/php /etc/php
 COPY --from=cleanup /opt /opt
