@@ -321,8 +321,15 @@ main() {
     # Cd to the last selected project directory
     if [ -n "$last_dir" ] && [ -d "$last_dir" ]; then
         cd "$last_dir" || true
+        # Show relative path from /workspace for cleaner display
+        local rel_path="${last_dir#/workspace/}"
         echo ""
-        echo "Changed directory to: $last_dir"
+        echo "========================================="
+        echo "Project ready: $rel_path"
+        echo "========================================="
+        echo ""
+        echo "To work on this project, use 'shell' then:"
+        echo "  cd /workspace/$rel_path"
     fi
 }
 
