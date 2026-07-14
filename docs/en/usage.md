@@ -159,13 +159,13 @@ pip install flask
 
 ```bash
 # PostgreSQL
-psql -h postgres -p 5433
+psql -h devbox-postgres -p 5432
 
 # MySQL
-mysql -h mysql -P 3307
+mysql -h devbox-mysql -P 3306
 
 # Redis
-redis-cli -h redis -p 6380
+redis-cli -h devbox-redis -p 6379
 ```
 
 ---
