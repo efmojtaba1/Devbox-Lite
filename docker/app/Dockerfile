@@ -53,7 +53,7 @@ RUN chmod +x /tmp/common.sh /tmp/install/*.sh && \
     /tmp/install/laravel.sh && \
     rm -rf /tmp/install /tmp/common.sh /tmp/.env
 
-# Tools layer (database, github, docker, server, bruno, postman)
+# Tools layer (database, github, docker, server, bruno)
 FROM frameworks AS tools
 
 COPY install/common.sh /tmp/common.sh
@@ -64,7 +64,6 @@ COPY install/tools/github.sh /tmp/install/github.sh
 COPY install/tools/docker.sh /tmp/install/docker.sh
 COPY install/tools/server.sh /tmp/install/server.sh
 COPY install/tools/bruno.sh /tmp/install/bruno.sh
-COPY install/tools/postman-vnc.sh /tmp/install/postman-vnc.sh
 
 RUN chmod +x /tmp/common.sh /tmp/install/*.sh && \
     /tmp/install/database.sh && \
@@ -72,7 +71,6 @@ RUN chmod +x /tmp/common.sh /tmp/install/*.sh && \
     /tmp/install/docker.sh && \
     /tmp/install/server.sh && \
     /tmp/install/bruno.sh && \
-    /tmp/install/postman-vnc.sh && \
     rm -rf /tmp/install /tmp/common.sh /tmp/.env \
            /root/.cache/pip /root/.npm/_cacache /root/.local/share/pip/cache \
            /root/.cache/pipx /root/.pm2/logs /root/.pm2/pids \
@@ -150,8 +148,7 @@ RUN echo '' >> /root/.bashrc && \
     echo 'setup-deps() { /workspace/scripts/setup-deps.sh "$@"; }' >> /root/.bashrc && \
     echo '' >> /root/.bashrc && \
     echo '# API testing shortcuts' >> /root/.bashrc && \
-    echo 'bruno() { /usr/local/bin/start-bruno "$@"; }' >> /root/.bashrc && \
-    echo 'postman() { /usr/local/bin/start-postman "$@"; }' >> /root/.bashrc
+    echo 'bruno() { /usr/local/bin/start-bruno "$@"; }' >> /root/.bashrc
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]

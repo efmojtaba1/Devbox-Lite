@@ -11,7 +11,7 @@ Lightweight, isolated development environment based on Docker + Ubuntu 24.04, de
 - **Offline Support:** Database management with offline image support
 - **Complete Toolset:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
 - **Database Management:** MySQL, PostgreSQL, Redis + GUI tools
-- **API Testing:** Bruno + Postman (fully offline)
+- **API Testing:** Bruno (fully offline)
 
 ## Quick Start
 

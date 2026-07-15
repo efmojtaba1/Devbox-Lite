@@ -170,18 +170,11 @@ test-api bruno
 ```
 آدرس: http://localhost:6081
 
-### Postman (امکانات پیشرفته)
-
-```powershell
-test-api postman
-```
-آدرس: http://localhost:6080
-
 ### استفاده آفلاین
 
-1. در سیستم آنلاین: کالکشن‌ها را در Postman/Bruno بسازید → خروجی JSON بگیرید
-2. فایل‌های JSON را در `workspace/postman-collections/` کپی کنید
-3. در سیستم آفلاین: کالکشن‌ها بدون اینترنت کار می‌کنند
+1. کالکشن‌ها را در Bruno بسازید → خروجی JSON بگیرید
+2. فایل‌های JSON را در `workspace/bruno-collections/` کپی کنید
+3. کالکشن‌ها بدون اینترنت کار می‌کنند
 
 ---
 

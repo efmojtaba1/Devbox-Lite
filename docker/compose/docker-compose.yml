@@ -25,8 +25,6 @@ services:
     volumes:
       - ../../:/workspace
       - /var/run/docker.sock:/var/run/docker.sock
-      - ../../workspace/data/postman/config:/root/.config/Postman
-      - ../../workspace/data/postman/local:/root/.local/share/Postman
       - ../../workspace/data/bruno/config:/root/.config/bruno
       - bruno-collections:/root/bruno
 

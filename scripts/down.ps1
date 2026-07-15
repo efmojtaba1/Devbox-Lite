@@ -2,7 +2,7 @@
 
 Show-Header "Stopping DevBox"
 
-Write-Host "⚠ Note: Collections are stored in workspace/data/bruno and workspace/data/postman."
+Write-Host "⚠ Note: Bruno collections are stored in a Docker named volume."
 Write-Host "  Do NOT use 'docker compose down -v' as it will remove volumes."
 Write-Host ""
 

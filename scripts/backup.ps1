@@ -12,10 +12,10 @@ function Initialize-BackupDir {
     }
 }
 
-# Backup API tools (Bruno/Postman)
+# Backup API tools (Bruno)
 function Backup-ApiTools {
     Write-Host ""
-    Write-Host "Backing up API tools (Bruno/Postman)..."
+    Write-Host "Backing up API tools (Bruno)..."
     
     if (-not (Test-Path $dataDir)) {
         Write-Host "  [WARN] Data directory not found, skipping"
@@ -118,7 +118,7 @@ function Show-Menu {
     Write-Host ""
     Write-Host "  1) All (databases + API tools)"
     Write-Host "  2) Databases only (MySQL + PostgreSQL)"
-    Write-Host "  3) API tools only (Bruno/Postman)"
+    Write-Host "  3) API tools only (Bruno)"
     Write-Host ""
     
     do {

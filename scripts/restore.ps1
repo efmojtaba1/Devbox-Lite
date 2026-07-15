@@ -98,7 +98,7 @@ function Restore-ApiTools {
     param($sourcePath)
     
     Write-Host ""
-    Write-Host "Restoring API tools (Bruno/Postman)..."
+    Write-Host "Restoring API tools (Bruno)..."
     
     $apiSource = Join-Path $sourcePath "api-tools"
     if (-not (Test-Path $apiSource)) {

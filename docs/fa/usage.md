@@ -42,7 +42,7 @@
 | `rebuild` | ساخت مجدد ایمیج |
 | `clean` | پاک کردن ایمیج و کانتینر |
 | `setup-deps` | راه‌اندازی خودکار وابستگی‌های پروژه |
-| `test-api` | ابزار تست API (Bruno/Postman) |
+| `test-api` | ابزار تست API (Bruno) |
 | `run` | اجرای دستور دلخواه داخل کانتینر |
 | `scan` | شناسایی نوع پروژه‌ها در workspace |
 
@@ -166,23 +166,11 @@ bruno
 
 آدرس: http://localhost:6081
 
-### Postman (امکانات پیشرفته)
-
-```powershell
-# از پاورشل
-test-api postman
-
-# داخل کانتینر
-postman
-```
-
-آدرس: http://localhost:6080
-
 ### استفاده آفلاین
 
-1. در سیستم آنلاین: کالکشن‌ها را در Postman/Bruno بسازید → خروجی JSON بگیرید
-2. فایل‌های JSON را در `workspace/postman-collections/` کپی کنید
-3. در سیستم آفلاین: کالکشن‌ها بدون اینترنت کار می‌کنند
+1. کالکشن‌ها را در Bruno بسازید
+2. فایل‌های JSON را در `workspace/bruno-collections/` کپی کنید
+3. کالکشن‌ها بدون اینترنت کار می‌کنند
 
 ---
 

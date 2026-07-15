@@ -42,7 +42,7 @@ With these settings, instead of typing full paths like `scripts\up.ps1`, develop
 | `rebuild` | Rebuild the image |
 | `clean` | Remove image and containers |
 | `setup-deps` | Auto-setup project dependencies |
-| `test-api` | API testing tools (Bruno/Postman) |
+| `test-api` | API testing tools (Bruno) |
 | `run` | Run arbitrary command inside the container |
 | `scan` | Detect project types in workspace |
 
@@ -184,23 +184,11 @@ bruno
 
 Bruno opens at http://localhost:6081
 
-### Postman (Advanced Features)
-
-```powershell
-# From PowerShell
-test-api postman
-
-# Inside container
-postman
-```
-
-Postman opens at http://localhost:6080
-
 ### Offline Usage
 
-1. On an online system: Create collections in Postman/Bruno → Export as JSON
-2. Copy JSON files to `workspace/postman-collections/`
-3. On the offline system: Collections work without internet
+1. Create collections in Bruno
+2. Export collections as JSON
+3. Collections work without internet
 
 ---
 

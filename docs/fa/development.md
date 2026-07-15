@@ -21,7 +21,7 @@ DevBox Lite/
 │   └── en/               # مستندات انگلیسی
 ├── prebuilt/             # پکیج‌های آماده برای استفاده آفلاین
 │   ├── images/           # آرشیو ایمیج‌های Docker
-│   └── packages/         # پکیج‌های Bruno و Postman
+│   └── packages/         # پکیج‌های Bruno
 └── workspace/            # پوشه کاری پروژه‌ها
 ```
 
@@ -36,7 +36,7 @@ base → languages → frameworks → tools → extensions → cleanup → runti
 - **base:** Ubuntu 24.04 + پکیج‌های پایه
 - **languages:** PHP, Node.js, Python, Composer, Bun
 - **frameworks:** Laravel Installer
-- **tools:** Database clients, GitHub CLI, Docker CLI, Nginx, Supervisor, PM2, Bruno, Postman
+- **tools:** Database clients, GitHub CLI, Docker CLI, Nginx, Supervisor, PM2, Bruno
 - **extensions:** Xdebug, Pest
 - **cleanup:** پاکسازی کش‌ها
 - **runtime:** تصویر نهایی سبک
@@ -132,7 +132,6 @@ docker run --rm devbox-lite:test bash -c "
 
 پکیج‌ها را در `prebuilt/packages/` قرار دهید:
 - `bruno_3.5.2_amd64_linux.deb`
-- `postman-linux-x64.tar.gz`
 
 اسکریپت‌های نصب ابتدا پکیج‌های آماده را بررسی می‌کنند و در صورت پیدا نشدن از اینترنت دانلود می‌کنند.
 

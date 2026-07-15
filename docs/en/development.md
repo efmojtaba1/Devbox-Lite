@@ -21,7 +21,7 @@ DevBox Lite/
 │   └── en/               # English documentation
 ├── prebuilt/             # Pre-downloaded packages for offline use
 │   ├── images/           # Docker image archives
-│   └── packages/         # Bruno & Postman packages
+│   └── packages/         # Bruno packages
 └── workspace/            # Project workspace
 ```
 
@@ -36,7 +36,7 @@ base → languages → frameworks → tools → extensions → cleanup → runti
 - **base:** Ubuntu 24.04 + base packages
 - **languages:** PHP, Node.js, Python, Composer, Bun
 - **frameworks:** Laravel Installer
-- **tools:** Database clients, GitHub CLI, Docker CLI, Nginx, Supervisor, PM2, Bruno, Postman
+- **tools:** Database clients, GitHub CLI, Docker CLI, Nginx, Supervisor, PM2, Bruno
 - **extensions:** Xdebug, Pest
 - **cleanup:** Cache cleanup
 - **runtime:** Lightweight final image
@@ -132,7 +132,6 @@ docker run --rm devbox-lite:test bash -c "
 
 Place packages in `prebuilt/packages/`:
 - `bruno_3.5.2_amd64_linux.deb`
-- `postman-linux-x64.tar.gz`
 
 The install scripts check for prebuilt packages first, then download from internet if not found.
 

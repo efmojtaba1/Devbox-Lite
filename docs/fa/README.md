@@ -11,7 +11,7 @@
 - **پشتیبانی آفلاین:** مدیریت دیتابیس با پشتیبانی از ایمیج‌های آفلاین
 - **ابزارهای کامل:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
 - **مدیریت دیتابیس:** MySQL, PostgreSQL, Redis + ابزارهای گرافیکی (phpMyAdmin, Adminer, pgAdmin)
-- **ابزارهای API Testing:** Bruno + Postman (کاملاً آفلاین)
+- **ابزارهای API Testing:** Bruno (کاملاً آفلاین)
 
 ---
 
@@ -25,7 +25,7 @@
 | **Database** | MySQL Client + PostgreSQL Client + Redis CLI |
 | **Server** | Nginx + Supervisor + PM2 |
 | **Tools** | Docker CLI + GitHub CLI + Git |
-| **API Testing** | Bruno + Postman (via VNC) |
+| **API Testing** | Bruno (via VNC) |
 
 ---
 
@@ -78,7 +78,7 @@ cd D:\DevBox
 | `rebuild` | ساخت مجدد ایمیج |
 | `clean` | پاک کردن ایمیج و کانتینر |
 | `setup-deps` | راه‌اندازی خودکار وابستگی‌های پروژه |
-| `test-api` | ابزار تست API (Bruno/Postman) |
+| `test-api` | ابزار تست API (Bruno) |
 | `run` | اجرای دستور دلخواه داخل کانتینر |
 | `scan` | شناسایی نوع پروژه‌ها در workspace |
 

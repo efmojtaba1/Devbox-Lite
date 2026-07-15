@@ -10,7 +10,7 @@ Lightweight, isolated development environment based on Docker + Ubuntu 24.04, de
 - **Offline Support:** Database management with offline image support
 - **Complete Toolset:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
 - **Database Management:** MySQL, PostgreSQL, Redis + GUI tools (phpMyAdmin, Adminer, pgAdmin)
-- **API Testing:** Bruno + Postman (fully offline)
+- **API Testing:** Bruno (fully offline)
 
 ---
 
@@ -24,7 +24,7 @@ Lightweight, isolated development environment based on Docker + Ubuntu 24.04, de
 | **Database** | MySQL Client + PostgreSQL Client + Redis CLI |
 | **Server** | Nginx + Supervisor + PM2 |
 | **Tools** | Docker CLI + GitHub CLI + Git |
-| **API Testing** | Bruno + Postman (via VNC) |
+| **API Testing** | Bruno (via VNC) |
 
 ---
 
@@ -77,7 +77,7 @@ You can type these commands directly in the VS Code terminal:
 | `rebuild` | Rebuild the image (no cache) |
 | `clean` | Remove image and containers |
 | `setup-deps` | Auto-setup project dependencies |
-| `test-api` | API testing tools (Bruno/Postman) |
+| `test-api` | API testing tools (Bruno) |
 | `run` | Run arbitrary command inside the container |
 | `scan` | Detect project types in workspace |
 
