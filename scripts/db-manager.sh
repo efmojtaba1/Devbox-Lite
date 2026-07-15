@@ -36,7 +36,11 @@ PREBUILT_DIR="${PREBUILT_DIR:-/workspace/prebuilt/images}"
 # Map image name to prebuilt tar filename
 image_to_tar() {
     local image="$1"
-    # Strip tag for filename: mysql:8.4 → mysql-8.4.tar
+    # Strip :latest tag (it's the default, prebuilt files don't include it)
+    image="${image%:latest}"
+    # Strip namespace for namespaced images: dpage/pgadmin4 → pgadmin4
+    image="${image##*/}"
+    # Remaining tag becomes part of filename: mysql:8.4 → mysql-8.4.tar
     echo "${image//:/-}.tar"
 }
 
