@@ -164,7 +164,7 @@ test-api bruno
 bruno
 ```
 
-آدرس: http://localhost:6081
+آدرس: http://localhost:6080
 
 ### استفاده آفلاین
 

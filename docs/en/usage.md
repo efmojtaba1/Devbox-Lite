@@ -182,7 +182,7 @@ test-api bruno
 bruno
 ```
 
-Bruno opens at http://localhost:6081
+Bruno opens at http://localhost:6080
 
 ### Offline Usage
 

@@ -54,9 +54,9 @@ if ! pgrep -x x11vnc > /dev/null 2>&1; then
 fi
 
 # Stop websockify on this port only (don't kill other tool's websockify)
-fuser -k 6081/tcp 2>/dev/null || true
+fuser -k 6080/tcp 2>/dev/null || true
 sleep 1
-nohup websockify --web=/usr/share/novnc 6081 localhost:5900 > /dev/null 2>&1 &
+nohup websockify --web=/usr/share/novnc 6080 localhost:5900 > /dev/null 2>&1 &
 sleep 1
 
 # Launch Bruno (setsid detaches from exec session to prevent EPIPE)
@@ -66,7 +66,7 @@ echo ""
 echo "========================================="
 echo "Bruno is starting..."
 echo "========================================="
-echo "Access Bruno at: http://localhost:6081"
+echo "Access Bruno at: http://localhost:6080"
 echo ""
 LAUNCHER
 chmod +x /usr/local/bin/start-bruno
