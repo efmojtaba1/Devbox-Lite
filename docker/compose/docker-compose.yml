@@ -27,7 +27,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ../../workspace/data/postman/config:/root/.config/Postman
       - ../../workspace/data/postman/local:/root/.local/share/Postman
-      - ../../workspace/data/bruno:/root/.config/Bruno
+      - ../../workspace/data/bruno/config:/root/.config/bruno
+      - bruno-collections:/root/bruno
 
     environment:
       TZ: Asia/Tehran
@@ -39,3 +40,6 @@ networks:
   devbox-network:
     name: devbox-network
     driver: bridge
+
+volumes:
+  bruno-collections:
