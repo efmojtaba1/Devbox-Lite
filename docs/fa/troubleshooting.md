@@ -201,6 +201,46 @@ Restart-Service com.docker.service
 
 ---
 
+## مشکلات WSL2
+
+### WSL2 نصب نیست
+
+```powershell
+wsl --install
+```
+
+پس از نصب، کامپیوتر را ری‌استارت کنید.
+
+### Docker در WSL2 در دسترس نیست
+
+```bash
+# داخل WSL2
+sudo service docker start
+# یا نصب Docker CLI
+sudo apt install docker.io
+```
+
+### کندی عملکرد در ویندوز
+
+اگر توسعه در ویندوز کند است، به WSL2 مهاجرت کنید:
+
+```bash
+# کلون کردن داخل WSL2
+git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
+cd ~/projects/DevBox
+echo "WORKSPACE_PATH=$PWD" > .env
+./scripts/build
+./scripts/up
+```
+
+### Permission Denied در WSL2
+
+```bash
+sudo chmod -R 777 ~/projects/DevBox
+```
+
+---
+
 ## منابع مفید
 
 - [مستندات Docker](https://docs.docker.com/)

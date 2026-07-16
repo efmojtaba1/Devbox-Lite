@@ -151,6 +151,41 @@ Place exported images in `prebuilt/images/`:
 
 ---
 
+## WSL2 Performance
+
+For better development performance, run DevBox inside WSL2 instead of using Docker Desktop's bind mount.
+
+### Why WSL2?
+
+- Docker Desktop bind mount: file operations go through Windows → WSL2 bridge (slow)
+- WSL2 native: files live on Linux filesystem (10-20x faster)
+
+### Setup
+
+```bash
+# Clone inside WSL2
+git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
+cd ~/projects/DevBox
+
+# Configure workspace path
+echo "WORKSPACE_PATH=$PWD" > .env
+
+# Build and start
+./scripts/build
+./scripts/up
+./scripts/shell
+```
+
+### Performance Comparison
+
+| Operation | Docker Desktop | WSL2 Native |
+|-----------|---------------|-------------|
+| pnpm install | ~7 min | ~30 sec |
+| Next.js build | ~10+ min | ~30 sec |
+| Next.js dev startup | ~5 min | ~5 sec |
+
+---
+
 ## Documentation
 
 | Document | Description |

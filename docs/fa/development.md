@@ -151,6 +151,41 @@ Store پکیج‌ها از Docker volume (`pnpm-store`) استفاده می‌ک
 
 ---
 
+## عملکرد WSL2
+
+برای عملکرد بهتر توسعه، DevBox را داخل WSL2 اجرا کنید به جای استفاده از bind mount Docker Desktop.
+
+### چرا WSL2؟
+
+- Docker Desktop bind mount: عملیات فایل از پل Windows → WSL2 عبور می‌کند (کند)
+- WSL2 native: فایل‌ها روی فایل‌سیستم لینوکس ذخیره می‌شوند (10-20 برابر سریع‌تر)
+
+### راه‌اندازی
+
+```bash
+# کلون کردن داخل WSL2
+git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
+cd ~/projects/DevBox
+
+# تنظیم مسیر workspace
+echo "WORKSPACE_PATH=$PWD" > .env
+
+# ساخت و اجرا
+./scripts/build
+./scripts/up
+./scripts/shell
+```
+
+### مقایسه عملکرد
+
+| عملیات | Docker Desktop | WSL2 Native |
+|--------|---------------|-------------|
+| pnpm install | ~7 دقیقه | ~30 ثانیه |
+| Next.js build | ~10+ دقیقه | ~30 ثانیه |
+| شروع Next.js dev | ~5 دقیقه | ~5 ثانیه |
+
+---
+
 ## مستندات
 
 | مستند | توضیحات |

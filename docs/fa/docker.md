@@ -17,68 +17,74 @@
 
 ### بالا آوردن کانتینر
 
+**ویندوز:**
 ```powershell
 .\scripts\up
 ```
-یا:
-```powershell
-cd docker/compose
-docker compose up -d
+
+**WSL2:**
+```bash
+./scripts/up
 ```
 
 ### توقف کانتینر
 
+**ویندوز:**
 ```powershell
 .\scripts\down
 ```
-یا:
-```powershell
-cd docker/compose
-docker compose down
+
+**WSL2:**
+```bash
+./scripts/down
 ```
 
 ### ورود به ترمینال
 
+**ویندوز:**
 ```powershell
 .\scripts\shell
 ```
-یا:
-```powershell
-cd docker/compose
-docker compose exec devbox-lite bash
+
+**WSL2:**
+```bash
+./scripts/shell
 ```
 
 ### مشاهده لاگ‌ها
 
+**ویندوز:**
 ```powershell
 .\scripts\logs
 ```
-یا:
-```powershell
-cd docker/compose
-docker compose logs -f devbox-lite
+
+**WSL2:**
+```bash
+./scripts/logs
 ```
 
 ### ری‌استارت
 
+**ویندوز:**
 ```powershell
 .\scripts\restart
 ```
-یا:
-```powershell
-cd docker/compose
-docker compose restart devbox-lite
+
+**WSL2:**
+```bash
+./scripts/restart
 ```
 
 ### بررسی وضعیت
 
+**ویندوز:**
 ```powershell
 .\scripts\status
 ```
-یا:
-```powershell
-cd docker/compose
-docker compose ps
+
+**WSL2:**
+```bash
+./scripts/status
 ```
 
 ### اجرای دستور دلخواه
@@ -104,24 +110,26 @@ scan
 
 ### ساخت ایمیج
 
+**ویندوز:**
 ```powershell
 .\scripts\build
 ```
-یا:
-```powershell
-cd docker/compose
-docker compose build
+
+**WSL2:**
+```bash
+./scripts/build
 ```
 
 ### ساخت مجدد (بدون کش)
 
+**ویندوز:**
 ```powershell
 .\scripts\rebuild
 ```
-یا:
-```powershell
-cd docker/compose
-docker compose build --no-cache
+
+**WSL2:**
+```bash
+./scripts/rebuild
 ```
 
 ### مشاهده ایمیج‌ها
@@ -142,14 +150,14 @@ docker rmi devbox-lite
 
 ### پاک کردن کامل
 
+**ویندوز:**
 ```powershell
 .\scripts\clean
 ```
-یا:
-```powershell
-cd docker/compose
-docker compose down
-docker rmi devbox-lite
+
+**WSL2:**
+```bash
+./scripts/clean
 ```
 
 ### پاک کردن کش

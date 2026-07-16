@@ -193,6 +193,46 @@ Or restart Docker Desktop from the Start menu
 
 ---
 
+## WSL2 Issues
+
+### WSL2 Not Installed
+
+```powershell
+wsl --install
+```
+
+Restart computer after installation.
+
+### Docker Not Available in WSL2
+
+```bash
+# Inside WSL2
+sudo service docker start
+# Or install Docker CLI
+sudo apt install docker.io
+```
+
+### Slow Performance on Windows
+
+If development is slow on Windows, switch to WSL2:
+
+```bash
+# Clone inside WSL2
+git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
+cd ~/projects/DevBox
+echo "WORKSPACE_PATH=$PWD" > .env
+./scripts/build
+./scripts/up
+```
+
+### Permission Denied in WSL2
+
+```bash
+sudo chmod -R 777 ~/projects/DevBox
+```
+
+---
+
 ## Useful Resources
 
 - [Docker Documentation](https://docs.docker.com/)

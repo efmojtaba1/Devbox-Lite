@@ -17,74 +17,80 @@
 
 ### Start Container
 
+**Windows:**
 ```powershell
 .\scripts\up
 ```
-Or:
 
-```powershell
+**WSL2:**
+```bash
+./scripts/up
+```
+
+Or directly:
+```bash
 cd docker/compose
 docker compose up -d
 ```
 
 ### Stop Container
 
+**Windows:**
 ```powershell
 .\scripts\down
 ```
-Or:
 
-```powershell
-cd docker/compose
-docker compose down
+**WSL2:**
+```bash
+./scripts/down
 ```
 
 ### Open Terminal
 
+**Windows:**
 ```powershell
 .\scripts\shell
 ```
-Or:
 
-```powershell
-cd docker/compose
-docker compose exec devbox-lite bash
+**WSL2:**
+```bash
+./scripts/shell
 ```
 
 ### View Logs
 
+**Windows:**
 ```powershell
 .\scripts\logs
 ```
-Or:
 
-```powershell
-cd docker/compose
-docker compose logs -f devbox-lite
+**WSL2:**
+```bash
+./scripts/logs
 ```
 
 ### Restart
 
+**Windows:**
 ```powershell
 .\scripts\restart
 ```
-Or:
 
-```powershell
-cd docker/compose
-docker compose restart devbox-lite
+**WSL2:**
+```bash
+./scripts/restart
 ```
 
 ### Check Status
 
+**Windows:**
 ```powershell
 .\scripts\status
 ```
-Or:
 
-```powershell
-cd docker/compose
-docker compose ps
+**WSL2:**
+```bash
+./scripts/status
 ```
 
 ---
@@ -93,26 +99,26 @@ docker compose ps
 
 ### Build Image
 
+**Windows:**
 ```powershell
 .\scripts\build
 ```
-Or:
 
-```powershell
-cd docker/compose
-docker compose build
+**WSL2:**
+```bash
+./scripts/build
 ```
 
 ### Rebuild (No Cache)
 
+**Windows:**
 ```powershell
 .\scripts\rebuild
 ```
-Or:
 
-```powershell
-cd docker/compose
-docker compose build --no-cache
+**WSL2:**
+```bash
+./scripts/rebuild
 ```
 
 ### List Images
@@ -133,15 +139,14 @@ docker rmi devbox-lite
 
 ### Full Cleanup
 
+**Windows:**
 ```powershell
 .\scripts\clean
 ```
-Or:
 
-```powershell
-cd docker/compose
-docker compose down
-docker rmi devbox-lite
+**WSL2:**
+```bash
+./scripts\clean
 ```
 
 ### Clean Cache
