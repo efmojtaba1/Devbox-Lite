@@ -62,26 +62,68 @@ cd D:\DevBox
 
 ### مراحل راه‌اندازی (WSL2 - توصیه شده برای سرعت بهتر)
 
-1. کلون کردن داخل WSL2:
+> **چرا WSL2؟** Docker Desktop bind mount حدود 10-20 برابر کندتر از فایل‌سیستم بومی WSL2 است. برای توسعه جدی، WSL2 به شدت توصیه می‌شود.
 
-```bash
-git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
-cd ~/projects/DevBox
+#### مرحله ۱: نصب WSL2
+
+**PowerShell را به عنوان Administrator** باز کنید و اجرا کنید:
+
+```powershell
+wsl --install
 ```
 
-2. تنظیم مسیر workspace:
+پس از نصب، کامپیوتر را ری‌استارت کنید.
 
-```bash
-echo "WORKSPACE_PATH=$PWD" > .env
+#### مرحله ۲: نصب Ubuntu
+
+پس از ری‌استارت، Ubuntu به صورت خودکار باز می‌شود. نام کاربری و رمز عبور بسازید.
+
+اگر Ubuntu باز نشد:
+```powershell
+wsl --install -d Ubuntu
 ```
 
-3. ساخت و اجرا:
+#### مرحله ۳: نصب Docker در Ubuntu
+
+ترمینال Ubuntu را باز کنید:
+```bash
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 && sudo usermod -aG docker $USER && newgrp docker
+```
+
+#### مرحله ۴: اجرای Docker Desktop
+
+**Docker Desktop** را در ویندوز باز کنید. به **Settings → Resources → WSL Integration** بروید و توزیع Ubuntu خود را فعال کنید.
+
+#### مرحله ۵: کلون کردن DevBox
+
+در ترمینال Ubuntu:
+```bash
+mkdir -p ~/projects && cd ~/projects && git clone https://github.com/efmojtaba1/DevBox.git && cd DevBox
+```
+
+#### مرحله ۶: تنظیم و ساخت
 
 ```bash
-./scripts/build
-./scripts/up
-./scripts/shell
+echo "WORKSPACE_PATH=$PWD" > .env && ./scripts/build
 ```
+
+#### مرحله ۷: اجرای DevBox
+
+```bash
+./scripts/up && ./scripts/shell
+```
+
+اکنون داخل کانتینر DevBox هستید با تمام ابزارهای آماده.
+
+#### مرجع سریع (WSL2)
+
+| کار | دستور |
+|-----|-------|
+| شروع DevBox | `./scripts/up` |
+| ورود به کانتینر | `./scripts/shell` |
+| توقف DevBox | `./scripts/down` |
+| ساخت مجدد ایمیج | `./scripts/rebuild` |
+| مشاهده لاگ‌ها | `./scripts/logs` |
 
 ---
 

@@ -27,12 +27,24 @@ cd D:\DevBox
 
 ### WSL2 (Recommended for better performance)
 
+```powershell
+# Step 1: Install WSL2 (PowerShell as Administrator)
+wsl --install
+```
+Restart computer, then open Ubuntu terminal:
 ```bash
-git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
-cd ~/projects/DevBox
+# Step 2: Install Docker
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 && sudo usermod -aG docker $USER && newgrp docker
+```
+Open Docker Desktop → Settings → Resources → WSL Integration → Enable Ubuntu.
+
+```bash
+# Step 3: Clone and setup
+mkdir -p ~/projects && cd ~/projects && git clone https://github.com/efmojtaba1/DevBox.git && cd DevBox
 echo "WORKSPACE_PATH=$PWD" > .env
 ./scripts/build
 ./scripts/up
+./scripts/shell
 ```
 
 ## Documentation

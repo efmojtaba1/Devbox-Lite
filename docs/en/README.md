@@ -61,26 +61,68 @@ cd D:\DevBox
 
 ### Setup Steps (WSL2 - Recommended for better performance)
 
-1. Clone inside WSL2:
+> **Why WSL2?** Docker Desktop bind mount is 10-20x slower than WSL2 native filesystem. For serious development, WSL2 is strongly recommended.
 
-```bash
-git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
-cd ~/projects/DevBox
+#### Step 1: Install WSL2
+
+Open **PowerShell as Administrator** and run:
+
+```powershell
+wsl --install
 ```
 
-2. Configure workspace path:
+Restart your computer after installation.
 
-```bash
-echo "WORKSPACE_PATH=$PWD" > .env
+#### Step 2: Install Ubuntu
+
+After restart, Ubuntu will open automatically. Create a username and password when prompted.
+
+If Ubuntu doesn't open, run:
+```powershell
+wsl --install -d Ubuntu
 ```
 
-3. Build and start:
+#### Step 3: Install Docker in Ubuntu
+
+Open Ubuntu terminal and run:
+```bash
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 && sudo usermod -aG docker $USER && newgrp docker
+```
+
+#### Step 4: Start Docker Desktop
+
+Open **Docker Desktop** on Windows. Go to **Settings → Resources → WSL Integration** and enable your Ubuntu distribution.
+
+#### Step 5: Clone DevBox
+
+In Ubuntu terminal:
+```bash
+mkdir -p ~/projects && cd ~/projects && git clone https://github.com/efmojtaba1/DevBox.git && cd DevBox
+```
+
+#### Step 6: Configure and Build
 
 ```bash
-./scripts/build
-./scripts/up
-./scripts/shell
+echo "WORKSPACE_PATH=$PWD" > .env && ./scripts/build
 ```
+
+#### Step 7: Start DevBox
+
+```bash
+./scripts/up && ./scripts/shell
+```
+
+You are now inside the DevBox container with full toolset ready.
+
+#### Quick Reference (WSL2)
+
+| Task | Command |
+|------|---------|
+| Start DevBox | `./scripts/up` |
+| Enter container | `./scripts/shell` |
+| Stop DevBox | `./scripts/down` |
+| Rebuild image | `./scripts/rebuild` |
+| View logs | `./scripts/logs` |
 
 ---
 
