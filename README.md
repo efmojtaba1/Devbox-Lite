@@ -12,14 +12,27 @@ Lightweight, isolated development environment based on Docker + Ubuntu 24.04, de
 - **Complete Toolset:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
 - **Database Management:** MySQL, PostgreSQL, Redis + GUI tools
 - **API Testing:** Bruno (fully offline)
+- **WSL2 Support:** Native Linux filesystem for better performance
 
 ## Quick Start
+
+### Windows
 
 ```powershell
 git clone https://github.com/efmojtaba1/DevBox.git D:\DevBox
 cd D:\DevBox
 .\scripts\build
 .\scripts\up
+```
+
+### WSL2 (Recommended for better performance)
+
+```bash
+git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
+cd ~/projects/DevBox
+echo "WORKSPACE_PATH=$PWD" > .env
+./scripts/build
+./scripts/up
 ```
 
 ## Documentation

@@ -113,6 +113,17 @@ which node
 which python3
 ```
 
+### pnpm ERR_PNPM_IGNORED_BUILDS
+
+If you see `ERR_PNPM_IGNORED_BUILDS` when running `pnpm install`:
+
+```bash
+# Inside container
+pnpm approve-builds --all
+```
+
+This is a pnpm 10+ security feature. DevBox pre-configures `dangerouslyAllowAllBuilds: true` in the global config, so this should not happen after rebuild.
+
 ### Composer Errors
 
 ```powershell

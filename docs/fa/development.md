@@ -124,6 +124,12 @@ docker run --rm devbox-lite:test bash -c "
 - از `common.ps1` برای توابع مشترک استفاده کنید
 - خطاها را با `Test-Result` مدیریت کنید
 
+### تنظیمات pnpm 11
+
+DevBox از pnpm 11 با `dangerouslyAllowAllBuilds: true` در تنظیمات جهانی (`~/.config/pnpm/config.yaml`) استفاده می‌کند تا build scripts پکیج‌هایی مانند `sharp` و `unrs-resolver` بدون نیاز به تأیید دستی اجرا شوند.
+
+Store پکیج‌ها از Docker volume (`pnpm-store`) استفاده می‌کند و در ریشه workspace ایجاد نمی‌شود.
+
 ---
 
 ## پشتیبانی آفلاین

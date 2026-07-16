@@ -19,6 +19,16 @@
 
 4. ‏VS Code را باز کرده و از طریق Remote Explorer به کانتینر وصل شوید
 
+### WSL2 (توصیه شده برای سرعت بهتر)
+
+```bash
+# داخل WSL2
+cd ~/projects/DevBox
+echo "WORKSPACE_PATH=$PWD" > .env
+./scripts/up
+./scripts/shell
+```
+
 
 ---
 

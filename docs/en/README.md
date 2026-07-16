@@ -35,7 +35,7 @@ Lightweight, isolated development environment based on Docker + Ubuntu 24.04, de
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
 - [VS Code](https://code.visualstudio.com/) with [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension
 
-### Setup Steps
+### Setup Steps (Windows)
 
 1. Clone the project:
 
@@ -58,6 +58,29 @@ cd D:\DevBox
 ```
 
 4. Connect VS Code to the container via Remote Explorer → Dev Containers
+
+### Setup Steps (WSL2 - Recommended for better performance)
+
+1. Clone inside WSL2:
+
+```bash
+git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
+cd ~/projects/DevBox
+```
+
+2. Configure workspace path:
+
+```bash
+echo "WORKSPACE_PATH=$PWD" > .env
+```
+
+3. Build and start:
+
+```bash
+./scripts/build
+./scripts/up
+./scripts/shell
+```
 
 ---
 

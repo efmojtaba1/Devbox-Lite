@@ -19,6 +19,16 @@
 
 4. Open VS Code and connect to the container via Remote Explorer
 
+### WSL2 (Recommended for better performance)
+
+```bash
+# Inside WSL2
+cd ~/projects/DevBox
+echo "WORKSPACE_PATH=$PWD" > .env
+./scripts/up
+./scripts/shell
+```
+
 
 ---
 

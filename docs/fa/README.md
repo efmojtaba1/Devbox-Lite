@@ -36,7 +36,7 @@
 - ‏[Docker Desktop](https://www.docker.com/products/docker-desktop/) نصب و اجرا شده باشد
 - ‏[VS Code](https://code.visualstudio.com/) با افزونه [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
 
-### مراحل راه‌اندازی
+### مراحل راه‌اندازی (ویندوز)
 
 1. کلون کردن پروژه:
 
@@ -59,6 +59,29 @@ cd D:\DevBox
 ```
 
 4. اتصال VS Code به کانتینر از طریق Remote Explorer → Dev Containers
+
+### مراحل راه‌اندازی (WSL2 - توصیه شده برای سرعت بهتر)
+
+1. کلون کردن داخل WSL2:
+
+```bash
+git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
+cd ~/projects/DevBox
+```
+
+2. تنظیم مسیر workspace:
+
+```bash
+echo "WORKSPACE_PATH=$PWD" > .env
+```
+
+3. ساخت و اجرا:
+
+```bash
+./scripts/build
+./scripts/up
+./scripts/shell
+```
 
 ---
 

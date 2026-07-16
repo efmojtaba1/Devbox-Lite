@@ -118,6 +118,17 @@ which node
 which python3
 ```
 
+### خطای pnpm ERR_PNPM_IGNORED_BUILDS
+
+اگر هنگام `pnpm install` خطای `ERR_PNPM_IGNORED_BUILDS` دیدید:
+
+```bash
+# داخل کانتینر
+pnpm approve-builds --all
+```
+
+این یک ویژگی امنیتی pnpm 10+ است. DevBox با تنظیم `dangerouslyAllowAllBuilds: true` در تنظیمات جهانی، این مشکل را بعد از rebuild حل کرده است.
+
 ### ‏Composer خطا می‌دهد
 
 ```powershell

@@ -124,6 +124,12 @@ docker run --rm devbox-lite:test bash -c "
 - Use `common.ps1` for shared functions
 - Manage errors with `Test-Result`
 
+### pnpm 11 Configuration
+
+DevBox uses pnpm 11 with `dangerouslyAllowAllBuilds: true` in the global config (`~/.config/pnpm/config.yaml`) to allow build scripts from dependencies like `sharp` and `unrs-resolver` without manual approval.
+
+The pnpm store is configured to use a Docker volume (`pnpm-store`) instead of the project directory, preventing `.pnpm-store` from appearing in the workspace root.
+
 ---
 
 ## Offline Support
