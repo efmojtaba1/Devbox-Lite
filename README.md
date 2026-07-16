@@ -40,11 +40,8 @@ Open Docker Desktop → Settings → Resources → WSL Integration → Enable Ub
 
 ```bash
 # Step 3: Clone and setup
-mkdir -p ~/projects && cd ~/projects && git clone https://github.com/efmojtaba1/DevBox.git && cd DevBox
-echo "WORKSPACE_PATH=$PWD" > .env
-./scripts/build
-./scripts/up
-./scripts/shell
+mkdir -p ~/projects && cd ~/projects && git clone git@github.com:efmojtaba1/DevBox.git && cd DevBox
+echo "WORKSPACE_PATH=$PWD" > .env && chmod +x scripts/*.sh && ./scripts/build.sh && ./scripts/up.sh && ./scripts/shell.sh
 ```
 
 ## Documentation

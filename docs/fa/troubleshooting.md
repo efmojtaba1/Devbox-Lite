@@ -243,7 +243,7 @@ sudo chmod -R 777 ~/projects/DevBox
 
 ## احراز هویت GitHub
 
-GitHub دیگر از پسورد برای عملیات Git پشتیبانی نمی‌کند. باید از SSH key یا Personal Access Token استفاده کنید.
+‏GitHub دیگر از پسورد برای عملیات Git پشتیبانی نمی‌کند. باید از SSH key یا Personal Access Token استفاده کنید.
 
 ### روش ۱: SSH Key (توصیه شده)
 

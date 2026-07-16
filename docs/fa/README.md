@@ -112,19 +112,19 @@ sudo apt update && sudo apt install -y docker.io docker-compose-v2 && sudo userm
 
 در ترمینال Ubuntu:
 ```bash
-mkdir -p ~/projects && cd ~/projects && git clone https://github.com/efmojtaba1/DevBox.git && cd DevBox
+mkdir -p ~/projects && cd ~/projects && git clone git@github.com:efmojtaba1/DevBox.git && cd DevBox
 ```
 
 #### مرحله ۶: تنظیم و ساخت
 
 ```bash
-echo "WORKSPACE_PATH=$PWD" > .env && ./scripts/build
+echo "WORKSPACE_PATH=$PWD" > .env && chmod +x scripts/*.sh && ./scripts/build.sh
 ```
 
 #### مرحله ۷: اجرای DevBox
 
 ```bash
-./scripts/up && ./scripts/shell
+./scripts/up.sh && ./scripts/shell.sh
 ```
 
 اکنون داخل کانتینر DevBox هستید با تمام ابزارهای آماده.
@@ -133,11 +133,12 @@ echo "WORKSPACE_PATH=$PWD" > .env && ./scripts/build
 
 | کار | دستور |
 |-----|-------|
-|‏DevBox شروع| `scripts/up/.` |
-|‏ورود به کانتینر | `scripts/shell/.` |
-|‏DevBox توقف| `scripts/down/.` |
-|‏ساخت مجدد ایمیج | `scripts/rebuild/.` |
-|‏مشاهده لاگ‌ها | `scripts/logs/.` |
+| شروع DevBox | `./scripts/up.sh` |
+| ورود به کانتینر | `./scripts/shell.sh` |
+| توقف DevBox | `./scripts/down.sh` |
+| ساخت مجدد ایمیج | `./scripts/rebuild.sh` |
+| مشاهده لاگ‌ها | `./scripts/logs.sh` |
+| راه‌اندازی دیتابیس | `./scripts/setup-deps-wsl.sh` |
 
 ---
 

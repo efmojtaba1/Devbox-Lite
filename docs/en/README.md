@@ -111,19 +111,19 @@ Open **Docker Desktop** on Windows. Go to **Settings → Resources → WSL Integ
 
 In Ubuntu terminal:
 ```bash
-mkdir -p ~/projects && cd ~/projects && git clone https://github.com/efmojtaba1/DevBox.git && cd DevBox
+mkdir -p ~/projects && cd ~/projects && git clone git@github.com:efmojtaba1/DevBox.git && cd DevBox
 ```
 
 #### Step 6: Configure and Build
 
 ```bash
-echo "WORKSPACE_PATH=$PWD" > .env && ./scripts/build
+echo "WORKSPACE_PATH=$PWD" > .env && chmod +x scripts/*.sh && ./scripts/build.sh
 ```
 
 #### Step 7: Start DevBox
 
 ```bash
-./scripts/up && ./scripts/shell
+./scripts/up.sh && ./scripts/shell.sh
 ```
 
 You are now inside the DevBox container with full toolset ready.
@@ -132,11 +132,12 @@ You are now inside the DevBox container with full toolset ready.
 
 | Task | Command |
 |------|---------|
-| Start DevBox | `./scripts/up` |
-| Enter container | `./scripts/shell` |
-| Stop DevBox | `./scripts/down` |
-| Rebuild image | `./scripts/rebuild` |
-| View logs | `./scripts/logs` |
+| Start DevBox | `./scripts/up.sh` |
+| Enter container | `./scripts/shell.sh` |
+| Stop DevBox | `./scripts/down.sh` |
+| Rebuild image | `./scripts/rebuild.sh` |
+| View logs | `./scripts/logs.sh` |
+| Setup databases | `./scripts/setup-deps-wsl.sh` |
 
 ---
 
