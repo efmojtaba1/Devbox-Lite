@@ -44,6 +44,14 @@ mkdir -p ~/projects && cd ~/projects && git clone git@github.com:efmojtaba1/DevB
 echo "WORKSPACE_PATH=$PWD" > .env && chmod +x scripts/*.sh && ./scripts/build.sh && ./scripts/up.sh && ./scripts/shell.sh
 ```
 
+#### Step 4: Setup Short Commands (Optional)
+
+```bash
+./scripts/setup-aliases.sh && source ~/.bashrc
+```
+
+Now use: `up`, `down`, `shell`, `build`, `rebuild`, `logs`, `status`, `setup-deps`
+
 ## Documentation
 
 | Language | Docs |

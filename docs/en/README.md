@@ -128,16 +128,24 @@ echo "WORKSPACE_PATH=$PWD" > .env && chmod +x scripts/*.sh && ./scripts/build.sh
 
 You are now inside the DevBox container with full toolset ready.
 
-#### Quick Reference (WSL2)
+#### Step 8: Setup Short Commands (Optional)
 
-| Task | Command |
-|------|---------|
-| Start DevBox | `./scripts/up.sh` |
-| Enter container | `./scripts/shell.sh` |
-| Stop DevBox | `./scripts/down.sh` |
-| Rebuild image | `./scripts/rebuild.sh` |
-| View logs | `./scripts/logs.sh` |
-| Setup databases | `./scripts/setup-deps-wsl.sh` |
+For shorter commands like `up`, `down`, `shell`, run:
+```bash
+chmod +x scripts/*.sh && ./scripts/setup-aliases.sh && source ~/.bashrc
+```
+
+Now you can use:
+```bash
+up          # Start container
+down        # Stop container
+shell       # Enter container
+build       # Build image
+rebuild     # Rebuild image
+logs        # View logs
+status      # Check status
+setup-deps  # Setup databases
+```
 
 ---
 

@@ -129,16 +129,24 @@ echo "WORKSPACE_PATH=$PWD" > .env && chmod +x scripts/*.sh && ./scripts/build.sh
 
 اکنون داخل کانتینر DevBox هستید با تمام ابزارهای آماده.
 
-#### مرجع سریع (WSL2)
+#### مرحله ۸: تنظیم دستورات کوتاه (اختیاری)
 
-| کار | دستور |
-|-----|-------|
-| شروع DevBox | `./scripts/up.sh` |
-| ورود به کانتینر | `./scripts/shell.sh` |
-| توقف DevBox | `./scripts/down.sh` |
-| ساخت مجدد ایمیج | `./scripts/rebuild.sh` |
-| مشاهده لاگ‌ها | `./scripts/logs.sh` |
-| راه‌اندازی دیتابیس | `./scripts/setup-deps-wsl.sh` |
+برای استفاده از دستورات کوتاه مثل `up`، `down`، `shell`:
+```bash
+chmod +x scripts/*.sh && ./scripts/setup-aliases.sh && source ~/.bashrc
+```
+
+حالا می‌توانید از این دستورات استفاده کنید:
+```bash
+up          # بالا آوردن کانتینر
+down        # توقف کانتینر
+shell       # ورود به کانتینر
+build       # ساخت ایمیج
+rebuild     # ساخت مجدد ایمیج
+logs        # مشاهده لاگ‌ها
+status      # بررسی وضعیت
+setup-deps  # راه‌اندازی دیتابیس
+```
 
 ---
 
