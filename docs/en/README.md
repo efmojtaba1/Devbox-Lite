@@ -82,6 +82,20 @@ If Ubuntu doesn't open, run:
 wsl --install -d Ubuntu
 ```
 
+#### How to Open Ubuntu Terminal
+
+You can open Ubuntu terminal in several ways:
+
+| Method | How to |
+|--------|--------|
+| **Start Menu** | Search for "Ubuntu" and click the icon |
+| **PowerShell** | Type `wsl` or `wsl -d Ubuntu` |
+| **Win + R** | Type `wsl` and press Enter |
+| **Windows Terminal** | Click dropdown arrow → select "Ubuntu" |
+| **VS Code** | Open VS Code → Ctrl+Shift+P → "WSL: Connect to WSL" |
+
+**Recommended:** Pin Ubuntu to taskbar for quick access.
+
 #### Step 3: Install Docker in Ubuntu
 
 Open Ubuntu terminal and run:

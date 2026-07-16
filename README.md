@@ -31,7 +31,7 @@ cd D:\DevBox
 # Step 1: Install WSL2 (PowerShell as Administrator)
 wsl --install
 ```
-Restart computer, then open Ubuntu terminal:
+Restart computer, then open Ubuntu terminal (search "Ubuntu" in Start Menu, or type `wsl` in PowerShell):
 ```bash
 # Step 2: Install Docker
 sudo apt update && sudo apt install -y docker.io docker-compose-v2 && sudo usermod -aG docker $USER && newgrp docker

@@ -66,7 +66,7 @@ cd D:\DevBox
 
 #### مرحله ۱: نصب WSL2
 
-**PowerShell را به عنوان Administrator** باز کنید و اجرا کنید:
+‏**PowerShell را به عنوان Administrator** باز کنید و اجرا کنید:
 
 ```powershell
 wsl --install
@@ -83,6 +83,20 @@ wsl --install
 wsl --install -d Ubuntu
 ```
 
+#### نحوه باز کردن ترمینال Ubuntu
+
+روش‌های باز کردن ترمینال Ubuntu:
+
+| روش | نحوه انجام |
+|-----|------------|
+| **منوی Start** | "Ubuntu" را جستجو کنید و روی آیکون کلیک کنید |
+| **PowerShell** | تایپ کنید `wsl` یا `wsl -d Ubuntu` |
+| **Win + R** | تایپ کنید `wsl` و Enter بزنید |
+| **Windows Terminal** | روی فلش کشویی کلیک کنید → "Ubuntu" را انتخاب کنید |
+| **VS Code** | VS Code را باز کنید → Ctrl+Shift+P → "WSL: Connect to WSL" |
+
+**توصیه:** Ubuntu را به taskbar پین کنید برای دسترسی سریع.
+
 #### مرحله ۳: نصب Docker در Ubuntu
 
 ترمینال Ubuntu را باز کنید:
@@ -92,7 +106,7 @@ sudo apt update && sudo apt install -y docker.io docker-compose-v2 && sudo userm
 
 #### مرحله ۴: اجرای Docker Desktop
 
-**Docker Desktop** را در ویندوز باز کنید. به **Settings → Resources → WSL Integration** بروید و توزیع Ubuntu خود را فعال کنید.
+‏**Docker Desktop** را در ویندوز باز کنید. به **Settings → Resources → WSL Integration** بروید و توزیع Ubuntu خود را فعال کنید.
 
 #### مرحله ۵: کلون کردن DevBox
 
