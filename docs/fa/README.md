@@ -89,11 +89,11 @@ wsl --install -d Ubuntu
 
 | روش | نحوه انجام |
 |-----|------------|
-| **منوی Start** | "Ubuntu" را جستجو کنید و روی آیکون کلیک کنید |
-| **PowerShell** | تایپ کنید `wsl` یا `wsl -d Ubuntu` |
-| **Win + R** | تایپ کنید `wsl` و Enter بزنید |
-| **Windows Terminal** | روی فلش کشویی کلیک کنید → "Ubuntu" را انتخاب کنید |
-| **VS Code** | VS Code را باز کنید → Ctrl+Shift+P → "WSL: Connect to WSL" |
+| ‎**Start منوی** | را جستجو کنید و روی آیکون کلیک کنید "Ubuntu" |
+| **PowerShell** |`wsl` یا `wsl -d Ubuntu`  تایپ کنید |
+| **Win + R** | بزنید Enter و `wsl` تایپ کنید |
+| **Windows Terminal** |را انتخاب کنید "Ubuntu" روی فلش کشویی کلیک کنید و|
+| **VS Code** | Ctrl+Shift+P → "WSL: Connect to WSL" |
 
 **توصیه:** Ubuntu را به taskbar پین کنید برای دسترسی سریع.
 
@@ -133,11 +133,11 @@ echo "WORKSPACE_PATH=$PWD" > .env && ./scripts/build
 
 | کار | دستور |
 |-----|-------|
-| شروع DevBox | `./scripts/up` |
-| ورود به کانتینر | `./scripts/shell` |
-| توقف DevBox | `./scripts/down` |
-| ساخت مجدد ایمیج | `./scripts/rebuild` |
-| مشاهده لاگ‌ها | `./scripts/logs` |
+|‏DevBox شروع| `scripts/up/.` |
+|‏ورود به کانتینر | `scripts/shell/.` |
+|‏DevBox توقف| `scripts/down/.` |
+|‏ساخت مجدد ایمیج | `scripts/rebuild/.` |
+|‏مشاهده لاگ‌ها | `scripts/logs/.` |
 
 ---
 

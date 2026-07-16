@@ -233,6 +233,62 @@ sudo chmod -R 777 ~/projects/DevBox
 
 ---
 
+## GitHub Authentication
+
+GitHub no longer supports password authentication for Git. You must use SSH keys or Personal Access Token.
+
+### Option 1: SSH Key (Recommended)
+
+**Step 1: Generate SSH key**
+```bash
+ssh-keygen -t ed25519 -C "your-email@example.com"
+```
+Press Enter to accept default location and empty passphrase.
+
+**Step 2: Copy public key**
+```bash
+cat ~/.ssh/id_ed25519.pub
+```
+Copy the entire output.
+
+**Step 3: Add key to GitHub**
+1. Go to https://github.com/settings/keys
+2. Click **"New SSH key"**
+3. Paste the copied key
+4. Click **"Add SSH key"**
+
+**Step 4: Test connection**
+```bash
+ssh -T git@github.com
+```
+If you see "Hi username! You've successfully authenticated...", it's working.
+
+**Step 5: Clone with SSH**
+```bash
+git clone git@github.com:efmojtaba1/DevBox.git
+```
+
+### Option 2: Personal Access Token
+
+**Step 1: Create token**
+1. Go to https://github.com/settings/tokens
+2. Click **"Generate new token (classic)"**
+3. Select scopes: `repo`, `read:org`
+4. Click **"Generate token"**
+5. Copy the token immediately
+
+**Step 2: Clone with token**
+```bash
+git clone https://YOUR_TOKEN@github.com/efmojtaba1/DevBox.git
+```
+
+**Step 3: Cache credentials (optional)**
+```bash
+git config --global credential.helper store
+```
+
+---
+
 ## Useful Resources
 
 - [Docker Documentation](https://docs.docker.com/)

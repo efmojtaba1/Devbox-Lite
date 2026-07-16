@@ -241,6 +241,62 @@ sudo chmod -R 777 ~/projects/DevBox
 
 ---
 
+## احراز هویت GitHub
+
+GitHub دیگر از پسورد برای عملیات Git پشتیبانی نمی‌کند. باید از SSH key یا Personal Access Token استفاده کنید.
+
+### روش ۱: SSH Key (توصیه شده)
+
+**مرحله ۱: ساخت SSH key**
+```bash
+ssh-keygen -t ed25519 -C "your-email@example.com"
+```
+Enter بزنید تا مسیر پیش‌فرض و بدون رمز عبور قبول شود.
+
+**مرحله ۲: کپی کلید عمومی**
+```bash
+cat ~/.ssh/id_ed25519.pub
+```
+خروجی را کامل کپی کنید.
+
+**مرحله ۳: اضافه کردن کلید به GitHub**
+1. به https://github.com/settings/keys بروید
+2. روی **"New SSH key"** کلیک کنید
+3. کلید کپی شده را Paste کنید
+4. روی **"Add SSH key"** کلیک کنید
+
+**مرحله ۴: تست اتصال**
+```bash
+ssh -T git@github.com
+```
+اگر پیام "Hi username! You've successfully authenticated..." را دیدید، کار می‌کند.
+
+**مرحله ۵: کلون با SSH**
+```bash
+git clone git@github.com:efmojtaba1/DevBox.git
+```
+
+### روش ۲: Personal Access Token
+
+**مرحله ۱: ساخت token**
+1. به https://github.com/settings/tokens بروید
+2. روی **"Generate new token (classic)"** کلیک کنید
+3. scopes را انتخاب کنید: `repo`، `read:org`
+4. روی **"Generate token"** کلیک کنید
+5. token را فوراً کپی کنید
+
+**مرحله ۲: کلون با token**
+```bash
+git clone https://YOUR_TOKEN@github.com/efmojtaba1/DevBox.git
+```
+
+**مرحله ۳: ذخیره credential (اختیاری)**
+```bash
+git config --global credential.helper store
+```
+
+---
+
 ## منابع مفید
 
 - [مستندات Docker](https://docs.docker.com/)
