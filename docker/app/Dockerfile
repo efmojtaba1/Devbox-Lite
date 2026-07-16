@@ -120,6 +120,7 @@ COPY --from=cleanup /root/.bun /root/.bun
 COPY --from=cleanup /root/.config /root/.config
 COPY --from=cleanup /root/.local /root/.local
 COPY --from=cleanup /root/.bashrc /root/.bashrc
+COPY --from=cleanup /root/.npmrc /root/.npmrc
 
 # Copy system configs
 COPY --from=cleanup /etc/apt /etc/apt

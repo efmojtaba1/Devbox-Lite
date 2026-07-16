@@ -21,12 +21,14 @@ services:
     ports:
       - "6080:6080"
       - "8000:8000"
+      - "3000:3000"
 
     volumes:
-      - ../../:/workspace
+      - ${WORKSPACE_PATH:-../../}:/workspace
       - /var/run/docker.sock:/var/run/docker.sock
-      - ../../workspace/data/bruno/config:/root/.config/bruno
+      - ${WORKSPACE_PATH:-../../}/workspace/data/bruno/config:/root/.config/bruno
       - bruno-collections:/root/bruno
+      - pnpm-store:/root/.local/share/pnpm/store
 
     environment:
       TZ: Asia/Tehran
@@ -41,3 +43,4 @@ networks:
 
 volumes:
   bruno-collections:
+  pnpm-store:

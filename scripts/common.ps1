@@ -3,6 +3,24 @@ $ComposeFile = Join-Path $ScriptDir "docker/compose/docker-compose.yml"
 $ContainerName = "devbox-lite"
 $ImageName = "devbox-lite"
 
+# Load .env file if exists
+$envFile = Join-Path $ScriptDir ".env"
+if (Test-Path $envFile) {
+    Get-Content $envFile | ForEach-Object {
+        if ($_ -match "^([^#][^=]+)=(.+)$") {
+            [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2].Trim(), "Process")
+        }
+    }
+}
+
+# Auto-detect WSL2 if WORKSPACE_PATH not set
+if (-not $env:WORKSPACE_PATH) {
+    $isWsl = (uname -r 2>$null) -match "microsoft"
+    if ($isWsl) {
+        $env:WORKSPACE_PATH = $PWD.Path -replace '\\', '/'
+    }
+}
+
 function Show-Header {
     param([string]$Title)
 
