@@ -269,6 +269,7 @@ show_menu() {
 main() {
     local project_dir="${1:-.}"
     local template="${2:-}"
+    local auto_all="${3:-}"
 
     # Default to /workspace/workspace if no dir specified
     if [ "$project_dir" = "." ] && [ -z "$template" ]; then
@@ -301,6 +302,11 @@ main() {
     if [ "$count" -eq 1 ]; then
         # Only one project — use it directly (path + type)
         selected=$(echo "$projects" | awk '{print $1 " " $3}')
+    elif [ "$auto_all" = "all" ] || [ ! -t 0 ]; then
+        # Non-interactive mode or "all" flag — select all projects
+        selected=$(echo "$projects" | awk '{print $1 " " $3}')
+        echo ""
+        echo "Detected $count project(s), setting up all..."
     else
         # Multiple projects — show selection menu (returns "fullpath type" pairs)
         selected=$(show_menu "$projects")
