@@ -1,23 +1,10 @@
 #!/bin/bash
 # DevBox Lite - Restart container
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-COMPOSE_FILE="$PROJECT_ROOT/docker/compose/docker-compose.yml"
+source "$(dirname "$0")/common.sh"
 
-echo ""
-echo "========================================="
-echo "Restarting DevBox Lite"
-echo "========================================="
-echo ""
+Show-Header "Restarting DevBox Lite"
 
-docker compose -f "$COMPOSE_FILE" restart devbox
+docker compose -f "$COMPOSE_FILE" restart
 
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✓ DevBox Lite container restarted."
-else
-    echo ""
-    echo "✗ Failed to restart DevBox Lite container."
-    exit 1
-fi
+Test-Result "DevBox Lite container restarted." "Failed to restart DevBox Lite container."

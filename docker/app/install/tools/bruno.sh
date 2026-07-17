@@ -19,8 +19,8 @@ apt-get install -y --no-install-recommends \
     libsecret-1-0 \
     libasound2t64
 
-# Download or use prebuilt Bruno
-BRUNO_VERSION="3.5.2"
+# Read Bruno version from .env or use default
+BRUNO_VERSION="${BRUNO_VERSION:-3.5.2}"
 PREBUILT_DIR="/workspace/prebuilt/packages"
 
 if [ -f "$PREBUILT_DIR/bruno_${BRUNO_VERSION}_amd64_linux.deb" ]; then
@@ -34,6 +34,8 @@ fi
 # Install Bruno
 dpkg -i /tmp/bruno.deb 2>/dev/null || apt-get install -f -y
 rm -f /tmp/bruno.deb
+
+apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create launcher script
 cat > /usr/local/bin/start-bruno << 'LAUNCHER'

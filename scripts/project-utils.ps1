@@ -7,7 +7,7 @@ function Get-ProjectType {
     if (Test-Path "$ProjectPath/next.config*") { return "nextjs" }
     if (Test-Path "$ProjectPath/manage.py") { return "django" }
     if (Test-Path "$ProjectPath/requirements.txt") { return "python" }
-    if (Test-Path "$ProjectPath/fastapi*") { return "fastapi" }
+    if (Test-Path "$ProjectPath/main.py" -and (Select-String -Path "$ProjectPath/main.py" -Pattern "FastAPI" -Quiet -ErrorAction SilentlyContinue)) { return "fastapi" }
 
     return $null
 }
@@ -26,16 +26,16 @@ function Get-ProjectDescription {
     return $descriptionMap[$ProjectType]
 }
 
-function Get-ComposeFile {
+function Get-DatabaseServices {
     param([string]$ProjectType)
 
-    $composeMap = @{
-        "laravel" = $null
-        "nextjs"  = $null
-        "django"  = $null
-        "python"  = $null
-        "fastapi" = $null
+    $dbMap = @{
+        "laravel" = @("mysql", "redis")
+        "nextjs"  = @()
+        "django"  = @("postgres", "redis")
+        "python"  = @("postgres")
+        "fastapi" = @("postgres")
     }
 
-    return $composeMap[$ProjectType]
+    return $dbMap[$ProjectType]
 }

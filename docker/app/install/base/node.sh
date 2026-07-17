@@ -13,6 +13,7 @@ npm install -g pnpm
 # Configure pnpm: use volume-mounted store and allow build scripts
 cat > /root/.npmrc << 'EOF'
 store-dir=/root/.local/share/pnpm/store
+dangerouslyAllowAllBuilds=true
 EOF
 
 # pnpm 11: allow all build scripts (safe for dev container)

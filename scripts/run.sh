@@ -1,4 +1,6 @@
 #!/bin/bash
 # DevBox Lite - Run command inside container
 
-docker exec -it devbox-lite bash -c "$*"
+source "$(dirname "$0")/common.sh"
+
+docker exec -it "$CONTAINER_NAME" bash -c "$*"

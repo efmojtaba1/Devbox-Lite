@@ -8,9 +8,9 @@ set -e
 
 echo "Installing system tools..."
 
-apt update
+apt-get update
 
-apt install -y --no-install-recommends \
+apt-get install -y --no-install-recommends \
     git \
     curl \
     wget \
@@ -30,5 +30,7 @@ apt install -y --no-install-recommends \
     lsb-release \
     software-properties-common \
     build-essential
+
+apt-get clean && rm -rf /var/lib/apt/lists/*
 
 echo "System tools installed successfully."

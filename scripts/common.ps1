@@ -35,14 +35,14 @@ function Show-Success {
     param([string]$Message)
 
     Write-Host ""
-    Write-Host "✓ $Message"
+    Write-Host "[OK] $Message"
 }
 
 function Show-Error {
     param([string]$Message)
 
     Write-Host ""
-    Write-Host "✗ $Message"
+    Write-Host "[X] $Message"
 }
 
 function Test-Result {

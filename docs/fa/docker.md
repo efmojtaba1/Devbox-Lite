@@ -1,6 +1,6 @@
 # مرجع دستورات Docker (DevBox Lite)
 
-**[فارسی](docker.md)** | **[English](../en/docker.md)** | [بازگشت به خانه](../../README.md)
+**[English](../en/docker.md)** | [بازگشت به خانه](../../README.md)
 
 ---
 

@@ -2,8 +2,6 @@
 
 Show-Header "Building DevBox - lite"
 
-docker build `
-    -t $ImageName `
-    ./docker/app
+docker compose -f $ComposeFile build
 
 Test-Result "Build completed successfully." "Build failed."

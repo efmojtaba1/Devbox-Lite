@@ -1,6 +1,6 @@
 # راهنمای عیب‌یابی (DevBox Lite)
 
-**[فارسی](troubleshooting.md)** | **[English](../en/troubleshooting.md)** | [بازگشت به خانه](../../README.md)
+**[English](../en/troubleshooting.md)** | [بازگشت به خانه](../../README.md)
 
 ---
 
@@ -95,7 +95,7 @@ docker system prune -a --volumes
 ### ‏VS Code به کانتینر وصل نمی‌شود
 
 1. ری‌استارت کانتینر: `.\scripts\restart`
-2. در VS Code: F1 → "Remote-Containers: Reopen in Container"
+2. در VS Code: F1 → "Dev Containers: Reopen in Container"
 
 ### افزونه‌ها نصب نمی‌شوند
 

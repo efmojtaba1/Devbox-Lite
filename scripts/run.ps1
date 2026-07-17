@@ -12,4 +12,4 @@ if ($Command.Count -eq 0) {
 }
 
 $cmdStr = $Command -join ' '
-docker exec -it $ContainerName bash -c $cmdStr
+docker exec -it $ContainerName bash -c "$cmdStr"

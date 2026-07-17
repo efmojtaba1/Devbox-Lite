@@ -1,6 +1,6 @@
 # DevBox Lite
 
-**[فارسی](README.md)** | **[English](../en/README.md)** | [بازگشت به خانه](../../README.md)
+**[English](../en/README.md)** | [بازگشت به خانه](../../README.md)
 
 محیط توسعه سبک و ایزوله بر پایه Docker + Ubuntu 24.04، مخصوص پروژه‌های **Laravel، Next.js، React و Python**.
 
@@ -188,7 +188,7 @@ setup-deps  # راه‌اندازی دیتابیس
 
 ## ساخت پروژه جدید
 
-> **نکته مهم:** تمام دستورات توسعه (python, pnpm, composer, php و...) **داخل کانتینر** اجرا میشن، نه روی سیستم عامل میزبان. از `run` برای دستورات تکی یا `shell` برای ترمینال تعاملی استفاده کنید.
+**نکته مهم:** تمام دستورات توسعه (python, pnpm, composer, php و...) **داخل کانتینر** اجرا میشن، نه روی سیستم عامل میزبان. از `run` برای دستورات تکی یا `shell` برای ترمینال تعاملی استفاده کنید.
 
 ### استفاده از `run` (دستورات تکی)
 
@@ -204,14 +204,22 @@ run python3 -m venv my-env
 
 ### استفاده از `shell` (ترمینال تعاملی)
 ابتدا با دستور زیر وارد ترمینال کانتینر بشید:
+
 ```powershell
 shell
 ```
 حالا داخل کانتینر:
+
 ```powershell
 cd /workspace
+```
+```powershell
 python3 -m venv my-env
+```
+```powershell
 source my-env/bin/activate
+```
+```powershell
 pip install flask
 ```
 
@@ -219,10 +227,20 @@ pip install flask
 
 ```bash
 cd /workspace
+```
+```bash
 laravel new my-app
+```
+```bash
 cd my-app
+```
+```bash
 composer install
+```
+```bash
 npm install
+```
+```bash
 php artisan serve --host=0.0.0.0 --port=8000
 ```
 
@@ -230,9 +248,17 @@ php artisan serve --host=0.0.0.0 --port=8000
 
 ```bash
 cd /workspace
+```
+```bash
 pnpm create next-app my-app
+```
+```bash
 cd my-app
+```
+```bash
 pnpm install
+```
+```bash
 pnpm dev --hostname 0.0.0.0 --port=3000
 ```
 
@@ -240,12 +266,17 @@ pnpm dev --hostname 0.0.0.0 --port=3000
 
 ```bash
 cd /workspace
+```
+```bash
 python3 -m venv my-env
+```
+```bash
 source my-env/bin/activate
+```
+```bash
 pip install flask
 ```
 
----
 
 ## مستندات
 

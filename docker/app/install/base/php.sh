@@ -10,7 +10,7 @@ echo "Installing PHP ${PHP_VERSION}..."
 
 add-apt-repository ppa:ondrej/php -y
 
-apt install -y --no-install-recommends \
+apt-get install -y --no-install-recommends \
     php${PHP_VERSION} \
     php${PHP_VERSION}-cli \
     php${PHP_VERSION}-fpm \
@@ -29,6 +29,8 @@ apt install -y --no-install-recommends \
     php${PHP_VERSION}-soap \
     php${PHP_VERSION}-readline \
     php${PHP_VERSION}-opcache
+
+apt-get clean && rm -rf /var/lib/apt/lists/*
 
 echo "PHP ${PHP_VERSION} installed successfully."
 

@@ -1,23 +1,10 @@
 #!/bin/bash
 # DevBox Lite - Rebuild image (no cache)
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-COMPOSE_FILE="$PROJECT_ROOT/docker/compose/docker-compose.yml"
+source "$(dirname "$0")/common.sh"
 
-echo ""
-echo "========================================="
-echo "Rebuilding DevBox (no cache)"
-echo "========================================="
-echo ""
+Show-Header "Rebuilding DevBox (no cache)"
 
 docker compose -f "$COMPOSE_FILE" build --no-cache
 
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✓ Rebuild completed successfully."
-else
-    echo ""
-    echo "✗ Rebuild failed."
-    exit 1
-fi
+Test-Result "Rebuild completed successfully." "Rebuild failed."

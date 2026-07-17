@@ -8,11 +8,13 @@ set -e
 
 # Nginx
 echo "Installing Nginx..."
-apt install -y --no-install-recommends nginx
+apt-get install -y --no-install-recommends nginx
 
 # Supervisor
 echo "Installing Supervisor..."
-apt install -y --no-install-recommends supervisor
+apt-get install -y --no-install-recommends supervisor
+
+apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # PM2
 echo "Installing PM2..."

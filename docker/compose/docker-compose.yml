@@ -16,7 +16,14 @@ services:
 
     tty: true
 
-    restart: unless-stopped
+    restart: "no"
+
+    healthcheck:
+      test: ["CMD", "bash", "-c", "php -v && node -v && python3 --version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
     ports:
       - "6080:6080"
@@ -24,14 +31,19 @@ services:
       - "3000:3000"
 
     volumes:
-      - ${WORKSPACE_PATH:-../../}:/workspace
+      - ${WORKSPACE_PATH:-../../}:/workspace:cached
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${WORKSPACE_PATH:-../../}/workspace/data/bruno/config:/root/.config/bruno
+      - ${WORKSPACE_PATH:-../../}/workspace/data/bruno/config:/root/.config/bruno:cached
       - bruno-collections:/root/bruno
       - pnpm-store:/root/.local/share/pnpm/store
+      # Performance: node_modules/vendor/venv on fast Docker volumes instead of slow Windows bind mount
+      - node-modules-laravel:/workspace/laravel/node_modules
+      - vendor-laravel:/workspace/laravel/vendor
+      - node-modules-nextjs:/workspace/next-js/node_modules
+      - venv-python:/workspace/python/venv
 
     environment:
-      TZ: Asia/Tehran
+      TZ: ${TZ:-Asia/Tehran}
 
     networks:
       - devbox-network
@@ -39,8 +51,11 @@ services:
 networks:
   devbox-network:
     name: devbox-network
-    driver: bridge
 
 volumes:
   bruno-collections:
   pnpm-store:
+  node-modules-laravel:
+  vendor-laravel:
+  node-modules-nextjs:
+  venv-python:

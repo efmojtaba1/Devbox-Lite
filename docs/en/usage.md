@@ -1,6 +1,6 @@
 # Daily Usage Guide (DevBox Lite)
 
-**[فارسی](../fa/usage.md)** | **[English](usage.md)** | [Home](../../README.md)
+**[فارسی](../fa/usage.md)** | [Home](../../README.md)
 
 ---
 

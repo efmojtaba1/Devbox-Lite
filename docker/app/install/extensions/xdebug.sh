@@ -11,8 +11,8 @@ mkdir -p /etc/php/${PHP_VERSION}/mods-available
 cat > /etc/php/${PHP_VERSION}/mods-available/xdebug.ini <<EOF
 zend_extension=xdebug
 
-xdebug.mode=debug
-xdebug.start_with_request=yes
+xdebug.mode=develop,debug
+xdebug.start_with_request=trigger
 xdebug.client_host=host.docker.internal
 xdebug.client_port=9003
 

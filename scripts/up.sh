@@ -1,21 +1,14 @@
 #!/bin/bash
 # DevBox Lite - Start container
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-COMPOSE_FILE="$PROJECT_ROOT/docker/compose/docker-compose.yml"
+source "$(dirname "$0")/common.sh"
 
-echo ""
-echo "========================================="
-echo "Starting DevBox Lite"
-echo "========================================="
-echo ""
+Show-Header "Starting DevBox Lite"
 
 docker compose -f "$COMPOSE_FILE" up -d
 
 if [ $? -eq 0 ]; then
-    echo ""
-    echo "✓ DevBox Lite container started."
+    Show-Success "DevBox Lite container started."
     echo ""
     echo "========================================="
     echo "DevBox Lite is ready!"
@@ -24,7 +17,6 @@ if [ $? -eq 0 ]; then
     echo "Use './scripts/shell' to enter the container."
     echo "Use './scripts/setup-deps' to configure database services."
 else
-    echo ""
-    echo "✗ Failed to start DevBox Lite container."
+    Show-Error "Failed to start DevBox Lite container."
     exit 1
 fi

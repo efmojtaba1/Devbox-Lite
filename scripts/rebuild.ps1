@@ -2,9 +2,6 @@
 
 Show-Header "Rebuilding DevBox"
 
-docker build `
-    --no-cache `
-    -t $ImageName `
-    ./docker/app
+docker compose -f $ComposeFile build --no-cache
 
 Test-Result "Rebuild completed successfully." "Rebuild failed."

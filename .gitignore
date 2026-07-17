@@ -1,4 +1,8 @@
 .DS_Store
+
+# Environment file (contains secrets)
+.env
+
 # نادیده گرفتن کدهای شخصی درون ورک‌پیس
 workspace/*
 !workspace/.gitkeep
@@ -27,4 +31,4 @@ prebuilt
 my-env/
 venv/
 .venv/
-.pnpm-store 
+.pnpm-store

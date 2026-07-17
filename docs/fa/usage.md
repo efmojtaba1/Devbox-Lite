@@ -1,6 +1,6 @@
 # راهنمای استفاده روزمره (DevBox Lite)
 
-**[فارسی](usage.md)** | **[English](../en/usage.md)** | [بازگشت به خانه](../../README.md)
+**[English](../en/usage.md)** | [بازگشت به خانه](../../README.md)
 
 ---
 
@@ -34,9 +34,9 @@ echo "WORKSPACE_PATH=$PWD" > .env
 
 ## اسکریپت‌های مدیریت
 
-پوشه `vscode.` در ریشه پروژه حاوی فایل تنظیمات و اسکریپتی است که دستورات کانتینر را در ترمینال یکپارچه VS Code ساده‌سازی می‌کند.
+پوشه `.vscode` در ریشه پروژه حاوی فایل تنظیمات و اسکریپتی است که دستورات کانتینر را در ترمینال یکپارچه VS Code ساده‌سازی می‌کند.
 
-با استفاده از این تنظیمات، به جای تایپ مسیرهای کاملی مانند `scripts\up\.` توسعه‌دهندگان می‌توانند دستورات میانبری مانند `up`، `shell` و... را مستقیماً در ترمینال VS Code تایپ کنند.
+با استفاده از این تنظیمات، به جای تایپ مسیرهای کاملی مانند `scripts\up.ps1` توسعه‌دهندگان می‌توانند دستورات میانبری مانند `up`، `shell` و... را مستقیماً در ترمینال VS Code تایپ کنند.
 
 
 
@@ -60,14 +60,42 @@ echo "WORKSPACE_PATH=$PWD" > .env
 
 ## ساخت پروژه جدید
 
+> **نکته مهم:** تمام دستورات توسعه **داخل کانتینر** اجرا می‌شوند. از `run` برای دستورات تکی یا `shell` برای ترمینال تعاملی استفاده کنید.
+
+### استفاده از `run` (دستورات تکی)
+
+```powershell
+run pnpm create next-app my-app
+run composer install
+run python3 -m venv my-env
+```
+
+### استفاده از `shell` (ترمینال تعاملی)
+
+```powershell
+shell
+# حالا داخل کانتینر:
+cd /workspace
+```
+
 ### Laravel
 
 ```bash
 cd /workspace
+```
+```bash
 laravel new my-app
+```
+```bash
 cd my-app
+```
+```bash
 composer install
+```
+```bash
 npm install
+```
+```bash
 php artisan serve --host=0.0.0.0 --port=8000
 ```
 
@@ -75,9 +103,17 @@ php artisan serve --host=0.0.0.0 --port=8000
 
 ```bash
 cd /workspace
+```
+```bash
 pnpm create next-app my-app
+```
+```bash
 cd my-app
+```
+```bash
 pnpm install
+```
+```bash
 pnpm dev --hostname 0.0.0.0 --port=3000
 ```
 
@@ -85,8 +121,14 @@ pnpm dev --hostname 0.0.0.0 --port=3000
 
 ```bash
 cd /workspace
+```
+```bash
 python3 -m venv my-env
+```
+```bash
 source my-env/bin/activate
+```
+```bash
 pip install flask
 ```
 

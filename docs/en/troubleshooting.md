@@ -1,6 +1,6 @@
 # Troubleshooting Guide (DevBox Lite)
 
-**[فارسی](../fa/troubleshooting.md)** | **[English](troubleshooting.md)** | [Home](../../README.md)
+**[فارسی](../fa/troubleshooting.md)** | [Home](../../README.md)
 
 ---
 
@@ -90,7 +90,7 @@ docker system prune -a --volumes
 ### VS Code Won't Connect to Container
 
 1. Restart container: `.\scripts\restart`
-2. In VS Code: F1 → "Remote-Containers: Reopen in Container"
+2. In VS Code: F1 → "Dev Containers: Reopen in Container"
 
 ### Extensions Won't Install
 

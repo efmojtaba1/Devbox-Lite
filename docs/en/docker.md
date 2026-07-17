@@ -1,6 +1,6 @@
 # Docker Commands Reference (DevBox Lite)
 
-**[فارسی](../fa/docker.md)** | **[English](docker.md)** | [Home](../../README.md)
+**[فارسی](../fa/docker.md)** | [Home](../../README.md)
 
 ---
 
@@ -146,7 +146,7 @@ docker rmi devbox-lite
 
 **WSL2:**
 ```bash
-./scripts\clean
+./scripts/clean
 ```
 
 ### Clean Cache

@@ -104,7 +104,7 @@ RUN chmod +x /tmp/install/common.sh /tmp/install/*.sh && \
 FROM ubuntu:24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/root/.local/bin:/root/.cargo/bin:/root/.config/composer/vendor/bin:${PATH}"
+ENV PATH="/root/.local/bin:/root/.config/composer/vendor/bin:${PATH}"
 
 WORKDIR /workspace
 
@@ -113,6 +113,7 @@ COPY --from=cleanup /usr/bin /usr/bin
 COPY --from=cleanup /usr/sbin /usr/sbin
 COPY --from=cleanup /usr/local /usr/local
 COPY --from=cleanup /usr/lib /usr/lib
+COPY --from=cleanup /usr/libexec /usr/libexec
 COPY --from=cleanup /usr/share /usr/share
 
 # Copy root home (exclude caches)
@@ -129,6 +130,13 @@ COPY --from=cleanup /etc/alternatives /etc/alternatives
 COPY --from=cleanup /etc/php /etc/php
 COPY --from=cleanup /etc/timezone /etc/timezone
 COPY --from=cleanup /etc/localtime /etc/localtime
+COPY --from=cleanup /etc/passwd /etc/passwd
+COPY --from=cleanup /etc/group /etc/group
+COPY --from=cleanup /etc/shadow /etc/shadow
+COPY --from=cleanup /etc/ld.so.conf /etc/ld.so.conf
+COPY --from=cleanup /etc/ld.so.conf.d /etc/ld.so.conf.d
+COPY --from=cleanup /var/lib/dpkg /var/lib/dpkg
+COPY --from=cleanup /var/lib/alternatives /var/lib/alternatives
 
 # Copy GUI applications
 COPY --from=cleanup /opt /opt
