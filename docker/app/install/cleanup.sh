@@ -5,8 +5,8 @@ source "$(dirname "$0")/common.sh"
 log "Cleaning up"
 
 # Remove apt cache and lists
-apt autoremove -y
-apt clean
+apt-get autoremove -y
+apt-get clean
 rm -rf /var/lib/apt/lists/*
 
 # Remove temporary files
@@ -90,7 +90,7 @@ for bin in trivy cosign prometheus promtool k9s skaffold jaeger kn kubectl helm 
 done
 
 # Final cleanup
-apt clean
+apt-get clean
 rm -rf /var/lib/apt/lists/*
 rm -rf /tmp/*
 rm -rf /root/.cache/*

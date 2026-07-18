@@ -7,6 +7,7 @@ log "Installing Bruno API Client"
 set -e
 
 # Install dependencies
+apt-get update -qq
 apt-get install -y --no-install-recommends \
     libgtk-3-0 \
     libnotify4 \

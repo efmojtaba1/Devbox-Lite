@@ -136,7 +136,6 @@ COPY --from=cleanup /etc/shadow /etc/shadow
 COPY --from=cleanup /etc/ld.so.conf /etc/ld.so.conf
 COPY --from=cleanup /etc/ld.so.conf.d /etc/ld.so.conf.d
 COPY --from=cleanup /var/lib/dpkg /var/lib/dpkg
-COPY --from=cleanup /var/lib/alternatives /var/lib/alternatives
 
 # Copy GUI applications
 COPY --from=cleanup /opt /opt

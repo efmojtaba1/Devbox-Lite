@@ -4,7 +4,11 @@ source "$(dirname "$0")/../common.sh"
 
 log "Installing Xdebug"
 
-apt install -y --no-install-recommends php${PHP_VERSION}-xdebug
+# Ensure ondrej/php PPA is available (may not exist in this stage)
+add-apt-repository ppa:ondrej/php -y 2>/dev/null || true
+apt-get update -qq
+
+apt-get install -y --no-install-recommends php${PHP_VERSION}-xdebug
 
 mkdir -p /etc/php/${PHP_VERSION}/mods-available
 
