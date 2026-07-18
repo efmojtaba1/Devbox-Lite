@@ -1,44 +1,44 @@
-# Daily Usage Guide (DevBox Lite)
+# Daily Usage Guide
 
 **[فارسی](../fa/usage.md)** | [Home](../../README.md)
 
 ---
 
-## Main Workflow
+## First Time Setup
 
-1. Open Docker Desktop
-2. Open the Docker Desktop terminal
-3. Start the container:
+### Windows
 
 ```powershell
+git clone https://github.com/efmojtaba1/DevBox.git D:\DevBox
+cd D:\DevBox
+.\scripts\build
 .\scripts\up
 ```
-   - If using Docker Desktop GUI:
-   - Go to Images section and click ▶ to create a container from the DevBox image
-   - Then go to Containers section and click ▶ to start the container
 
-4. Open VS Code and connect to the container via Remote Explorer
-
-### WSL2 (Recommended for better performance)
+### WSL2 (Recommended)
 
 ```bash
-# Inside WSL2
 cd ~/projects/DevBox
 echo "WORKSPACE_PATH=$PWD" > .env
-./scripts/up
-./scripts/shell
+./scripts/build.sh
+./scripts/up.sh
+./scripts/shell.sh
 ```
 
+---
+
+## Daily Workflow
+
+1. Open Docker Desktop
+2. Start the container: `.\scripts\up` (Windows) or `./scripts/up` (WSL2)
+3. Open VS Code → Remote Explorer → Dev Containers
+4. Work inside `/workspace` directory
 
 ---
 
 ## Management Scripts
 
-The `.vscode` folder in the project root contains configuration and scripts that simplify container commands in the VS Code integrated terminal.
-
-With these settings, instead of typing full paths like `scripts\up.ps1`, developers can type shortcut commands like `up`, `shell`, etc. directly in the VS Code terminal.
-
-
+Use these commands directly in VS Code terminal:
 
 | Command | Description |
 |---------|-------------|
@@ -49,18 +49,18 @@ With these settings, instead of typing full paths like `scripts\up.ps1`, develop
 | `restart` | Restart the container |
 | `status` | Check status |
 | `build` | Build the image |
-| `rebuild` | Rebuild the image |
+| `rebuild` | Rebuild the image (no cache) |
 | `clean` | Remove image and containers |
-| `setup-deps` | Auto-setup project dependencies |
+| `setup-deps` | Auto-setup databases and tools |
 | `test-api` | API testing tools (Bruno) |
-| `run` | Run arbitrary command inside the container |
+| `run` | Run arbitrary command inside container |
 | `scan` | Detect project types in workspace |
 
 ---
 
-## Creating New Projects
+## Creating Projects
 
-> **Important:** All development commands run **inside the container**. Use `run` for single commands or `shell` for an interactive terminal.
+> **Important:** All development commands run **inside the container**, not on your host machine.
 
 ### Using `run` (single commands)
 
@@ -110,6 +110,41 @@ pip install flask
 
 ---
 
+## Auto-Setup Databases
+
+The `setup-deps` script automatically detects your project type and starts the required databases and GUI tools:
+
+```bash
+# Inside the container
+setup-deps /workspace
+```
+
+### What it detects
+
+| Project Type | Detection | Databases | GUI Tool |
+|-------------|-----------|-----------|----------|
+| Laravel | `artisan` file | MySQL + Redis | phpMyAdmin |
+| Next.js | `next.config*` file | PostgreSQL | Adminer |
+| React | `react` in package.json | PostgreSQL | Adminer |
+| Python | `*.py` or `requirements.txt` | PostgreSQL | Adminer |
+| Django | `manage.py` file | PostgreSQL + Redis | Adminer |
+| Express | `express` in package.json | PostgreSQL + Redis | Adminer |
+
+### Connection Info (inside container)
+
+```bash
+# MySQL
+mysql -h devbox-mysql -u root
+
+# PostgreSQL
+psql -h devbox-postgres -U postgres
+
+# Redis
+redis-cli -h devbox-redis
+```
+
+---
+
 ## Database Management
 
 ### Creating Databases
@@ -141,19 +176,10 @@ pip install flask
 
 ---
 
-## Connecting VS Code to Container
-
-1. Open VS Code
-2. Select Remote Explorer → Dev Containers
-3. Click **"+"** and select the project path
-4. VS Code will automatically detect and connect to the container
-
----
-
 ## Default Ports
 
-| Database | Port | Container Name |
-|----------|------|----------------|
+| Service | Port | Container Name |
+|---------|------|----------------|
 | MySQL | 3307 | devbox-mysql |
 | PostgreSQL | 5433 | devbox-postgres |
 | Redis | 6380 | devbox-redis |
@@ -165,24 +191,18 @@ pip install flask
 
 ---
 
-## Connecting from Inside Container
+## Connecting VS Code to Container
 
-```bash
-# PostgreSQL
-psql -h devbox-postgres -p 5432
-
-# MySQL
-mysql -h devbox-mysql -P 3306
-
-# Redis
-redis-cli -h devbox-redis -p 6379
-```
+1. Open VS Code
+2. Select Remote Explorer → Dev Containers
+3. Click **"+"** and select the project path
+4. VS Code will automatically detect and connect to the container
 
 ---
 
 ## API Testing
 
-### Bruno (Lightweight, Fast)
+### Bruno
 
 ```powershell
 # From PowerShell
@@ -197,12 +217,12 @@ Bruno opens at http://localhost:6080
 ### Offline Usage
 
 1. Create collections in Bruno
-2. Export collections as JSON
+2. Collections are saved to `workspace/data/bruno/collections/`
 3. Collections work without internet
 
 ---
 
-## Tool Version Selection
+## Tool Versions
 
 Tool versions are controlled by `docker/app/.env`:
 
@@ -212,7 +232,7 @@ NODE_VERSION=22
 PYTHON_VERSION=3.12
 ```
 
-To change versions, edit the values and rebuild the image:
+To change versions, edit the values and rebuild:
 
 ```powershell
 .\scripts\build
@@ -222,10 +242,10 @@ To change versions, edit the values and rebuild the image:
 
 ## Important Notes
 
-1. Place projects in the `workspace/` folder
-2. Use VS Code Dev Containers
-3. Regularly backup your projects
-4. If you encounter issues, check [Troubleshooting](troubleshooting.md)
+1. Projects go in the `workspace/` folder
+2. Use VS Code Dev Containers for best experience
+3. Back up your projects regularly
+4. For issues, check [Troubleshooting](troubleshooting.md)
 
 ---
 

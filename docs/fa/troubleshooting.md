@@ -213,12 +213,24 @@ wsl --install
 
 ### Docker در WSL2 در دسترس نیست
 
+**روش ۱: فعال‌سازی WSL Integration در Docker Desktop (توصیه شده)**
+
+1. Docker Desktop را باز کنید
+2. به Settings → Resources → WSL Integration بروید
+3. توزیع Ubuntu خود را فعال کنید
+4. روی "Apply & Restart" کلیک کنید
+
+**روش ۲: نصب Docker به صورت بومی در Ubuntu**
+
 ```bash
-# داخل WSL2
-sudo service docker start
-# یا نصب Docker CLI
-sudo apt install docker.io
+# داخل Ubuntu WSL2
+sudo apt update && sudo apt install -y docker.io docker-compose-v2
+sudo usermod -aG docker $USER
+# ری‌استارت WSL
+wsl --shutdown
 ```
+
+سپس ترمینال Ubuntu را مجدداً باز کنید.
 
 ### کندی عملکرد در ویندوز
 
@@ -231,6 +243,7 @@ cd ~/projects/DevBox
 echo "WORKSPACE_PATH=$PWD" > .env
 ./scripts/build
 ./scripts/up
+./scripts/shell
 ```
 
 ### Permission Denied در WSL2
@@ -238,6 +251,30 @@ echo "WORKSPACE_PATH=$PWD" > .env
 ```bash
 sudo chmod -R 777 ~/projects/DevBox
 ```
+
+### بیلد کند Docker در WSL2
+
+اگر بیلد Docker در WSL2 کند است:
+
+1. اتصال اینترنت را بررسی کنید: `ping -c 4 8.8.8.8`
+2. از رجیستری mirror استفاده کنید
+3. منابع کافی اختصاص دهید (حداقل 4GB RAM، 2 هسته CPU)
+4. محدودیت حافظه WSL2 را در `.wslconfig` بررسی کنید:
+
+```ini
+# %USERPROFILE%\.wslconfig
+[wsl2]
+memory=8GB
+processors=4
+```
+
+### دسترسی به فایل‌های ویندوز از WSL2
+
+درایوهای ویندوز در مسیر `/mnt/` مانت می‌شوند. مثال:
+- `C:\Users` → `/mnt/c/Users`
+- `D:\Projects` → `/mnt/d/Projects`
+
+برای عملکرد بهتر، فایل‌های پروژه را داخل فایل‌سیستم WSL2 (`~/projects/`) نگه دارید، نه روی درایوهای ویندوز.
 
 ---
 

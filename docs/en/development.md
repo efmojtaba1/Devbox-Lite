@@ -14,7 +14,7 @@ DevBox Lite/
 │   │   ├── .env          # Tool versions
 │   │   ├── entrypoint.sh # Startup script
 │   │   └── install/      # Modular install scripts
-│   └── compose/          # Docker Compose file
+│   └── compose/          # Docker Compose file (.env for WORKSPACE_PATH)
 ├── scripts/              # Management scripts
 ├── docs/                 # Documentation
 │   ├── fa/               # Farsi documentation
@@ -22,7 +22,14 @@ DevBox Lite/
 ├── prebuilt/             # Pre-downloaded packages for offline use
 │   ├── images/           # Docker image archives
 │   └── packages/         # Bruno packages
-└── workspace/            # Project workspace
+└── workspace/            # Project workspace (mounted to /workspace in container)
+    ├── data/             # Persistent data
+    │   └── bruno/        # Bruno API client data
+    │       ├── collections/  # Saved collections and requests
+    │       └── config/       # Bruno application config
+    ├── laravel/          # Laravel project (example)
+    ├── next-js/          # Next.js project (example)
+    └── python/           # Python project (example)
 ```
 
 ---
@@ -160,21 +167,47 @@ For better development performance, run DevBox inside WSL2 instead of using Dock
 - Docker Desktop bind mount: file operations go through Windows → WSL2 bridge (slow)
 - WSL2 native: files live on Linux filesystem (10-20x faster)
 
-### Setup
+### Prerequisites
+
+1. WSL2 installed: `wsl --install` (PowerShell as Administrator)
+2. Docker available in WSL2 (one of):
+   - Docker Desktop WSL Integration enabled, OR
+   - Docker installed natively: `sudo apt install docker.io docker-compose-v2`
+
+### Full Setup
 
 ```bash
-# Clone inside WSL2
-git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
-cd ~/projects/DevBox
+# 1. Open Ubuntu terminal (from Start Menu or type `wsl` in PowerShell)
 
-# Configure workspace path
+# 2. Install Docker (if not using Docker Desktop integration)
+sudo apt update && sudo apt install -y docker.io docker-compose-v2
+sudo usermod -aG docker $USER
+wsl --shutdown  # Then reopen Ubuntu
+
+# 3. Clone and configure
+mkdir -p ~/projects && cd ~/projects
+git clone https://github.com/efmojtaba1/DevBox.git && cd DevBox
 echo "WORKSPACE_PATH=$PWD" > .env
 
-# Build and start
-./scripts/build
-./scripts/up
-./scripts/shell
+# 4. Build and start
+chmod +x scripts/*.sh
+./scripts/build.sh
+./scripts/up.sh
+./scripts/shell.sh
 ```
+
+### Optimize WSL2 Resources
+
+Create or edit `%USERPROFILE%\.wslconfig`:
+
+```ini
+[wsl2]
+memory=8GB
+processors=4
+swap=4GB
+```
+
+Then restart WSL: `wsl --shutdown`
 
 ### Performance Comparison
 

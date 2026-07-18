@@ -1,4 +1,4 @@
-# Docker Commands Reference (DevBox Lite)
+# Docker Commands Reference
 
 **[فارسی](../fa/docker.md)** | [Home](../../README.md)
 
@@ -8,12 +8,12 @@
 
 - **Image:** Template with OS and installed tools
 - **Container:** Running instance of an Image
-- **Volume:** Persistent data storage (workspace/ folder)
+- **Volume:** Persistent data storage
 - **Network:** Communication between containers (devbox-network)
 
 ---
 
-## Management Commands
+## Container Management
 
 ### Start Container
 
@@ -93,6 +93,24 @@ docker compose up -d
 ./scripts/status
 ```
 
+### Run Command Inside Container
+
+```powershell
+run <command>
+```
+
+Examples:
+```powershell
+run pnpm create next-app my-app
+run php artisan serve
+```
+
+### Detect Project Types
+
+```powershell
+scan
+```
+
 ---
 
 ## Image Commands
@@ -158,6 +176,24 @@ docker system prune -a
 
 ---
 
+## API Testing
+
+### Bruno
+
+```powershell
+test-api bruno
+```
+
+Address: http://localhost:6080
+
+### Offline Usage
+
+1. Create collections in Bruno → export as JSON
+2. Collections are saved to `workspace/data/bruno/collections/`
+3. Collections work without internet
+
+---
+
 ## Troubleshooting
 
 ### Container Won't Start
@@ -165,8 +201,8 @@ docker system prune -a
 ```powershell
 .\scripts\logs
 ```
-Or:
 
+Or:
 ```powershell
 cd docker/compose
 docker compose logs devbox-lite

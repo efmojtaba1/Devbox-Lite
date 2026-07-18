@@ -1,44 +1,44 @@
-# راهنمای استفاده روزمره (DevBox Lite)
+# راهنمای استفاده روزمره
 
 **[English](../en/usage.md)** | [بازگشت به خانه](../../README.md)
 
 ---
 
-## گردش کار اصلی
+## راه‌اندازی اولیه
 
-1. ‏Docker Desktop را باز کنید
-2. وارد ترمینال داکر  دسکتاپ بشید .
-3. کانتینر را بالا بیاورید:
+### ویندوز
 
 ```powershell
+git clone https://github.com/efmojtaba1/DevBox.git D:\DevBox
+cd D:\DevBox
+.\scripts\build
 .\scripts\up
 ```
-   - اگر از محیط گرافیکی Docker Desktop استفاده میکنید :
-   - با رفتن به  بخش ایمیج ها با کلیک روی علامت ▶ میتونید یک کانتینر از ایمیج دوباکس بسازید.
-   - سپس به بخش کانتینر ها برید و مجدد با کلیک روی علامت ▶ کانتینر رو بالا بیارید.
 
-4. ‏VS Code را باز کرده و از طریق Remote Explorer به کانتینر وصل شوید
-
-### WSL2 (توصیه شده برای سرعت بهتر)
+### WSL2 (توصیه شده)
 
 ```bash
-# داخل WSL2
 cd ~/projects/DevBox
 echo "WORKSPACE_PATH=$PWD" > .env
-./scripts/up
-./scripts/shell
+./scripts/build.sh
+./scripts/up.sh
+./scripts/shell.sh
 ```
 
+---
+
+## گردش کار روزمره
+
+1. Docker Desktop را باز کنید
+2. کانتینر را بالا بیاورید: `.\scripts\up` (ویندوز) یا `./scripts/up` (WSL2)
+3. VS Code را باز کنید → Remote Explorer → Dev Containers
+4. داخل پوشه `/workspace` کار کنید
 
 ---
 
 ## اسکریپت‌های مدیریت
 
-پوشه `.vscode` در ریشه پروژه حاوی فایل تنظیمات و اسکریپتی است که دستورات کانتینر را در ترمینال یکپارچه VS Code ساده‌سازی می‌کند.
-
-با استفاده از این تنظیمات، به جای تایپ مسیرهای کاملی مانند `scripts\up.ps1` توسعه‌دهندگان می‌توانند دستورات میانبری مانند `up`، `shell` و... را مستقیماً در ترمینال VS Code تایپ کنند.
-
-
+این دستورات را مستقیماً در ترمینال VS Code تایپ کنید:
 
 | دستور | کاربرد |
 |-------|--------|
@@ -51,18 +51,18 @@ echo "WORKSPACE_PATH=$PWD" > .env
 | `build` | ساخت ایمیج |
 | `rebuild` | ساخت مجدد ایمیج |
 | `clean` | پاک کردن ایمیج و کانتینر |
-| `setup-deps` | راه‌اندازی خودکار وابستگی‌های پروژه |
+| `setup-deps` | راه‌اندازی خودکار دیتابیس و ابزارها |
 | `test-api` | ابزار تست API (Bruno) |
 | `run` | اجرای دستور دلخواه داخل کانتینر |
 | `scan` | شناسایی نوع پروژه‌ها در workspace |
 
 ---
 
-## ساخت پروژه جدید
+## ساخت پروژه
 
-> **نکته مهم:** تمام دستورات توسعه **داخل کانتینر** اجرا می‌شوند. از `run` برای دستورات تکی یا `shell` برای ترمینال تعاملی استفاده کنید.
+> **نکته مهم:** تمام دستورات توسعه **داخل کانتینر** اجرا می‌شوند، نه روی سیستم میزبان.
 
-### استفاده از `run` (دستورات تکی)
+### روش سریع: `run` (دستورات تکی)
 
 ```powershell
 run pnpm create next-app my-app
@@ -70,7 +70,7 @@ run composer install
 run python3 -m venv my-env
 ```
 
-### استفاده از `shell` (ترمینال تعاملی)
+### روش تعاملی: `shell` (ترمینال)
 
 ```powershell
 shell
@@ -82,20 +82,10 @@ cd /workspace
 
 ```bash
 cd /workspace
-```
-```bash
 laravel new my-app
-```
-```bash
 cd my-app
-```
-```bash
 composer install
-```
-```bash
 npm install
-```
-```bash
 php artisan serve --host=0.0.0.0 --port=8000
 ```
 
@@ -103,17 +93,9 @@ php artisan serve --host=0.0.0.0 --port=8000
 
 ```bash
 cd /workspace
-```
-```bash
 pnpm create next-app my-app
-```
-```bash
 cd my-app
-```
-```bash
 pnpm install
-```
-```bash
 pnpm dev --hostname 0.0.0.0 --port=3000
 ```
 
@@ -121,15 +103,44 @@ pnpm dev --hostname 0.0.0.0 --port=3000
 
 ```bash
 cd /workspace
-```
-```bash
 python3 -m venv my-env
-```
-```bash
 source my-env/bin/activate
-```
-```bash
 pip install flask
+```
+
+---
+
+## راه‌اندازی خودکار دیتابیس‌ها
+
+اسکریپت `setup-deps` به صورت خودکار نوع پروژه‌ها را شناسایی و دیتابیس و ابزار گرافیکی مورد نیاز را راه‌اندازی می‌کند:
+
+```bash
+# از داخل کانتینر
+setup-deps /workspace
+```
+
+### چه چیزی شناسایی می‌شود
+
+| نوع پروژه | نحوه شناسایی | دیتابیس | ابزار گرافیکی |
+|----------|--------------|---------|--------------|
+| Laravel | فایل `artisan` | MySQL + Redis | phpMyAdmin |
+| Next.js | فایل `next.config*` | PostgreSQL | Adminer |
+| React | `react` در package.json | PostgreSQL | Adminer |
+| Python | `*.py` یا `requirements.txt` | PostgreSQL | Adminer |
+| Django | فایل `manage.py` | PostgreSQL + Redis | Adminer |
+| Express | `express` در package.json | PostgreSQL + Redis | Adminer |
+
+### اطلاعات اتصال (از داخل کانتینر)
+
+```bash
+# MySQL
+mysql -h devbox-mysql -u root
+
+# PostgreSQL
+psql -h devbox-postgres -U postgres
+
+# Redis
+redis-cli -h devbox-redis
 ```
 
 ---
@@ -140,12 +151,12 @@ pip install flask
 
 | دستور | کاربرد |
 |-------|--------|
-| `create mysql` | MySQL ایجاد و اجرای |
-| `create postgres` | PostgreSQL  ایجاد و اجرای |
-| `create redis` | Redis  ایجاد و اجرای |
-| `create mongo` | MongoDB  ایجاد و اجرای |
-| `create mariadb` | MariaDB  ایجاد و اجرای |
-| `create memcached` |Memcached  ایجاد و اجرای |
+| `create mysql` | ایجاد و اجرای MySQL |
+| `create postgres` | ایجاد و اجرای PostgreSQL |
+| `create redis` | ایجاد و اجرای Redis |
+| `create mongo` | ایجاد و اجرای MongoDB |
+| `create mariadb` | ایجاد و اجرای MariaDB |
+| `create memcached` | ایجاد و اجرای Memcached |
 
 ### مدیریت کانتینرها
 
@@ -157,27 +168,18 @@ pip install flask
 
 ### ابزارهای گرافیکی
 
-| دستور | آدرس وب | کاربرد |
-|-------|---------|--------|
-| `phpmyadmin` | http://localhost:8081 |MySQL/MariaDB  مدیریت |
+| دستور | آدرس | کاربرد |
+|-------|------|--------|
+| `phpmyadmin` | http://localhost:8081 | مدیریت MySQL/MariaDB |
 | `adminer` | http://localhost:8082 | مدیریت چند دیتابیس |
-| `pgadmin` | http://localhost:8083 | PostgreSQL  مدیریت |
-
----
-
-## اتصال VS Code به کانتینر
-
-1. ‏VS Code را باز کنید
-2. ‏Remote Explorer → Dev Containers را انتخاب کنید
-3. روی **"+"** کلیک کنید و مسیر پروژه را انتخاب کنید
-4. ‏VS Code به صورت خودکار کانتینر را شناسایی و متصل می‌شود
+| `pgadmin` | http://localhost:8083 | مدیریت PostgreSQL |
 
 ---
 
 ## پورت‌های پیش‌فرض
 
-| دیتابیس | پورت | نام کانتینر |
-|---------|------|-------------|
+| سرویس | پورت | نام کانتینر |
+|-------|------|-------------|
 | MySQL | 3307 | devbox-mysql |
 | PostgreSQL | 5433 | devbox-postgres |
 | Redis | 6380 | devbox-redis |
@@ -189,24 +191,18 @@ pip install flask
 
 ---
 
-## اتصال از داخل کانتینر
+## اتصال VS Code به کانتینر
 
-```bash
-# PostgreSQL
-psql -h devbox-postgres -p 5432
-
-# MySQL
-mysql -h devbox-mysql -P 3306
-
-# Redis
-redis-cli -h devbox-redis -p 6379
-```
+1. VS Code را باز کنید
+2. Remote Explorer → Dev Containers را انتخاب کنید
+3. روی **"+"** کلیک کنید و مسیر پروژه را انتخاب کنید
+4. VS Code به صورت خودکار کانتینر را شناسایی و متصل می‌شود
 
 ---
 
 ## تست API
 
-### Bruno (سبک و سریع)
+### Bruno
 
 ```powershell
 # از پاورشل
@@ -221,12 +217,12 @@ bruno
 ### استفاده آفلاین
 
 1. کالکشن‌ها را در Bruno بسازید
-2. فایل‌های JSON را در `workspace/bruno-collections/` کپی کنید
+2. کالکشن‌ها در `workspace/data/bruno/collections/` ذخیره می‌شوند
 3. کالکشن‌ها بدون اینترنت کار می‌کنند
 
 ---
 
-## انتخاب ورژن ابزارها
+## ورژن ابزارها
 
 ورژن ابزارها از فایل `docker/app/.env` کنترل می‌شود:
 

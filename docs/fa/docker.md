@@ -1,4 +1,4 @@
-# مرجع دستورات Docker (DevBox Lite)
+# مرجع دستورات Docker
 
 **[English](../en/docker.md)** | [بازگشت به خانه](../../README.md)
 
@@ -6,14 +6,14 @@
 
 ## مفاهیم پایه
 
-- ‏**Image:** قالب سیستم‌عامل و ابزارهای نصب‌شده
-- ‏**Container:** نمونه اجرا شده از Image
-- ‏**Volume:** ذخیره دائمی داده‌ها (پوشه workspace/)
-- ‏**Network:** ارتباط بین کانتینرها (devbox-network)
+- **Image:** قالب سیستم‌عامل و ابزارهای نصب‌شده
+- **Container:** نمونه اجرا شده از Image
+- **Volume:** ذخیره دائمی داده‌ها
+- **Network:** ارتباط بین کانتینرها (devbox-network)
 
 ---
 
-## دستورات مدیریت
+## مدیریت کانتینر
 
 ### بالا آوردن کانتینر
 
@@ -25,6 +25,12 @@
 **WSL2:**
 ```bash
 ./scripts/up
+```
+
+یا مستقیماً:
+```bash
+cd docker/compose
+docker compose up -d
 ```
 
 ### توقف کانتینر
@@ -87,11 +93,12 @@
 ./scripts/status
 ```
 
-### اجرای دستور دلخواه
+### اجرای دستور داخل کانتینر
 
 ```powershell
 run <command>
 ```
+
 مثال:
 ```powershell
 run pnpm create next-app my-app
@@ -171,17 +178,18 @@ docker system prune -a
 
 ## تست API
 
-### Bruno (سبک و سریع)
+### Bruno
 
 ```powershell
 test-api bruno
 ```
+
 آدرس: http://localhost:6080
 
 ### استفاده آفلاین
 
 1. کالکشن‌ها را در Bruno بسازید → خروجی JSON بگیرید
-2. فایل‌های JSON را در `workspace/bruno-collections/` کپی کنید
+2. کالکشن‌ها در `workspace/data/bruno/collections/` ذخیره می‌شوند
 3. کالکشن‌ها بدون اینترنت کار می‌کنند
 
 ---
@@ -193,13 +201,14 @@ test-api bruno
 ```powershell
 .\scripts\logs
 ```
+
 یا:
 ```powershell
 cd docker/compose
 docker compose logs devbox-lite
 ```
 
-### پورت در حال استفاده
+### پورت در حال استفاده است
 
 ```powershell
 netstat -ano | findstr :8000

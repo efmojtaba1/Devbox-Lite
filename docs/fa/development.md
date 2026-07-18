@@ -14,7 +14,7 @@ DevBox Lite/
 │   │   ├── .env          # ورژن ابزارها
 │   │   ├── entrypoint.sh # اسکریپت راه‌اندازی
 │   │   └── install/      # اسکریپت‌های نصب مدولار
-│   └── compose/          # فایل Docker Compose
+│   └── compose/          # فایل Docker Compose (.env برای WORKSPACE_PATH)
 ├── scripts/              # اسکریپت‌های مدیریت
 ├── docs/                 # مستندات
 │   ├── fa/               # مستندات فارسی
@@ -22,7 +22,14 @@ DevBox Lite/
 ├── prebuilt/             # پکیج‌های آماده برای استفاده آفلاین
 │   ├── images/           # آرشیو ایمیج‌های Docker
 │   └── packages/         # پکیج‌های Bruno
-└── workspace/            # پوشه کاری پروژه‌ها
+└── workspace/            # پوشه کاری پروژه‌ها (به /workspace در کانتینر مانت می‌شود)
+    ├── data/             # داده‌های پایدار
+    │   └── bruno/        # داده‌های کلاینت API برونو
+    │       ├── collections/  # کالکشن‌ها و ریکوئست‌های ذخیره شده
+    │       └── config/       # تنظیمات برنامه برونو
+    ├── laravel/          # پروژه Laravel (مثال)
+    ├── next-js/          # پروژه Next.js (مثال)
+    └── python/           # پروژه Python (مثال)
 ```
 
 ---
@@ -160,21 +167,47 @@ Store پکیج‌ها از Docker volume (`pnpm-store`) استفاده می‌ک
 - Docker Desktop bind mount: عملیات فایل از پل Windows → WSL2 عبور می‌کند (کند)
 - WSL2 native: فایل‌ها روی فایل‌سیستم لینوکس ذخیره می‌شوند (10-20 برابر سریع‌تر)
 
-### راه‌اندازی
+### پیش‌نیازها
+
+1. WSL2 نصب باشد: `wsl --install` (PowerShell به عنوان Administrator)
+2. Docker در WSL2 در دسترس باشد (یکی از روش‌ها):
+   - WSL Integration در Docker Desktop فعال باشد، یا
+   - Docker به صورت بومی نصب باشد: `sudo apt install docker.io docker-compose-v2`
+
+### راه‌اندازی کامل
 
 ```bash
-# کلون کردن داخل WSL2
-git clone https://github.com/efmojtaba1/DevBox.git ~/projects/DevBox
-cd ~/projects/DevBox
+# ۱. ترمینال Ubuntu را باز کنید (از منوی Start یا تایپ `wsl` در PowerShell)
 
-# تنظیم مسیر workspace
+# ۲. نصب Docker (اگر از WSL Integration استفاده نمی‌کنید)
+sudo apt update && sudo apt install -y docker.io docker-compose-v2
+sudo usermod -aG docker $USER
+wsl --shutdown  # سپس Ubuntu را مجدداً باز کنید
+
+# ۳. کلون و تنظیم
+mkdir -p ~/projects && cd ~/projects
+git clone https://github.com/efmojtaba1/DevBox.git && cd DevBox
 echo "WORKSPACE_PATH=$PWD" > .env
 
-# ساخت و اجرا
-./scripts/build
-./scripts/up
-./scripts/shell
+# ۴. ساخت و اجرا
+chmod +x scripts/*.sh
+./scripts/build.sh
+./scripts/up.sh
+./scripts/shell.sh
 ```
+
+### بهینه‌سازی منابع WSL2
+
+فایل `%USERPROFILE%\.wslconfig` را ایجاد یا ویرایش کنید:
+
+```ini
+[wsl2]
+memory=8GB
+processors=4
+swap=4GB
+```
+
+سپس WSL را ری‌استارت کنید: `wsl --shutdown`
 
 ### مقایسه عملکرد
 

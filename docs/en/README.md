@@ -1,23 +1,25 @@
 # DevBox Lite
 
-Lightweight, isolated development environment based on Docker + Ubuntu 24.04, designed for **Laravel, Next.js, React, and Python** projects.
+**[فارسی](../fa/README.md)** | [بازگشت به خانه](../../README.md)
+
+سبک، ایزوله، و آماده کار — محیط توسعه‌ای مبتنی بر Docker + Ubuntu 24.04 که برای پروژه‌های **Laravel، Next.js، React و Python** طراحی شده.
 
 ---
 
-## Features
+## چرا DevBox Lite؟
 
-- **Lightweight & Fast:** Image size ~1GB
-- **Offline Support:** Database management with offline image support
-- **Complete Toolset:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
-- **Database Management:** MySQL, PostgreSQL, Redis + GUI tools (phpMyAdmin, Adminer, pgAdmin)
-- **API Testing:** Bruno (fully offline)
+- **سبک و سریع:** حجم ایمیج حدود ۱ گیگابایت
+- **پشتیبانی آفلاین:** دیتابیس‌ها و ابزارها بدون نیاز به اینترنت
+- **ابزارهای کامل:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
+- **مدیریت دیتابیس:** MySQL, PostgreSQL, Redis + محیط گرافیکی (phpMyAdmin, Adminer)
+- **تست API:** Bruno (کاملاً آفلاین)
 
 ---
 
-## Available Tools
+## ابزارهای موجود
 
-| Category | Tools |
-|----------|-------|
+| دسته | ابزارها |
+|------|---------|
 | **PHP** | PHP 8.4 + Composer + Laravel Installer + Xdebug + Pest |
 | **Node.js** | Node.js 22 + pnpm + npm + Bun |
 | **Python** | Python 3.12 + pip + pipx + Jupyter + poetry + black + ruff + pytest |
@@ -28,168 +30,99 @@ Lightweight, isolated development environment based on Docker + Ubuntu 24.04, de
 
 ---
 
-## Quick Start
+## شروع سریع
 
-### Prerequisites
+### پیش‌نیازها
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
-- [VS Code](https://code.visualstudio.com/) with [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) نصب و اجرا شده باشد
+- [VS Code](https://code.visualstudio.com/) با افزونه [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
 
-### Setup Steps (Windows)
-
-1. Clone the project:
+### راه‌اندازی در ویندوز
 
 ```powershell
 git clone https://github.com/efmojtaba1/DevBox.git D:\DevBox
-```
-```powershell
 cd D:\DevBox
-```
-2. Build the image:
-
-```powershell
 .\scripts\build
-```
-
-3. Start the container:
-
-```powershell
 .\scripts\up
 ```
 
-4. Connect VS Code to the container via Remote Explorer → Dev Containers
+سپس VS Code را باز کنید و از طریق Remote Explorer → Dev Containers به کانتینر وصل شوید.
 
-### Setup Steps (WSL2 - Recommended for better performance)
+### راه‌اندازی در WSL2 (توصیه شده)
 
-> **Why WSL2?** Docker Desktop bind mount is 10-20x slower than WSL2 native filesystem. For serious development, WSL2 is strongly recommended.
+> **چرا WSL2؟** عملیات فایل در Docker Desktop حدود ۱۰-۲۰ برابر کندتر از فایل‌سیستم بومی WSL2 است. برای توسعه جدی، WSL2 به شدت توصیه می‌شود.
 
-#### Step 1: Install WSL2
-
-Open **PowerShell as Administrator** and run:
-
-```powershell
+```bash
+# ۱. نصب WSL2 (PowerShell به عنوان Administrator)
 wsl --install
+# ری‌استارت کامپیوتر
+
+# ۲. نصب Docker در Ubuntu
+sudo apt update && sudo apt install -y docker.io docker-compose-v2
+sudo usermod -aG docker $USER && newgrp docker
+
+# ۳. فعال‌سازی Docker Desktop
+# Docker Desktop → Settings → WSL Integration → Ubuntu را فعال کنید
+
+# ۴. کلون و راه‌اندازی
+mkdir -p ~/projects && cd ~/projects
+git clone git@github.com:efmojtaba1/DevBox.git && cd DevBox
+echo "WORKSPACE_PATH=$PWD" > .env
+chmod +x scripts/*.sh
+./scripts/build.sh && ./scripts/up.sh && ./scripts/shell.sh
 ```
 
-Restart your computer after installation.
-
-#### Step 2: Install Ubuntu
-
-After restart, Ubuntu will open automatically. Create a username and password when prompted.
-
-If Ubuntu doesn't open, run:
-```powershell
-wsl --install -d Ubuntu
-```
-
-#### How to Open Ubuntu Terminal
-
-You can open Ubuntu terminal in several ways:
-
-| Method | How to |
-|--------|--------|
-| **Start Menu** | Search for "Ubuntu" and click the icon |
-| **PowerShell** | Type `wsl` or `wsl -d Ubuntu` |
-| **Win + R** | Type `wsl` and press Enter |
-| **Windows Terminal** | Click dropdown arrow → select "Ubuntu" |
-| **VS Code** | Open VS Code → Ctrl+Shift+P → "WSL: Connect to WSL" |
-
-**Recommended:** Pin Ubuntu to taskbar for quick access.
-
-#### Step 3: Install Docker in Ubuntu
-
-Open Ubuntu terminal and run:
-```bash
-sudo apt update && sudo apt install -y docker.io docker-compose-v2 && sudo usermod -aG docker $USER && newgrp docker
-```
-
-#### Step 4: Start Docker Desktop
-
-Open **Docker Desktop** on Windows. Go to **Settings → Resources → WSL Integration** and enable your Ubuntu distribution.
-
-#### Step 5: Clone DevBox
-
-In Ubuntu terminal:
-```bash
-mkdir -p ~/projects && cd ~/projects && git clone git@github.com:efmojtaba1/DevBox.git && cd DevBox
-```
-
-#### Step 6: Configure and Build
+### دستورات کوتاه (اختیاری)
 
 ```bash
-echo "WORKSPACE_PATH=$PWD" > .env && chmod +x scripts/*.sh && ./scripts/build.sh
+./scripts/setup-aliases.sh && source ~/.bashrc
 ```
 
-#### Step 7: Start DevBox
+حالا می‌توانید از این دستورات استفاده کنید:
 
-```bash
-./scripts/up.sh && ./scripts/shell.sh
-```
-
-You are now inside the DevBox container with full toolset ready.
-
-#### Step 8: Setup Short Commands (Optional)
-
-For shorter commands like `up`, `down`, `shell`, run:
-```bash
-chmod +x scripts/*.sh && ./scripts/setup-aliases.sh && source ~/.bashrc
-```
-
-Now you can use:
-```bash
-up          # Start container
-down        # Stop container
-shell       # Enter container
-build       # Build image
-rebuild     # Rebuild image
-logs        # View logs
-status      # Check status
-setup-deps  # Setup databases
-```
+| دستور | کاربرد |
+|-------|--------|
+| `up` | بالا آوردن کانتینر |
+| `down` | توقف کانتینر |
+| `shell` | ورود به ترمینال کانتینر |
+| `build` | ساخت ایمیج |
+| `rebuild` | ساخت مجدد ایمیج |
+| `logs` | مشاهده لاگ‌ها |
+| `status` | بررسی وضعیت |
+| `setup-deps` | راه‌اندازی خودکار دیتابیس و ابزارها |
 
 ---
 
-## Management Scripts
+## ساختار پوشه‌بندی
 
-You can type these commands directly in the VS Code terminal:
+```
+DevBox_Lite/
+├── docker/
+│   ├── app/              # فایل‌های ساخت Image
+│   │   ├── Dockerfile
+│   │   ├── .env          # ورژن ابزارها
+│   │   └── install/      # اسکریپت‌های نصب
+│   └── compose/          # Docker Compose + .env
+├── scripts/              # اسکریپت‌های مدیریت
+├── docs/                 # مستندات (فارسی + انگلیسی)
+├── prebuilt/             # ایمیج‌های آماده برای آفلاین
+│   └── images/           # mysql-8.4.tar, postgres-17.tar, ...
+└── workspace/            # پوشه کاری پروژه‌ها
+    ├── data/bruno/       # کالکشن‌ها و تنظیمات Bruno
+    ├── laravel/          # پروژه Laravel
+    ├── next-js/          # پروژه Next.js
+    └── python/           # پروژه Python
+```
 
-| Command | Description |
-|---------|-------------|
-| `up` | Start the container |
-| `down` | Stop the container |
-| `shell` | Open container terminal |
-| `logs` | View logs |
-| `restart` | Restart the container |
-| `status` | Check status |
-| `build` | Build the image |
-| `rebuild` | Rebuild the image (no cache) |
-| `clean` | Remove image and containers |
-| `setup-deps` | Auto-setup project dependencies |
-| `test-api` | API testing tools (Bruno) |
-| `run` | Run arbitrary command inside the container |
-| `scan` | Detect project types in workspace |
-
-### Database Management (shortcuts in VS Code terminal)
-
-| Command | Description |
-|---------|-------------|
-| `create mysql` | Create and start MySQL |
-| `create postgres` | Create and start PostgreSQL |
-| `create redis` | Create and start Redis |
-| `start mysql` | Start container |
-| `stop mysql` | Stop container |
-| `connect mysql` | Connect to database terminal |
-| `phpmyadmin` | Start phpMyAdmin (port 8081) |
-| `adminer` | Start Adminer (port 8082) |
-| `pgadmin` | Start pgAdmin (port 8083) |
+> **نکته:** پوشه `prebuilt/` در روت پروژه قرار دارد، نه داخل `workspace/`. ایمیج‌ها به صورت خودکار به کانتینر مانت می‌شوند.
 
 ---
 
-## Creating New Projects
+## ساخت پروژه جدید
 
-> **Important:** All development commands (python, pnpm, composer, php, etc.) run **inside the container**, not on your host machine. Use `run` for single commands or `shell` for an interactive terminal.
+> **نکته مهم:** تمام دستورات توسعه (python, pnpm, composer, php و...) **داخل کانتینر** اجرا می‌شوند.
 
-### Using `run` (single commands)
+### روش سریع: `run` (دستورات تکی)
 
 ```powershell
 run pnpm create next-app my-app
@@ -197,15 +130,12 @@ run composer install
 run python3 -m venv my-env
 ```
 
-### Using `shell` (interactive terminal)
+### روش تعاملی: `shell` (ترمینال)
 
 ```powershell
 shell
-# Now inside the container:
+# حالا داخل کانتینر:
 cd /workspace
-python3 -m venv my-env
-source my-env/bin/activate
-pip install flask
 ```
 
 ### Laravel
@@ -240,21 +170,38 @@ pip install flask
 
 ---
 
-## Documentation
+## راه‌اندازی خودکار دیتابیس‌ها
 
-| Document | Description |
-|----------|-------------|
-| [Usage Guide](usage.md) | Daily workflow and useful commands |
-| [Docker Reference](docker.md) | Complete Docker commands |
-| [Troubleshooting](troubleshooting.md) | Common issues and fixes |
-| [Development Guide](development.md) | DevBox development and maintenance |
+اسکریپت `setup-deps` به صورت خودکار نوع پروژه‌ها را شناسایی و دیتابیس و ابزار گرافیکی مورد نیاز را راه‌اندازی می‌کند:
+
+```bash
+# از داخل کانتینر
+setup-deps /workspace
+```
+
+| نوع پروژه | دیتابیس | ابزار گرافیکی |
+|----------|---------|--------------|
+| Laravel | MySQL + Redis | phpMyAdmin |
+| Next.js / React | PostgreSQL | Adminer |
+| Python | PostgreSQL | Adminer |
 
 ---
 
-## License
+## مستندات
 
-This project is licensed under [LICENSE](../../LICENSE).
+| مستند | توضیحات |
+|-------|---------|
+| [راهنمای استفاده](usage.md) | گردش کار روزمره و دستورات کاربردی |
+| [مرجع Docker](docker.md) | دستورات کامل Docker |
+| [عیب‌یابی](troubleshooting.md) | رفع اشکال و خطاهای متداول |
+| [راهنمای توسعه](development.md) | توسعه و نگهداری DevBox |
 
 ---
 
-**Current version:** lite-1.0.0
+## لایسنس
+
+این پروژه تحت لایسنس [LICENSE](../../LICENSE) است.
+
+---
+
+**ورژن فعلی:** lite-1.0.0
