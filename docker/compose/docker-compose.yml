@@ -32,10 +32,9 @@ services:
 
     volumes:
       - ${WORKSPACE_PATH:-../../}:/workspace:cached
-      - ../../scripts:/workspace/scripts:cached
-      - ../../prebuilt:/workspace/prebuilt:cached
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${WORKSPACE_PATH:-../../}/data/bruno:/root/.config/bruno:cached
+      - bruno-config:/root/.config/bruno
+      - bruno-collections:/root/bruno
       - pnpm-store:/root/.local/share/pnpm/store
       # Performance: node_modules/vendor/venv on fast Docker volumes instead of slow Windows bind mount
       - node-modules-laravel:/workspace/laravel/node_modules
@@ -59,3 +58,5 @@ volumes:
   vendor-laravel:
   node-modules-nextjs:
   venv-python:
+  bruno-config:
+  bruno-collections:

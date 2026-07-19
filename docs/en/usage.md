@@ -65,8 +65,8 @@ Use these commands directly in VS Code terminal:
 ### Using `run` (single commands)
 
 ```powershell
+run laravel new my-app
 run pnpm create next-app my-app
-run composer install
 run python3 -m venv my-env
 ```
 
@@ -84,8 +84,6 @@ cd /workspace
 cd /workspace
 laravel new my-app
 cd my-app
-composer install
-npm install
 php artisan serve --host=0.0.0.0 --port=8000
 ```
 
@@ -95,7 +93,6 @@ php artisan serve --host=0.0.0.0 --port=8000
 cd /workspace
 pnpm create next-app my-app
 cd my-app
-pnpm install
 pnpm dev --hostname 0.0.0.0 --port=3000
 ```
 

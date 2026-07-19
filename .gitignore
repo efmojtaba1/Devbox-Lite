@@ -31,4 +31,3 @@ prebuilt
 my-env/
 venv/
 .venv/
-.pnpm-store
