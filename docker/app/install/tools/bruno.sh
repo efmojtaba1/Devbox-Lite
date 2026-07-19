@@ -6,7 +6,7 @@ log "Installing Bruno API Client"
 
 set -e
 
-# Install dependencies
+# Install dependencies (without novnc apt package - has broken deps)
 apt-get update -qq
 apt-get install -y --no-install-recommends \
     libgtk-3-0 \
@@ -18,7 +18,28 @@ apt-get install -y --no-install-recommends \
     libatspi2.0-0 \
     libuuid1 \
     libsecret-1-0 \
-    libasound2t64
+    libasound2t64 \
+    libgbm1 \
+    xvfb \
+    x11vnc \
+    websockify
+
+# Download noVNC from GitHub (apt novnc has broken dependencies)
+if [ ! -d /usr/share/novnc ]; then
+    echo "Downloading noVNC..."
+    git clone --depth 1 https://github.com/novnc/noVNC.git /usr/share/novnc 2>/dev/null
+fi
+
+# Create index.html redirect (noVNC repo has no index.html, causes directory listing)
+if [ ! -f /usr/share/novnc/index.html ]; then
+    cat > /usr/share/novnc/index.html << 'HTML'
+<!DOCTYPE html>
+<html>
+<head><meta http-equiv="refresh" content="0;url=vnc_lite.html" /></head>
+<body><p>Redirecting to <a href="vnc_lite.html">noVNC</a>...</p></body>
+</html>
+HTML
+fi
 
 # Read Bruno version from .env or use default
 BRUNO_VERSION="${BRUNO_VERSION:-3.5.2}"
@@ -52,14 +73,22 @@ export DISPLAY=:1
 
 # Start VNC if not running
 if ! pgrep -x x11vnc > /dev/null 2>&1; then
-    nohup x11vnc -forever -nopw -rfbport 5900 -shared > /dev/null 2>&1 &
+    nohup x11vnc -display :1 -forever -nopw -rfbport 5900 -shared > /dev/null 2>&1 &
     sleep 1
 fi
 
 # Stop websockify on this port only (don't kill other tool's websockify)
 fuser -k 6080/tcp 2>/dev/null || true
 sleep 1
-nohup websockify --web=/usr/share/novnc 6080 localhost:5900 > /dev/null 2>&1 &
+
+# Find noVNC web directory
+NOVNC_DIR=""
+for dir in /usr/share/novnc /usr/share/novnc/web; do
+    [ -d "$dir" ] && NOVNC_DIR="$dir" && break
+done
+NOVNC_DIR="${NOVNC_DIR:-/usr/share/novnc}"
+
+nohup websockify --web="$NOVNC_DIR" 6080 localhost:5900 > /dev/null 2>&1 &
 sleep 1
 
 # Launch Bruno (setsid detaches from exec session to prevent EPIPE)

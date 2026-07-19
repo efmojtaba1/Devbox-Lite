@@ -6,10 +6,26 @@ LABEL maintainer="Mojtaba"
 LABEL project="DevBox"
 LABEL version="lite-1.0.0"
 
+ARG APT_MIRROR=""
+ARG PIP_MIRROR=""
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/root/.local/bin:/root/.config/composer/vendor/bin:${PATH}"
 
 WORKDIR /workspace
+
+# Configure apt mirror (if APT_MIRROR build arg is provided)
+RUN if [ -n "$APT_MIRROR" ]; then \
+      UBUNTU_CODENAME=$(. /etc/os-release && echo $VERSION_CODENAME) && \
+      echo "deb $APT_MIRROR $UBUNTU_CODENAME main restricted universe multiverse" > /etc/apt/sources.list && \
+      echo "deb $APT_MIRROR $UBUNTU_CODENAME-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
+      echo "deb $APT_MIRROR $UBUNTU_CODENAME-backports main restricted universe multiverse" >> /etc/apt/sources.list && \
+      echo "deb $APT_MIRROR $UBUNTU_CODENAME-security main restricted universe multiverse" >> /etc/apt/sources.list && \
+      echo "Using mirror: $APT_MIRROR"; \
+    else \
+      echo "Using default Ubuntu mirrors"; \
+    fi && \
+    apt-get update -qq
 
 COPY install/common.sh /tmp/common.sh
 COPY .env /tmp/.env
@@ -19,6 +35,9 @@ RUN chmod +x /tmp/common.sh /tmp/install/system.sh && /tmp/install/system.sh
 
 # Languages layer (PHP, Node, Python only)
 FROM base AS languages
+
+ARG PIP_MIRROR=""
+ENV PIP_MIRROR=${PIP_MIRROR}
 
 COPY install/common.sh /tmp/common.sh
 COPY .env /tmp/.env

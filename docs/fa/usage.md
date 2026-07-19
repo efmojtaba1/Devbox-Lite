@@ -6,7 +6,7 @@
 
 ## راه‌اندازی اولیه
 
-### ویندوز
+### ‎ویندوز :
 
 ```powershell
 git clone https://github.com/efmojtaba1/DevBox.git D:\DevBox
@@ -15,7 +15,7 @@ cd D:\DevBox
 .\scripts\up
 ```
 
-### WSL2 (توصیه شده)
+### WSL2 : (توصیه شده)
 
 ```bash
 cd ~/projects/DevBox
@@ -29,16 +29,19 @@ echo "WORKSPACE_PATH=$PWD" > .env
 
 ## گردش کار روزمره
 
-1. Docker Desktop را باز کنید
-2. کانتینر را بالا بیاورید: `.\scripts\up` (ویندوز) یا `./scripts/up` (WSL2)
-3. VS Code را باز کنید → Remote Explorer → Dev Containers
-4. داخل پوشه `/workspace` کار کنید
+1. ‏Docker Desktop را باز کنید
+2. ‏کانتینر را بالا بیاورید.
+3. ‏VS Code را باز کنید → Remote Explorer → Dev Containers
+4. داخل پوشه `workspace/` کار کنید
 
 ---
 
 ## اسکریپت‌های مدیریت
 
-این دستورات را مستقیماً در ترمینال VS Code تایپ کنید:
+پوشه `vscode.` در ریشه پروژه حاوی فایل تنظیمات و اسکریپتی است که دستورات کانتینر را در ترمینال یکپارچه VS Code ساده‌سازی می‌کند.
+
+با استفاده از این تنظیمات، به جای تایپ مسیرهای کاملی مانند `scripts\up\.`، توسعه‌دهندگان می‌توانند دستورات میانبری مانند `up`، `shell` و... را مستقیماً در ترمینال VS Code تایپ کنند.
+
 
 | دستور | کاربرد |
 |-------|--------|
@@ -52,9 +55,9 @@ echo "WORKSPACE_PATH=$PWD" > .env
 | `rebuild` | ساخت مجدد ایمیج |
 | `clean` | پاک کردن ایمیج و کانتینر |
 | `setup-deps` | راه‌اندازی خودکار دیتابیس و ابزارها |
-| `test-api` | ابزار تست API (Bruno) |
+| `test-api` | (Bruno) API ابزار تست |
 | `run` | اجرای دستور دلخواه داخل کانتینر |
-| `scan` | شناسایی نوع پروژه‌ها در workspace |
+| `scan` | workspace شناسایی نوع پروژه‌ها در  |
 
 ---
 
@@ -123,11 +126,11 @@ setup-deps /workspace
 
 | نوع پروژه | نحوه شناسایی | دیتابیس | ابزار گرافیکی |
 |----------|--------------|---------|--------------|
-| Laravel | فایل `artisan` | MySQL + Redis | phpMyAdmin |
-| Next.js | فایل `next.config*` | PostgreSQL | Adminer |
+| Laravel | `artisan` فایل | MySQL + Redis | phpMyAdmin |
+| Next.js | `next.config*` فایل | PostgreSQL | Adminer |
 | React | `react` در package.json | PostgreSQL | Adminer |
 | Python | `*.py` یا `requirements.txt` | PostgreSQL | Adminer |
-| Django | فایل `manage.py` | PostgreSQL + Redis | Adminer |
+| Django | `manage.py` فایل | PostgreSQL + Redis | Adminer |
 | Express | `express` در package.json | PostgreSQL + Redis | Adminer |
 
 ### اطلاعات اتصال (از داخل کانتینر)
@@ -151,12 +154,12 @@ redis-cli -h devbox-redis
 
 | دستور | کاربرد |
 |-------|--------|
-| `create mysql` | ایجاد و اجرای MySQL |
-| `create postgres` | ایجاد و اجرای PostgreSQL |
-| `create redis` | ایجاد و اجرای Redis |
-| `create mongo` | ایجاد و اجرای MongoDB |
-| `create mariadb` | ایجاد و اجرای MariaDB |
-| `create memcached` | ایجاد و اجرای Memcached |
+| `create mysql` | MySQL ایجاد و اجرای  |
+| `create postgres` | PostgreSQL ایجاد و اجرای |
+| `create redis` | Redis ایجاد و اجرای |
+| `create mongo` | MongoDB ایجاد و اجرای  |
+| `create mariadb` | MariaDB ایجاد و اجرای  |
+| `create memcached` | Memcached ایجاد و اجرای |
 
 ### مدیریت کانتینرها
 
@@ -193,10 +196,10 @@ redis-cli -h devbox-redis
 
 ## اتصال VS Code به کانتینر
 
-1. VS Code را باز کنید
-2. Remote Explorer → Dev Containers را انتخاب کنید
+1. ‏VS Code را باز کنید
+2. ‏Remote Explorer → Dev Containers را انتخاب کنید
 3. روی **"+"** کلیک کنید و مسیر پروژه را انتخاب کنید
-4. VS Code به صورت خودکار کانتینر را شناسایی و متصل می‌شود
+4. ‏VS Code به صورت خودکار کانتینر را شناسایی و متصل می‌شود
 
 ---
 

@@ -98,23 +98,23 @@ chmod +x scripts/*.sh
 ```
 DevBox_Lite/
 ├── docker/
-│   ├── app/              # فایل‌های ساخت Image
+│   ├── app/              # فایل‌های ساخت ایمیج
 │   │   ├── Dockerfile
 │   │   ├── .env          # ورژن ابزارها
 │   │   └── install/      # اسکریپت‌های نصب
 │   └── compose/          # Docker Compose + .env
 ├── scripts/              # اسکریپت‌های مدیریت
-├── docs/                 # مستندات (فارسی + انگلیسی)
+├── docs/                 # مستندات فارسی و انگلیسی
 ├── prebuilt/             # ایمیج‌های آماده برای آفلاین
 │   └── images/           # mysql-8.4.tar, postgres-17.tar, ...
 └── workspace/            # پوشه کاری پروژه‌ها
-    ├── data/bruno/       # کالکشن‌ها و تنظیمات Bruno
-    ├── laravel/          # پروژه Laravel
-    ├── next-js/          # پروژه Next.js
-    └── python/           # پروژه Python
+    ├── data/bruno/       # Bruno کالکشن‌ها و تنظیمات 
+    ├── laravel/          # پروژه لاراول
+    ├── next-js/          # پروژه نکست  
+    └── python/           # پروژه پایتون
 ```
 
-> **نکته:** پوشه `prebuilt/` در روت پروژه قرار دارد، نه داخل `workspace/`. ایمیج‌ها به صورت خودکار به کانتینر مانت می‌شوند.
+> **نکته:**  ایمیج های موجود در پوشه `prebuilt/` به صورت خودکار به کانتینر مانت می‌شوند.
 
 ---
 
@@ -176,7 +176,7 @@ pip install flask
 
 ```bash
 # از داخل کانتینر
-setup-deps /workspace
+setup-deps
 ```
 
 | نوع پروژه | دیتابیس | ابزار گرافیکی |

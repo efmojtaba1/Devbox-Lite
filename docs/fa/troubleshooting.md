@@ -94,7 +94,10 @@ docker system prune -a --volumes
 
 ### ‏VS Code به کانتینر وصل نمی‌شود
 
-1. ری‌استارت کانتینر: `.\scripts\restart`
+1. ری‌استارت کانتینر:
+```powershell
+.\scripts\restart
+```
 2. در VS Code: F1 → "Dev Containers: Reopen in Container"
 
 ### افزونه‌ها نصب نمی‌شوند
@@ -215,7 +218,7 @@ wsl --install
 
 **روش ۱: فعال‌سازی WSL Integration در Docker Desktop (توصیه شده)**
 
-1. Docker Desktop را باز کنید
+1. ‏Docker Desktop را باز کنید
 2. به Settings → Resources → WSL Integration بروید
 3. توزیع Ubuntu خود را فعال کنید
 4. روی "Apply & Restart" کلیک کنید
@@ -246,7 +249,7 @@ echo "WORKSPACE_PATH=$PWD" > .env
 ./scripts/shell
 ```
 
-### Permission Denied در WSL2
+### ‏Permission Denied در WSL2
 
 ```bash
 sudo chmod -R 777 ~/projects/DevBox
@@ -288,7 +291,7 @@ processors=4
 ```bash
 ssh-keygen -t ed25519 -C "your-email@example.com"
 ```
-Enter بزنید تا مسیر پیش‌فرض و بدون رمز عبور قبول شود.
+‏Enter بزنید تا مسیر پیش‌فرض و بدون رمز عبور قبول شود.
 
 **مرحله ۲: کپی کلید عمومی**
 ```bash
@@ -318,9 +321,9 @@ git clone git@github.com:efmojtaba1/DevBox.git
 **مرحله ۱: ساخت token**
 1. به https://github.com/settings/tokens بروید
 2. روی **"Generate new token (classic)"** کلیک کنید
-3. scopes را انتخاب کنید: `repo`، `read:org`
+3. ‏scopes را انتخاب کنید: `repo`، `read:org`
 4. روی **"Generate token"** کلیک کنید
-5. token را فوراً کپی کنید
+5. ‏token را فوراً کپی کنید
 
 **مرحله ۲: کلون با token**
 ```bash

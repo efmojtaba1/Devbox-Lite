@@ -4,6 +4,19 @@ source "$(dirname "$0")/../common.sh"
 
 log "Installing Python ${PYTHON_VERSION}"
 
+# Configure pip mirror (if PIP_MIRROR build arg is provided)
+if [ -n "$PIP_MIRROR" ]; then
+    mkdir -p /root/.config/pip
+    cat > /root/.config/pip/pip.conf << EOF
+[global]
+index-url = $PIP_MIRROR
+trusted-host = $(echo "$PIP_MIRROR" | sed 's|https\?://||' | sed 's|/.*||')
+EOF
+    echo "Using pip mirror: $PIP_MIRROR"
+else
+    echo "Using default PyPI"
+fi
+
 # Enable universe repository for python3-venv
 add-apt-repository universe -y 2>/dev/null || true
 apt-get update -qq

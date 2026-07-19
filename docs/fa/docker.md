@@ -2,22 +2,18 @@
 
 **[English](../en/docker.md)** | [بازگشت به خانه](../../README.md)
 
----
-
 ## مفاهیم پایه
 
 - **Image:** قالب سیستم‌عامل و ابزارهای نصب‌شده
-- **Container:** نمونه اجرا شده از Image
+- **Container:** نمونه اجرا شده از ایمیج
 - **Volume:** ذخیره دائمی داده‌ها
 - **Network:** ارتباط بین کانتینرها (devbox-network)
-
----
 
 ## مدیریت کانتینر
 
 ### بالا آوردن کانتینر
 
-**ویندوز:**
+‎**ویندوز:**
 ```powershell
 .\scripts\up
 ```
@@ -35,7 +31,7 @@ docker compose up -d
 
 ### توقف کانتینر
 
-**ویندوز:**
+‎**ویندوز:**
 ```powershell
 .\scripts\down
 ```
@@ -47,7 +43,7 @@ docker compose up -d
 
 ### ورود به ترمینال
 
-**ویندوز:**
+‎**ویندوز:**
 ```powershell
 .\scripts\shell
 ```
@@ -57,9 +53,8 @@ docker compose up -d
 ./scripts/shell
 ```
 
-### مشاهده لاگ‌ها
-
-**ویندوز:**
+## مشاهده لاگ‌ها
+‎**ویندوز:**
 ```powershell
 .\scripts\logs
 ```
@@ -71,7 +66,7 @@ docker compose up -d
 
 ### ری‌استارت
 
-**ویندوز:**
+‎**ویندوز:**
 ```powershell
 .\scripts\restart
 ```
@@ -83,7 +78,7 @@ docker compose up -d
 
 ### بررسی وضعیت
 
-**ویندوز:**
+‎**ویندوز:**
 ```powershell
 .\scripts\status
 ```
@@ -111,13 +106,13 @@ run php artisan serve
 scan
 ```
 
----
+
 
 ## دستورات Image
 
 ### ساخت ایمیج
 
-**ویندوز:**
+‎**ویندوز:**
 ```powershell
 .\scripts\build
 ```
@@ -129,7 +124,7 @@ scan
 
 ### ساخت مجدد (بدون کش)
 
-**ویندوز:**
+‎**ویندوز:**
 ```powershell
 .\scripts\rebuild
 ```
@@ -157,7 +152,7 @@ docker rmi devbox-lite
 
 ### پاک کردن کامل
 
-**ویندوز:**
+‎**ویندوز:**
 ```powershell
 .\scripts\clean
 ```
