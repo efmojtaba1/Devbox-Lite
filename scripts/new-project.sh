@@ -314,9 +314,14 @@ EOF
             fi
             ;;
         python)
+            # Check if venv exists and is usable (has python binary)
+            if [ -d "$project_dir/venv" ] && [ ! -f "$project_dir/venv/bin/python" ]; then
+                echo "[fix] venv broken, recreating..."
+                rm -rf "$project_dir/venv"
+            fi
             if [ ! -d "$project_dir/venv" ] && [ -f "$project_dir/requirements.txt" ]; then
                 echo "[install] venv + pip install..."
-                (cd "$project_dir" && python3 -m venv venv 2>/dev/null && . venv/bin/activate && pip install -r requirements.txt 2>/dev/null) || echo "[warn] python failed"
+                (cd "$project_dir" && python3 -m venv --without-pip venv 2>/dev/null && . venv/bin/activate && curl -sS https://bootstrap.pypa.io/get-pip.py | python3 2>/dev/null && pip install -r requirements.txt 2>/dev/null) || echo "[warn] python failed"
             else
                 echo "[skip] venv present"
             fi
@@ -379,13 +384,8 @@ EOF
     echo ""
     case "$TEMPLATE" in
         laravel)       echo "  serve" ;;
-        next-js|react) echo "  pnpm dev --host 0.0.0.0" ;;
-        python)
-            case "${FRAMEWORK:-}" in
-                *"FastAPI"*) echo "  . venv/bin/activate && uvicorn app:app --reload --host 0.0.0.0 --port 8000" ;;
-                *)           echo "  . venv/bin/activate && python app.py" ;;
-            esac
-            ;;
+        next-js|react) echo "  dev" ;;
+        python)        echo "  dev" ;;
     esac
     echo ""
 }
