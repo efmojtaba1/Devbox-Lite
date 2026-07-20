@@ -47,6 +47,7 @@ echo "WORKSPACE_PATH=$PWD" > .env
 |-------|--------|
 | `up` | بالا آوردن کانتینر |
 | `down` | توقف کانتینر |
+| `down-v` | توقف کانتینر + حذف volume ها |
 | `shell` | ورود به ترمینال کانتینر |
 | `logs` | مشاهده لاگ‌ها |
 | `restart` | ری‌استارت کانتینر |
@@ -107,6 +108,22 @@ python3 -m venv my-env
 source my-env/bin/activate
 pip install flask
 ```
+
+---
+
+## توقف و حذف Volume ها
+
+اگر نیاز به ریست کامل دارید (حذف تمام volume های named مثل `node_modules`، `vendor`، `bruno`):
+
+```powershell
+# ویندوز
+.\scripts\down-v
+
+# WSL2
+./scripts/down-v.sh
+```
+
+> **هشدار:** این دستور تمام volume های named را حذف می‌کند شامل کالکشن‌های Bruno، pnpm store و dependency های کش شده.
 
 ---
 

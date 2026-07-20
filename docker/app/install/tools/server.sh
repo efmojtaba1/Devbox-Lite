@@ -6,15 +6,9 @@ log "Installing Server Management Tools"
 
 set -e
 
-# Nginx
-echo "Installing Nginx..."
-apt-get install -y --no-install-recommends nginx
-
-# Supervisor
-echo "Installing Supervisor..."
-apt-get install -y --no-install-recommends supervisor
-
-apt-get clean && rm -rf /var/lib/apt/lists/*
+# Install Nginx and Supervisor in one apt call
+echo "Installing Nginx and Supervisor..."
+apt-get install -y --no-install-recommends nginx supervisor
 
 # PM2
 echo "Installing PM2..."

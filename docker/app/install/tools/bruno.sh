@@ -7,7 +7,7 @@ log "Installing Bruno API Client"
 set -e
 
 # Install dependencies (without novnc apt package - has broken deps)
-apt-get update -qq
+# NOTE: apt-get update is done once before all tools in Dockerfile stage
 apt-get install -y --no-install-recommends \
     libgtk-3-0 \
     libnotify4 \
@@ -57,7 +57,7 @@ fi
 dpkg -i /tmp/bruno.deb 2>/dev/null || apt-get install -f -y
 rm -f /tmp/bruno.deb
 
-apt-get clean && rm -rf /var/lib/apt/lists/*
+# NOTE: apt-get clean is done at stage end in cleanup.sh, not here
 
 # Create launcher script
 cat > /usr/local/bin/start-bruno << 'LAUNCHER'

@@ -32,15 +32,13 @@ services:
 
     volumes:
       - ${WORKSPACE_PATH:-../../}:/workspace:cached
+      - ${SCRIPTS_PATH:-../../scripts}:/scripts:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - bruno-config:/root/.config/bruno
       - bruno-collections:/root/bruno
       - pnpm-store:/root/.local/share/pnpm/store
-      # Performance: node_modules/vendor/venv on fast Docker volumes instead of slow Windows bind mount
-      - node-modules-laravel:/workspace/laravel/node_modules
-      - vendor-laravel:/workspace/laravel/vendor
-      - node-modules-nextjs:/workspace/next-js/node_modules
-      - venv-python:/workspace/python/venv
+      # Shared dependencies volume (node_modules/vendor/venv stored here)
+      - devbox-deps:/workspace/.deps
 
     environment:
       TZ: ${TZ:-Asia/Tehran}
@@ -54,9 +52,6 @@ networks:
 
 volumes:
   pnpm-store:
-  node-modules-laravel:
-  vendor-laravel:
-  node-modules-nextjs:
-  venv-python:
+  devbox-deps:
   bruno-config:
   bruno-collections:

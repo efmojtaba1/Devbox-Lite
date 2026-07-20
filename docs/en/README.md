@@ -1,25 +1,25 @@
 # DevBox Lite
 
-**[فارسی](../fa/README.md)** | [بازگشت به خانه](../../README.md)
+**[فارسی](../fa/README.md)** | [Back to Home](../../README.md)
 
-سبک، ایزوله، و آماده کار — محیط توسعه‌ای مبتنی بر Docker + Ubuntu 24.04 که برای پروژه‌های **Laravel، Next.js، React و Python** طراحی شده.
-
----
-
-## چرا DevBox Lite؟
-
-- **سبک و سریع:** حجم ایمیج حدود ۱ گیگابایت
-- **پشتیبانی آفلاین:** دیتابیس‌ها و ابزارها بدون نیاز به اینترنت
-- **ابزارهای کامل:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
-- **مدیریت دیتابیس:** MySQL, PostgreSQL, Redis + محیط گرافیکی (phpMyAdmin, Adminer)
-- **تست API:** Bruno (کاملاً آفلاین)
+Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development environment built for **Laravel, Next.js, React, and Python** projects.
 
 ---
 
-## ابزارهای موجود
+## Why DevBox Lite?
 
-| دسته | ابزارها |
-|------|---------|
+- **Lightweight & Fast:** Image size ~1 GB
+- **Offline Support:** Databases and tools work without internet
+- **Complete Tools:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
+- **Database Management:** MySQL, PostgreSQL, Redis + GUI tools (phpMyAdmin, Adminer)
+- **API Testing:** Bruno (fully offline)
+
+---
+
+## Available Tools
+
+| Category | Tools |
+|----------|-------|
 | **PHP** | PHP 8.4 + Composer + Laravel Installer + Xdebug + Pest |
 | **Node.js** | Node.js 22 + pnpm + npm + Bun |
 | **Python** | Python 3.12 + pip + pipx + Jupyter + poetry + black + ruff + pytest |
@@ -30,14 +30,14 @@
 
 ---
 
-## شروع سریع
+## Quick Start
 
-### پیش‌نیازها
+### Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) نصب و اجرا شده باشد
-- [VS Code](https://code.visualstudio.com/) با افزونه [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
+- [VS Code](https://code.visualstudio.com/) with [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension
 
-### راه‌اندازی در ویندوز
+### Windows Setup
 
 ```powershell
 git clone https://github.com/efmojtaba1/DevBox.git D:\DevBox
@@ -46,25 +46,25 @@ cd D:\DevBox
 .\scripts\up
 ```
 
-سپس VS Code را باز کنید و از طریق Remote Explorer → Dev Containers به کانتینر وصل شوید.
+Then open VS Code and connect to the container via Remote Explorer → Dev Containers.
 
-### راه‌اندازی در WSL2 (توصیه شده)
+### WSL2 Setup (Recommended)
 
-> **چرا WSL2؟** عملیات فایل در Docker Desktop حدود ۱۰-۲۰ برابر کندتر از فایل‌سیستم بومی WSL2 است. برای توسعه جدی، WSL2 به شدت توصیه می‌شود.
+> **Why WSL2?** File operations in Docker Desktop are 10-20x slower than native WSL2 filesystem. For serious development, WSL2 is strongly recommended.
 
 ```bash
-# ۱. نصب WSL2 (PowerShell به عنوان Administrator)
+# 1. Install WSL2 (PowerShell as Administrator)
 wsl --install
-# ری‌استارت کامپیوتر
+# Restart computer
 
-# ۲. نصب Docker در Ubuntu
+# 2. Install Docker in Ubuntu
 sudo apt update && sudo apt install -y docker.io docker-compose-v2
 sudo usermod -aG docker $USER && newgrp docker
 
-# ۳. فعال‌سازی Docker Desktop
-# Docker Desktop → Settings → WSL Integration → Ubuntu را فعال کنید
+# 3. Enable Docker Desktop
+# Docker Desktop → Settings → WSL Integration → Enable Ubuntu
 
-# ۴. کلون و راه‌اندازی
+# 4. Clone and setup
 mkdir -p ~/projects && cd ~/projects
 git clone git@github.com:efmojtaba1/DevBox.git && cd DevBox
 echo "WORKSPACE_PATH=$PWD" > .env
@@ -72,57 +72,58 @@ chmod +x scripts/*.sh
 ./scripts/build.sh && ./scripts/up.sh && ./scripts/shell.sh
 ```
 
-### دستورات کوتاه (اختیاری)
+### Short Commands (Optional)
 
 ```bash
 ./scripts/setup-aliases.sh && source ~/.bashrc
 ```
 
-حالا می‌توانید از این دستورات استفاده کنید:
+Now you can use these commands:
 
-| دستور | کاربرد |
-|-------|--------|
-| `up` | بالا آوردن کانتینر |
-| `down` | توقف کانتینر |
-| `shell` | ورود به ترمینال کانتینر |
-| `build` | ساخت ایمیج |
-| `rebuild` | ساخت مجدد ایمیج |
-| `logs` | مشاهده لاگ‌ها |
-| `status` | بررسی وضعیت |
-| `setup-deps` | راه‌اندازی خودکار دیتابیس و ابزارها |
+| Command | Description |
+|---------|-------------|
+| `up` | Start the container |
+| `down` | Stop the container |
+| `down-v` | Stop container and remove volumes |
+| `shell` | Open container terminal |
+| `build` | Build the image |
+| `rebuild` | Rebuild the image |
+| `logs` | View logs |
+| `status` | Check status |
+| `setup-deps` | Auto-setup databases and tools |
 
 ---
 
-## ساختار پوشه‌بندی
+## Folder Structure
 
 ```
 DevBox_Lite/
 ├── docker/
-│   ├── app/              # فایل‌های ساخت Image
+│   ├── app/              # Image build files
 │   │   ├── Dockerfile
-│   │   ├── .env          # ورژن ابزارها
-│   │   └── install/      # اسکریپت‌های نصب
+│   │   ├── .env          # Tool versions
+│   │   └── install/      # Install scripts
 │   └── compose/          # Docker Compose + .env
-├── scripts/              # اسکریپت‌های مدیریت
-├── docs/                 # مستندات (فارسی + انگلیسی)
-├── prebuilt/             # ایمیج‌های آماده برای آفلاین
+├── scripts/              # Management scripts
+├── docs/                 # Documentation (Farsi + English)
+├── prebuilt/             # Offline-ready images
 │   └── images/           # mysql-8.4.tar, postgres-17.tar, ...
-└── workspace/            # پوشه کاری پروژه‌ها
-    ├── data/bruno/       # کالکشن‌ها و تنظیمات Bruno
-    ├── laravel/          # پروژه Laravel
-    ├── next-js/          # پروژه Next.js
-    └── python/           # پروژه Python
+└── workspace/            # Project workspace
+    ├── data/bruno/       # Bruno collections and config
+    ├── laravel/          # Laravel project
+    ├── next-js/          # Next.js project
+    └── python/           # Python project
 ```
 
-> **نکته:** پوشه `prebuilt/` در روت پروژه قرار دارد، نه داخل `workspace/`. ایمیج‌ها به صورت خودکار به کانتینر مانت می‌شوند.
+> **Note:** The `prebuilt/` folder is in the project root, not inside `workspace/`. Images are automatically mounted to the container.
 
 ---
 
-## ساخت پروژه جدید
+## Creating New Projects
 
-> **نکته مهم:** تمام دستورات توسعه (python, pnpm, composer, php و...) **داخل کانتینر** اجرا می‌شوند.
+> **Important:** All development commands (python, pnpm, composer, php, etc.) run **inside the container**.
 
-### روش سریع: `run` (دستورات تکی)
+### Quick Method: `run` (Single Commands)
 
 ```powershell
 run laravel new my-app
@@ -130,11 +131,11 @@ run pnpm create next-app my-app
 run python3 -m venv my-env
 ```
 
-### روش تعاملی: `shell` (ترمینال)
+### Interactive Method: `shell` (Terminal)
 
 ```powershell
 shell
-# حالا داخل کانتینر:
+# Now inside the container:
 cd /workspace
 ```
 
@@ -167,38 +168,38 @@ pip install flask
 
 ---
 
-## راه‌اندازی خودکار دیتابیس‌ها
+## Auto-Setup Databases
 
-اسکریپت `setup-deps` به صورت خودکار نوع پروژه‌ها را شناسایی و دیتابیس و ابزار گرافیکی مورد نیاز را راه‌اندازی می‌کند:
+The `setup-deps` script automatically detects project types and starts required databases and GUI tools:
 
 ```bash
-# از داخل کانتینر
+# Inside the container
 setup-deps /workspace
 ```
 
-| نوع پروژه | دیتابیس | ابزار گرافیکی |
-|----------|---------|--------------|
+| Project Type | Database | GUI Tool |
+|--------------|----------|----------|
 | Laravel | MySQL + Redis | phpMyAdmin |
 | Next.js / React | PostgreSQL | Adminer |
 | Python | PostgreSQL | Adminer |
 
 ---
 
-## مستندات
+## Documentation
 
-| مستند | توضیحات |
-|-------|---------|
-| [راهنمای استفاده](usage.md) | گردش کار روزمره و دستورات کاربردی |
-| [مرجع Docker](docker.md) | دستورات کامل Docker |
-| [عیب‌یابی](troubleshooting.md) | رفع اشکال و خطاهای متداول |
-| [راهنمای توسعه](development.md) | توسعه و نگهداری DevBox |
-
----
-
-## لایسنس
-
-این پروژه تحت لایسنس [LICENSE](../../LICENSE) است.
+| Document | Description |
+|----------|-------------|
+| [Usage Guide](usage.md) | Daily workflow and useful commands |
+| [Docker Reference](docker.md) | Complete Docker commands |
+| [Troubleshooting](troubleshooting.md) | Common issues and fixes |
+| [Development Guide](development.md) | DevBox development and maintenance |
 
 ---
 
-**ورژن فعلی:** lite-1.0.0
+## License
+
+This project is under [LICENSE](../../LICENSE).
+
+---
+
+**Current Version:** lite-1.0.0

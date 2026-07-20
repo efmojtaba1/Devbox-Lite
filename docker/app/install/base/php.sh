@@ -30,7 +30,7 @@ apt-get install -y --no-install-recommends \
     php${PHP_VERSION}-readline \
     php${PHP_VERSION}-opcache
 
-apt-get clean && rm -rf /var/lib/apt/lists/*
+# NOTE: apt-get clean is done at stage end in cleanup.sh, not here
 
 echo "PHP ${PHP_VERSION} installed successfully."
 

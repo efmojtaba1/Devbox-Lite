@@ -199,6 +199,10 @@ setup_template() {
     echo "Setting up: $template"
     echo "========================================="
 
+    # Create .deps structure for this project if it doesn't exist
+    local deps_dir="/workspace/.deps"
+    mkdir -p "$deps_dir"
+
     start_deps "$dbs" "$guis"
 }
 

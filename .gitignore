@@ -26,6 +26,7 @@ backups/*
 *.exe
 .mimocode
 prebuilt
+MEMORY.md
 
 # Python virtual environments
 my-env/

@@ -28,19 +28,19 @@ Write-Host ""
 Write-Host "========================================="
 Write-Host "Select APT Mirror:"
 Write-Host "========================================="
-Write-Host "  1) Iran Mirror (ir.archive.ubuntu.com) [default]"
-Write-Host "  2) ArvanCloud Mirror (mirror.arvancloud.ir)"
+Write-Host "  1) ArvanCloud (mirror.arvancloud.ir) [default - fastest]"
+Write-Host "  2) Iran Official (ir.archive.ubuntu.com)"
 Write-Host "  3) Default Ubuntu Mirrors"
 Write-Host "  4) Custom URL"
 Write-Host ""
 $mirrorChoice = Read-Host "Enter choice (1-4) [1]"
 
 $APT_MIRROR = switch ($mirrorChoice) {
-    "1" { "http://ir.archive.ubuntu.com/ubuntu" }
-    "2" { "https://mirror.arvancloud.ir/ubuntu" }
+    "1" { "https://mirror.arvancloud.ir/ubuntu" }
+    "2" { "http://ir.archive.ubuntu.com/ubuntu" }
     "3" { "" }
     "4" { Read-Host "Enter mirror URL" }
-    default { "http://ir.archive.ubuntu.com/ubuntu" }
+    default { "https://mirror.arvancloud.ir/ubuntu" }
 }
 
 if ($APT_MIRROR) {
@@ -51,41 +51,14 @@ if ($APT_MIRROR) {
     Write-Host "Using default Ubuntu mirrors"
 }
 
+# Auto-select best pip mirror (PyPI default is fastest from Iran)
 Write-Host ""
-
-# Pip mirror selection
-Write-Host "========================================="
-Write-Host "Select Pip Mirror:"
-Write-Host "========================================="
-Write-Host "  1) Aliyun Mirror (mirrors.aliyun.com) [default]"
-Write-Host "  2) Tsinghua Mirror (pypi.tuna.tsinghua.edu.cn)"
-Write-Host "  3) Default PyPI"
-Write-Host "  4) Custom URL"
-Write-Host ""
-$pipChoice = Read-Host "Enter choice (1-4) [1]"
-
-$PIP_MIRROR = switch ($pipChoice) {
-    "1" { "https://mirrors.aliyun.com/pypi/simple/" }
-    "2" { "https://pypi.tuna.tsinghua.edu.cn/simple/" }
-    "3" { "" }
-    "4" { Read-Host "Enter mirror URL" }
-    default { "https://mirrors.aliyun.com/pypi/simple/" }
-}
-
-if ($PIP_MIRROR) {
-    Write-Host ""
-    Write-Host "Using pip mirror: $PIP_MIRROR"
-} else {
-    Write-Host ""
-    Write-Host "Using default PyPI"
-}
-
+Write-Host "Using pip mirror: Default PyPI (pypi.org) - fastest from Iran"
 Write-Host ""
 
 # Build with mirror args
 $buildArgs = @()
 if ($APT_MIRROR) { $buildArgs += "--build-arg"; $buildArgs += "APT_MIRROR=$APT_MIRROR" }
-if ($PIP_MIRROR) { $buildArgs += "--build-arg"; $buildArgs += "PIP_MIRROR=$PIP_MIRROR" }
 
 docker build @buildArgs -t $ImageName -f $DockerFile $BuildContext
 

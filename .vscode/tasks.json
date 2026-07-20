@@ -1,0 +1,125 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "DevBox: Up",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/up.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/up.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "new" }
+        },
+        {
+            "label": "DevBox: Down",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/down.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/down.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "new" }
+        },
+        {
+            "label": "DevBox: Down -v (remove volumes)",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/down-v.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/down-v.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "new" }
+        },
+        {
+            "label": "DevBox: Shell",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/shell.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/shell.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "dedicated" }
+        },
+        {
+            "label": "DevBox: Build",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/build.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/build.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "new" }
+        },
+        {
+            "label": "DevBox: Rebuild",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/rebuild.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/rebuild.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "new" }
+        },
+        {
+            "label": "DevBox: Status",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/status.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/status.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "silent", "panel": "shared" }
+        },
+        {
+            "label": "DevBox: Logs",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/logs.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/logs.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "dedicated" }
+        },
+        {
+            "label": "DevBox: Clean",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/clean.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/clean.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "new" }
+        },
+        {
+            "label": "DevBox: Setup Deps",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/setup-deps.sh"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-File", "scripts/setup-deps.ps1"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "new" }
+        }
+    ]
+}

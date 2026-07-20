@@ -41,6 +41,20 @@ docker compose up -d
 ./scripts/down
 ```
 
+### توقف و حذف Volume ها
+
+‎**ویندوز:**
+```powershell
+.\scripts\down-v
+```
+
+**WSL2:**
+```bash
+./scripts/down-v.sh
+```
+
+> **هشدار:** این دستور تمام volume های named را حذف می‌کند شامل کالکشن‌های Bruno، pnpm store و dependency های کش شده.
+
 ### ورود به ترمینال
 
 ‎**ویندوز:**
@@ -186,6 +200,17 @@ test-api bruno
 1. کالکشن‌ها را در Bruno بسازید → خروجی JSON بگیرید
 2. کالکشن‌ها در `workspace/data/bruno/collections/` ذخیره می‌شوند
 3. کالکشن‌ها بدون اینترنت کار می‌کنند
+
+### Volume های Bruno
+
+Bruno از volume های named Docker برای ذخیره‌سازی استفاده می‌کند:
+- `bruno-config` → `/root/.config/bruno` (تنظیمات Electron)
+- `bruno-collections` → `/root/bruno` (کالکشن‌های API)
+
+برای پشتیبان‌گیری از داده‌های Bruno:
+```bash
+docker run --rm -v devbox_bruno-collections:/data:ro alpine tar czf /backup/bruno-collections.tar.gz -C /data .
+```
 
 ---
 

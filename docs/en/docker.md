@@ -45,6 +45,20 @@ docker compose up -d
 ./scripts/down
 ```
 
+### Stop and Remove Volumes
+
+**Windows:**
+```powershell
+.\scripts\down-v
+```
+
+**WSL2:**
+```bash
+./scripts/down-v.sh
+```
+
+> **Warning:** This removes ALL named volumes including Bruno collections, pnpm store, and cached dependencies.
+
 ### Open Terminal
 
 **Windows:**
@@ -191,6 +205,17 @@ Address: http://localhost:6080
 1. Create collections in Bruno → export as JSON
 2. Collections are saved to `workspace/data/bruno/collections/`
 3. Collections work without internet
+
+### Named Volumes
+
+Bruno uses named Docker volumes for persistence:
+- `bruno-config` → `/root/.config/bruno` (Electron preferences)
+- `bruno-collections` → `/root/bruno` (API collections)
+
+To backup Bruno data:
+```bash
+docker run --rm -v devbox_bruno-collections:/data:ro alpine tar czf /backup/bruno-collections.tar.gz -C /data .
+```
 
 ---
 

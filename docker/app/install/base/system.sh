@@ -31,6 +31,6 @@ apt-get install -y --no-install-recommends \
     software-properties-common \
     build-essential
 
-apt-get clean && rm -rf /var/lib/apt/lists/*
+# NOTE: apt-get clean is done at stage end in cleanup.sh, not here
 
 echo "System tools installed successfully."

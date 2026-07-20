@@ -6,6 +6,7 @@ $DevBoxRoot = (Get-Item $PSScriptRoot).Parent.FullName
 # Define functions dynamically based on project path
 function up { & "$DevBoxRoot\scripts\up.ps1" }
 function down { & "$DevBoxRoot\scripts\down.ps1" }
+function down-v { & "$DevBoxRoot\scripts\down-v.ps1" }
 function shell { & "$DevBoxRoot\scripts\shell.ps1" }
 function logs { & "$DevBoxRoot\scripts\logs.ps1" }
 function restart { & "$DevBoxRoot\scripts\restart.ps1" }
@@ -21,7 +22,7 @@ function run { & "$DevBoxRoot\scripts\run.ps1" $args }
 function setup-deps {
     . "$DevBoxRoot\scripts\common.ps1"
     Show-Header "Setting up Dependencies"
-    docker exec -it $ContainerName bash -c "/workspace/scripts/setup-deps.sh $args"
+    docker exec -it $ContainerName bash -c "/scripts/setup-deps.sh $args"
 }
 
 # Clear terminal and show welcome message
@@ -29,7 +30,7 @@ Clear-Host
 Write-Host "DevBox Environment Loaded!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Commands:" -ForegroundColor Cyan
-Write-Host "  up, down, shell, logs, restart, status" -ForegroundColor White
+Write-Host "  up, down, down-v, shell, logs, restart, status" -ForegroundColor White
 Write-Host "  build, rebuild, clean" -ForegroundColor White
 Write-Host "  scan, setup-deps, test-api, run" -ForegroundColor White
 Write-Host "  backup, restore" -ForegroundColor White

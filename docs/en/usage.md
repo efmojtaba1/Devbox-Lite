@@ -44,6 +44,7 @@ Use these commands directly in VS Code terminal:
 |---------|-------------|
 | `up` | Start the container |
 | `down` | Stop the container |
+| `down-v` | Stop container and remove all volumes |
 | `shell` | Open container terminal |
 | `logs` | View logs |
 | `restart` | Restart the container |
@@ -104,6 +105,22 @@ python3 -m venv my-env
 source my-env/bin/activate
 pip install flask
 ```
+
+---
+
+## Stop and Remove Volumes
+
+If you need to completely reset (remove all named volumes like `node_modules`, `vendor`, `bruno`):
+
+```powershell
+# Windows
+.\scripts\down-v
+
+# WSL2
+./scripts/down-v.sh
+```
+
+> **Warning:** This removes ALL named volumes including Bruno collections, pnpm store, and cached dependencies.
 
 ---
 

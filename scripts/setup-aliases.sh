@@ -9,6 +9,7 @@ ALIASES="
 # DevBox Lite aliases
 alias up='cd $PROJECT_ROOT && ./scripts/devbox.sh up'
 alias down='cd $PROJECT_ROOT && ./scripts/devbox.sh down'
+alias down-v='cd $PROJECT_ROOT && ./scripts/down-v.sh'
 alias shell='cd $PROJECT_ROOT && ./scripts/devbox.sh shell'
 alias build='cd $PROJECT_ROOT && ./scripts/devbox.sh build'
 alias rebuild='cd $PROJECT_ROOT && ./scripts/devbox.sh rebuild'
@@ -27,5 +28,5 @@ else
     echo "✓ DevBox aliases added to ~/.bashrc"
     echo ""
     echo "Run 'source ~/.bashrc' or open a new terminal to use:"
-    echo "  up, down, shell, build, rebuild, logs, restart, status, clean, setup-deps"
+    echo "  up, down, down-v, shell, build, rebuild, logs, restart, status, clean, setup-deps"
 fi

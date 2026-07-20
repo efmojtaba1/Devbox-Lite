@@ -260,6 +260,45 @@ docker volume rm devbox_workspace
 
 ---
 
+### Laravel Project Creation Fails Silently
+
+If `laravel new` shows prompts but exits immediately after "Creating Laravel application...":
+
+**Cause:** Old named volumes (`devbox_vendor-laravel`, `devbox_node-modules-laravel`) from a previous project are interfering.
+
+**Fix:**
+
+```powershell
+# Stop container and remove volumes
+.\scripts\down-v
+
+# Start fresh
+.\scripts\up
+
+# Now create your project
+.\scripts\shell
+# Inside container:
+laravel new my-app
+```
+
+---
+
+### Named Volumes Stale After Project Delete
+
+When you delete a project folder, the associated named volumes remain. To clean them up:
+
+```powershell
+# List all devbox volumes
+docker volume ls | findstr devbox
+
+# Remove specific volumes (stop container first)
+.\scripts\down-v
+docker volume rm devbox_vendor-laravel devbox_node-modules-laravel
+.\scripts\up
+```
+
+---
+
 ## Docker Desktop Won't Start
 
 ```powershell

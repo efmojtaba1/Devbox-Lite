@@ -30,21 +30,21 @@ echo ""
 echo "========================================="
 echo "Select APT Mirror:"
 echo "========================================="
-echo "  1) Iran Mirror (ir.archive.ubuntu.com) [default]"
-echo "  2) ArvanCloud Mirror (mirror.arvancloud.ir)"
+echo "  1) ArvanCloud (mirror.arvancloud.ir) [default - fastest]"
+echo "  2) Iran Official (ir.archive.ubuntu.com)"
 echo "  3) Default Ubuntu Mirrors"
 echo "  4) Custom URL"
 echo ""
 read -r -p "Enter choice (1-4) [1]: " mirror_choice
 
 case "${mirror_choice:-1}" in
-    1) APT_MIRROR="http://ir.archive.ubuntu.com/ubuntu" ;;
-    2) APT_MIRROR="https://mirror.arvancloud.ir/ubuntu" ;;
+    1) APT_MIRROR="https://mirror.arvancloud.ir/ubuntu" ;;
+    2) APT_MIRROR="http://ir.archive.ubuntu.com/ubuntu" ;;
     3) APT_MIRROR="" ;;
     4)
         read -r -p "Enter mirror URL: " APT_MIRROR
         ;;
-    *) APT_MIRROR="http://ir.archive.ubuntu.com/ubuntu" ;;
+    *) APT_MIRROR="https://mirror.arvancloud.ir/ubuntu" ;;
 esac
 
 if [ -n "$APT_MIRROR" ]; then
@@ -55,46 +55,15 @@ else
     echo "Using default Ubuntu mirrors"
 fi
 
-echo ""
-
-# Pip mirror selection
-echo "========================================="
-echo "Select Pip Mirror:"
-echo "========================================="
-echo "  1) Aliyun Mirror (mirrors.aliyun.com) [default]"
-echo "  2) Tsinghua Mirror (pypi.tuna.tsinghua.edu.cn)"
-echo "  3) Default PyPI"
-echo "  4) Custom URL"
-echo ""
-read -r -p "Enter choice (1-4) [1]: " pip_choice
-
-case "${pip_choice:-1}" in
-    1) PIP_MIRROR="https://mirrors.aliyun.com/pypi/simple/" ;;
-    2) PIP_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple/" ;;
-    3) PIP_MIRROR="" ;;
-    4)
-        read -r -p "Enter mirror URL: " PIP_MIRROR
-        ;;
-    *) PIP_MIRROR="https://mirrors.aliyun.com/pypi/simple/" ;;
-esac
-
-if [ -n "$PIP_MIRROR" ]; then
-    echo ""
-    echo "Using pip mirror: $PIP_MIRROR"
-else
-    echo ""
-    echo "Using default PyPI"
-fi
-
+# Auto-select best pip mirror (PyPI default is fastest from Iran)
+PIP_MIRROR=""
+echo "Using pip mirror: Default PyPI (pypi.org) - fastest from Iran"
 echo ""
 
 # Build with mirror args
 BUILD_ARGS=""
 if [ -n "$APT_MIRROR" ]; then
     BUILD_ARGS="$BUILD_ARGS --build-arg APT_MIRROR=$APT_MIRROR"
-fi
-if [ -n "$PIP_MIRROR" ]; then
-    BUILD_ARGS="$BUILD_ARGS --build-arg PIP_MIRROR=$PIP_MIRROR"
 fi
 
 docker build $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT"

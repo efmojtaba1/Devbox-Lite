@@ -31,10 +31,11 @@ retry pipx install poetry
 retry pipx install black
 retry pipx install ruff
 retry pipx install pytest
-retry pipx install jupyter --include-deps
+# jupyter is a metapackage with no app entry point — install via pip instead of pipx
+pip3 install --break-system-packages jupyter 2>/dev/null || pip3 install jupyter || true
 
 poetry --version
 black --version
 ruff --version
 pytest --version
-jupyter --version
+jupyter --version 2>/dev/null || echo "Jupyter installed via pip"

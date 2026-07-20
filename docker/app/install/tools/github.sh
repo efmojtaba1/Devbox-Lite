@@ -15,6 +15,7 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githu
 apt-get update -qq
 apt-get install -y --no-install-recommends gh
 
-apt-get clean && rm -rf /var/lib/apt/lists/*
+# Remove apt source after install (no longer needed)
+rm -f /etc/apt/sources.list.d/github-cli.list
 
 gh --version

@@ -4,8 +4,11 @@ source "$(dirname "$0")/common.sh"
 
 log "Cleaning up"
 
-# Remove apt cache and lists
+# Remove build-essential (only needed during compilation, not at runtime)
+apt-get purge -y build-essential gcc g++ make 2>/dev/null || true
 apt-get autoremove -y
+
+# Remove apt cache and lists
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 

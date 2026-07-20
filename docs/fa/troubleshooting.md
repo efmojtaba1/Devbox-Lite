@@ -184,12 +184,46 @@ docker compose exec devbox-lite chmod -R 777 /workspace
 اگر مشکل ادامه داشت:
 
 ```powershell
-.\scripts\down
+.\scripts\down-v
+.\scripts\up
 ```
+
+---
+
+### ساخت پروژه Laravel با خاموشی مواجه می‌شود
+
+اگر `laravel new` پرامپت‌ها را نمایش می‌دهد اما بلافاصله پس از "Creating Laravel application..." خارج می‌شود:
+
+**علت:** Volume های named قدیمی (`devbox_vendor-laravel`، `devbox_node-modules-laravel`) از پروژه قبلی باقی مانده‌اند.
+
+**راه‌حل:**
+
 ```powershell
-docker volume rm devbox_workspace
+# توقف کانتینر و حذف volume ها
+.\scripts\down-v
+
+# شروع مجدد
+.\scripts\up
+
+# حالا پروژه خود را بسازید
+.\scripts\shell
+# داخل کانتینر:
+laravel new my-app
 ```
+
+---
+
+### Volume های قدیمی پس از حذف پروژه
+
+وقتی پوشه پروژه را حذف می‌کنید، volume های مرتبط باقی می‌مانند. برای پاک کردن آنها:
+
 ```powershell
+# لیست تمام volume های devbox
+docker volume ls | findstr devbox
+
+# حذف volume های خاص (اول کانتینر را متوقف کنید)
+.\scripts\down-v
+docker volume rm devbox_vendor-laravel devbox_node-modules-laravel
 .\scripts\up
 ```
 ---
