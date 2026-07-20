@@ -269,6 +269,10 @@ export default function App() {
     <button onClick={()=>setCount(count+1)}>Increment</button></div>)
 }
 EOF
+                cat > "$project_dir/.gitignore" << 'EOF'
+node_modules
+dist
+EOF
                 ;;
         esac
     fi
