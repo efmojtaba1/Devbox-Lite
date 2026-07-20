@@ -8,11 +8,15 @@ docker compose `
 
 Test-Result "DevBox Lite container started." "Failed to start DevBox Lite container."
 
-# Check if example templates are initialized
-Start-Sleep -Seconds 3
-$check = docker exec $ContainerName bash -c "test -d /example-data/laravel" 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
+# Check if example templates are initialized (wait for container to be ready)
+Write-Host ""
+$initialized = $false
+for ($i = 1; $i -le 5; $i++) {
+    Start-Sleep -Seconds 3
+    docker exec $ContainerName bash -c "test -d /example-data/laravel" 2>$null
+    if ($LASTEXITCODE -eq 0) { $initialized = $true; break }
+}
+if (-not $initialized) {
     Write-Host "Example templates not found. Initializing..."
     docker exec $ContainerName bash -c "/scripts/init-example.sh" 2>$null
     if ($LASTEXITCODE -ne 0) {

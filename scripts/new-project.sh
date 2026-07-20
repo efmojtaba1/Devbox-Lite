@@ -243,7 +243,10 @@ EOF
                 cat > "$project_dir/vite.config.js" << 'EOF'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-export default defineConfig({ plugins: [react()] })
+export default defineConfig({
+  plugins: [react()],
+  server: { host: '0.0.0.0', port: 5173 },
+})
 EOF
                 cat > "$project_dir/index.html" << 'EOF'
 <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
