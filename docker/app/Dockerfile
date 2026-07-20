@@ -189,7 +189,7 @@ RUN echo '' >> /root/.bashrc && \
     echo 'new-project() { /workspace/scripts/new-project.sh "$@"; }' >> /root/.bashrc && \
     echo '' >> /root/.bashrc && \
     echo '# Python shortcuts' >> /root/.bashrc && \
-    echo 'dev() { if grep -q "FastAPI" app.py 2>/dev/null; then . venv/bin/activate 2>/dev/null && uvicorn app:app --reload --host 0.0.0.0 --port="${1:-8000}"; elif [ -f requirements.txt ]; then . venv/bin/activate 2>/dev/null && python app.py; else echo "No requirements.txt or app.py found."; fi; }' >> /root/.bashrc
+    echo 'dev() { if [ ! -f app.py ]; then echo "app.py not found."; return 1; fi; if grep -q "FastAPI" app.py 2>/dev/null; then . venv/bin/activate 2>/dev/null && uvicorn app:app --reload --host 0.0.0.0 --port="${1:-8000}"; else . venv/bin/activate 2>/dev/null && python app.py; fi; }' >> /root/.bashrc
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
