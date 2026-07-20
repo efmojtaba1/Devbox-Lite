@@ -9,6 +9,13 @@ case "${1:-help}" in
         Show-Header "Starting DevBox Lite"
         docker compose -f "$COMPOSE_FILE" up -d
         Test-Result "DevBox Lite started. Use 'devbox shell' to enter." "Failed to start DevBox Lite."
+        # Check if example templates are initialized
+        sleep 3
+        if ! docker exec "$CONTAINER_NAME" bash -c "test -d /example-data/laravel" 2>/dev/null; then
+            echo "Example templates not found. Initializing..."
+            docker exec "$CONTAINER_NAME" bash -c "/scripts/init-example.sh" 2>/dev/null || \
+                echo "[warn] init-example failed. Run 'devbox init-example' manually."
+        fi
         ;;
     down|stop)
         Show-Header "Stopping DevBox Lite"
