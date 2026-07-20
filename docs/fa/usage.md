@@ -176,7 +176,20 @@ pnpm dev
 python3 -m venv my-env
 source my-env/bin/activate
 pip install flask
+python app.py
 ```
+
+### اجرای پروژه‌ها
+
+بعد از ایجاد پروژه، سرور dev را بالا بیاورید:
+
+| فریمورک | دستور | آدرس |
+|---------|-------|------|
+| Laravel | `serve` | http://localhost:8000 |
+| Next.js | `pnpm dev` | http://localhost:3000 |
+| React | `pnpm dev` | http://localhost:5173 |
+| Python (Flask) | `. venv/bin/activate && python app.py` | http://localhost:5000 |
+| Python (FastAPI) | `. venv/bin/activate && uvicorn app:app --reload --host 0.0.0.0 --port 8000` | http://localhost:8000 |
 
 ---
 
