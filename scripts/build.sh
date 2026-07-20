@@ -94,6 +94,6 @@ rm -rf "$BUILD_CONTEXT/example" 2>/dev/null
 echo ""
 Show-Header "Initializing Example Templates"
 docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null
-sleep 3
-docker exec "$CONTAINER_NAME" bash -c "/scripts/init-example.sh" 2>/dev/null || \
+sleep 5
+docker exec "$CONTAINER_NAME" bash -c "/scripts/init-example.sh" || \
     echo "[warn] init-example failed. Run 'devbox init-example' manually."
