@@ -90,7 +90,11 @@ Now you can use these commands:
 | `rebuild` | Rebuild the image |
 | `logs` | View logs |
 | `status` | Check status |
+| `new-project` | Create new project (interactive, offline-first) |
 | `setup-deps` | Auto-setup databases and tools |
+| `init-example` | Initialize example templates (one-time after rebuild) |
+| `setup-example` | Verify example templates |
+| `refresh-example` | Update examples to latest versions |
 
 ---
 
@@ -101,18 +105,18 @@ DevBox_Lite/
 ├── docker/
 │   ├── app/              # Image build files
 │   │   ├── Dockerfile
-│   │   ├── .env          # Tool versions
 │   │   └── install/      # Install scripts
-│   └── compose/          # Docker Compose + .env
+│   └── compose/          # Docker Compose
 ├── scripts/              # Management scripts
+├── example/              # Offline project templates
+│   ├── laravel/          # Laravel skeleton
+│   ├── next-js/          # Next.js skeleton
+│   ├── python/           # Python skeleton
+│   └── react/            # React skeleton
 ├── docs/                 # Documentation (Farsi + English)
 ├── prebuilt/             # Offline-ready images
 │   └── images/           # mysql-8.4.tar, postgres-17.tar, ...
-└── workspace/            # Project workspace
-    ├── data/bruno/       # Bruno collections and config
-    ├── laravel/          # Laravel project
-    ├── next-js/          # Next.js project
-    └── python/           # Python project
+└── workspace/            # Your projects go here
 ```
 
 > **Note:** The `prebuilt/` folder is in the project root, not inside `workspace/`. Images are automatically mounted to the container.
@@ -121,49 +125,36 @@ DevBox_Lite/
 
 ## Creating New Projects
 
-> **Important:** All development commands (python, pnpm, composer, php, etc.) run **inside the container**.
+> **Important:** All development commands run **inside the container**.
 
-### Quick Method: `run` (Single Commands)
-
-```powershell
-run laravel new my-app
-run pnpm create next-app my-app
-run python3 -m venv my-env
-```
-
-### Interactive Method: `shell` (Terminal)
+### Recommended: `new-project` (Interactive, Offline-First)
 
 ```powershell
-shell
-# Now inside the container:
-cd /workspace
+# From host — interactive menu
+.\scripts\devbox.sh new-project
+
+# Or inside the container
+new-project
 ```
 
-### Laravel
+The script asks for project name, framework, and options step by step. Templates are copied from pre-built `example/` directory (no internet needed).
 
-```bash
+### Available Templates
+
+| Template | Options | Port |
+|----------|---------|------|
+| `laravel` | Starter kit, database, testing, dark mode, API | 8000 |
+| `next-js` | TypeScript, Tailwind | 3000 |
+| `react` | Vite + React 19 | 5173 |
+| `python` | Flask, FastAPI, Plain | 5000/8000 |
+
+### Manual Method: `shell` (Terminal)
+
+```powershell
+.\scripts\shell.ps1
+# Inside the container:
 cd /workspace
-laravel new my-app
-cd my-app
-php artisan serve --host=0.0.0.0 --port=8000
-```
-
-### Next.js / React
-
-```bash
-cd /workspace
-pnpm create next-app my-app
-cd my-app
-pnpm dev --hostname 0.0.0.0 --port=3000
-```
-
-### Python
-
-```bash
-cd /workspace
-python3 -m venv my-env
-source my-env/bin/activate
-pip install flask
+laravel new my-app    # or: pnpm create next-app, etc.
 ```
 
 ---

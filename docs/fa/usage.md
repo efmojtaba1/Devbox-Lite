@@ -59,6 +59,9 @@ echo "WORKSPACE_PATH=$PWD" > .env
 | `test-api` | (Bruno) API ابزار تست |
 | `run` | اجرای دستور دلخواه داخل کانتینر |
 | `scan` | workspace شناسایی نوع پروژه‌ها در  |
+| `new-project` | ایجاد پروژه جدید (آفلاین، تعاملی) |
+| `setup-example` | نصب dependency در template های نمونه |
+| `refresh-example` | بروزرسانی نمونه‌ها با ورژن‌های جدید |
 
 ---
 
@@ -66,44 +69,108 @@ echo "WORKSPACE_PATH=$PWD" > .env
 
 > **نکته مهم:** تمام دستورات توسعه **داخل کانتینر** اجرا می‌شوند، نه روی سیستم میزبان.
 
-### روش سریع: `run` (دستورات تکی)
+### روش پیشنهادی: `new-project` (تعاملی، آفلاین)
+
+دستور `new-project` پروژه‌ها را به صورت تعاملی و با رویکرد آفلاین-اول می‌سازد. template های از پیش آماده شده (شامل dependency های نصب شده) از پوشه `example/` کپی می‌شوند و نیازی به اینترنت نیست.
+
+#### از هاست (PowerShell / WSL2)
 
 ```powershell
-run laravel new my-app
-run pnpm create next-app my-app
-run python3 -m venv my-env
+# حالت تعاملی — نام پروژه، template و گزینه‌ها را می‌پرسد
+devbox new-project
+
+# با آرگومان (پرسیدن نام/template را رد می‌کند)
+devbox new-project my-app laravel
 ```
 
-### روش تعاملی: `shell` (ترمینال)
-
-```powershell
-shell
-# حالا داخل کانتینر:
-cd /workspace
-```
-
-### Laravel
+#### داخل کانتینر
 
 ```bash
+# حالت تعاملی
+new-project
+
+# با آرگومان
+new-project my-app react
+```
+
+#### template های موجود
+
+| template | توضیحات | پورت |
+|----------|---------|------|
+| `laravel` | Laravel + PHP (با گزینه‌های starter kit) | 8000 |
+| `next-js` | Next.js + TypeScript + Tailwind | 3000 |
+| `react` | React + Vite | 5173 |
+| `python` | Python + Flask/FastAPI | 5000/8000 |
+
+#### گزینه‌های Laravel
+
+هنگام انتخاب Laravel، گزینه‌های تعاملی زیر نمایش داده می‌شوند:
+- **Starter kit:** None, Breeze (Blade/React/Vue), Jetstream (Livewire/Inertia)
+- **دیتابیس:** SQLite, MySQL, PostgreSQL
+- **تست:** Pest, PHPUnit
+- **حالت تاریک:** بله/خیر
+- **مسیرهای API:** بله/خیر
+
+#### گزینه‌های React
+
+- **TypeScript:** بله/خیر
+- **Tailwind CSS:** بله/خیر
+
+#### گزینه‌های Python
+
+- **فریمورک:** Flask, FastAPI, Python خام
+
+### راه‌اندازی template های نمونه
+
+قبل از اولین استفاده از `new-project`، dependency ها را در template های نمونه نصب کنید:
+
+```bash
+# از هاست
+devbox setup-example
+
+# داخل کانتینر
+setup-example
+```
+
+### بروزرسانی template ها
+
+برای بروزرسانی template های نمونه با ورژن‌های جدید فریمورک‌ها:
+
+```bash
+# از هاست — بروزرسانی همه
+devbox refresh-example
+
+# بروزرسانی یک template خاص
+devbox refresh-example laravel
+
+# داخل کانتینر
+refresh-example
+```
+
+### ساخت دستی پروژه
+
+همچنین می‌توانید پروژه‌ها را به صورت دستی بسازید:
+
+```bash
+# داخل کانتینر
 cd /workspace
+
+# Laravel
 laravel new my-app
 cd my-app
-php artisan serve --host=0.0.0.0 --port=8000
-```
+serve
 
-### Next.js / React
-
-```bash
-cd /workspace
+# Next.js
 pnpm create next-app my-app
 cd my-app
-pnpm dev --hostname 0.0.0.0 --port=3000
-```
+pnpm dev
 
-### Python
+# React
+pnpm create vite my-app --template react
+cd my-app
+pnpm dev
 
-```bash
-cd /workspace
+# Python
 python3 -m venv my-env
 source my-env/bin/activate
 pip install flask
@@ -159,6 +226,43 @@ psql -h devbox-postgres -U postgres
 # Redis
 redis-cli -h devbox-redis
 ```
+
+### تنظیمات `.env` لاراول
+
+هنگام اجرای `setup-deps`، اسکریپت به صورت خودکار فایل `.env` لاراول شما را پیکربندی می‌کند:
+- مقدار `DB_HOST=devbox-mysql` را تنظیم می‌کند
+- مقدار `REDIS_HOST=devbox-redis` را تنظیم می‌کند
+- مقدار `CACHE_STORE=redis` را تنظیم می‌کند (اگر Redis در دسترس باشد)
+- مقدار `QUEUE_CONNECTION=redis` را تنظیم می‌کند (اگر Redis در دسترس باشد)
+- مقدار `SESSION_DRIVER=redis` را تنظیم می‌کند (اگر Redis در دسترس باشد)
+- در صورت خالی بودن `APP_KEY`، آن را می‌سازد
+
+اگر نیاز به پیکربندی دستی دارید:
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=devbox-mysql
+DB_PORT=3306
+DB_DATABASE=laravel
+DB_USERNAME=root
+DB_PASSWORD=
+
+REDIS_HOST=devbox-redis
+
+CACHE_STORE=redis
+QUEUE_CONNECTION=redis
+SESSION_DRIVER=redis
+```
+
+> **نکته:** داخل کانتینر، به جای `127.0.0.1` از نام‌های `devbox-mysql` و `devbox-redis` به عنوان هاست استفاده کنید.
+
+### لاراول با React/Vite (Starter Kits)
+
+اگر پروژه لاراول خود را با starter kit React ساخته‌اید، `setup-deps` به صورت خودکار:
+- پکیج‌های فرانت‌اند را نصب می‌کند (`pnpm install`)
+- سرور Vite dev را با HMR در پس‌زمینه اجرا می‌کند
+
+سرور dev با Hot Module Replacement کار می‌کند - تغییرات فوراً اعمال می‌شوند و نیازی به بیلد مجدد نیست.
 
 ---
 

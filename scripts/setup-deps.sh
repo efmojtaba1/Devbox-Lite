@@ -185,6 +185,208 @@ start_deps() {
     fi
 }
 
+# Configure Laravel .env file with DevBox settings
+configure_laravel_env() {
+    local project_dir="$1"
+    local env_file="$project_dir/.env"
+    local has_redis="${2:-false}"
+
+    if [ ! -f "$project_dir/artisan" ]; then
+        return 0
+    fi
+
+    if [ ! -f "$env_file" ]; then
+        echo "  [skip] No .env file found in Laravel project"
+        return 0
+    fi
+
+    echo ""
+    echo "Configuring Laravel .env..."
+
+    # Update DB_HOST to devbox-mysql
+    if grep -q "^DB_HOST=.*" "$env_file"; then
+        sed -i 's/^DB_HOST=.*/DB_HOST=devbox-mysql/' "$env_file"
+        echo "  [ok] DB_HOST set to devbox-mysql"
+    fi
+
+    # Update REDIS_HOST to devbox-redis
+    if grep -q "^REDIS_HOST=.*" "$env_file"; then
+        sed -i 's/^REDIS_HOST=.*/REDIS_HOST=devbox-redis/' "$env_file"
+        echo "  [ok] REDIS_HOST set to devbox-redis"
+    fi
+
+    # Configure Redis-based settings if Redis is available
+    if [ "$has_redis" = "true" ]; then
+        # Set CACHE_STORE to redis
+        if grep -q "^CACHE_STORE=.*" "$env_file"; then
+            sed -i 's/^CACHE_STORE=.*/CACHE_STORE=redis/' "$env_file"
+            echo "  [ok] CACHE_STORE set to redis"
+        fi
+
+        # Set QUEUE_CONNECTION to redis
+        if grep -q "^QUEUE_CONNECTION=.*" "$env_file"; then
+            sed -i 's/^QUEUE_CONNECTION=.*/QUEUE_CONNECTION=redis/' "$env_file"
+            echo "  [ok] QUEUE_CONNECTION set to redis"
+        fi
+
+        # Set SESSION_DRIVER to redis
+        if grep -q "^SESSION_DRIVER=.*" "$env_file"; then
+            sed -i 's/^SESSION_DRIVER=.*/SESSION_DRIVER=redis/' "$env_file"
+            echo "  [ok] SESSION_DRIVER set to redis"
+        fi
+    fi
+
+    # Generate APP_KEY if empty
+    local app_key
+    app_key=$(grep '^APP_KEY=' "$env_file" | cut -d'=' -f2)
+    if [ -z "$app_key" ] || [ "$app_key" = "" ]; then
+        if (cd "$project_dir" && php artisan key:generate --force 2>/dev/null); then
+            echo "  [ok] APP_KEY generated"
+        else
+            echo "  [warn] Could not generate APP_KEY, run 'php artisan key:generate' manually"
+        fi
+    else
+        echo "  [skip] APP_KEY already set"
+    fi
+
+    echo "  [done] Laravel .env configured"
+}
+
+# Install and build frontend assets if Vite is detected
+setup_laravel_frontend() {
+    local project_dir="$1"
+
+    if [ ! -f "$project_dir/artisan" ]; then
+        return 0
+    fi
+
+    # Check if package.json exists with vite dependency
+    if [ ! -f "$project_dir/package.json" ]; then
+        return 0
+    fi
+
+    if ! grep -q '"vite"' "$project_dir/package.json" 2>/dev/null; then
+        return 0
+    fi
+
+    echo ""
+    echo "Setting up Laravel frontend (Vite)..."
+
+    # Check if node_modules exists
+    if [ -d "$project_dir/node_modules" ]; then
+        echo "  [skip] node_modules already exists"
+    else
+        echo "  [install] Installing frontend dependencies..."
+        if (cd "$project_dir" && pnpm install 2>/dev/null); then
+            echo "  [ok] Frontend dependencies installed"
+        elif (cd "$project_dir" && npm install 2>/dev/null); then
+            echo "  [ok] Frontend dependencies installed (npm)"
+        else
+            echo "  [warn] Could not install frontend dependencies, run 'pnpm install' manually"
+            return 0
+        fi
+    fi
+
+    # Start Vite dev server in background
+    echo "  [dev] Starting Vite dev server..."
+    (cd "$project_dir" && nohup pnpm dev > /dev/null 2>&1 &)
+    echo "  [ok] Vite dev server started (access via php artisan serve)"
+}
+
+# Offline-first dependency installation
+# Tries to copy from /example/ templates, falls back to online install
+install_deps_offline_first() {
+    local project_dir="$1"
+    local project_type="$2"
+    local example_dir="/example-data"
+
+    echo ""
+    echo "Installing dependencies (offline-first)..."
+
+    case "$project_type" in
+        laravel)
+            # vendor
+            if [ -d "$project_dir/vendor" ]; then
+                echo "  [skip] vendor already present"
+            elif [ -d "$example_dir/laravel/vendor" ]; then
+                echo "  [offline] Copying vendor from example..."
+                cp -a "$example_dir/laravel/vendor" "$project_dir/vendor" 2>/dev/null && \
+                    echo "  [ok] vendor copied from example" || \
+                    echo "  [warn] copy failed, falling back to online"
+            fi
+            # composer install as fallback
+            if [ ! -d "$project_dir/vendor" ] && [ -f "$project_dir/composer.json" ]; then
+                echo "  [online] Running composer install..."
+                (cd "$project_dir" && composer install --no-interaction 2>/dev/null) || \
+                    echo "  [warn] composer install failed"
+            fi
+            # node_modules
+            if [ -d "$project_dir/node_modules" ]; then
+                echo "  [skip] node_modules already present"
+            elif [ -d "$example_dir/laravel/node_modules" ]; then
+                echo "  [offline] Copying node_modules from example..."
+                cp -a "$example_dir/laravel/node_modules" "$project_dir/node_modules" 2>/dev/null && \
+                    echo "  [ok] node_modules copied from example" || \
+                    echo "  [warn] copy failed, falling back to online"
+            fi
+            if [ ! -d "$project_dir/node_modules" ] && [ -f "$project_dir/package.json" ]; then
+                echo "  [online] Running pnpm install..."
+                (cd "$project_dir" && pnpm install 2>/dev/null) || \
+                    echo "  [warn] pnpm install failed"
+            fi
+            ;;
+        next-js)
+            if [ -d "$project_dir/node_modules" ]; then
+                echo "  [skip] node_modules already present"
+            elif [ -d "$example_dir/next-js/node_modules" ]; then
+                echo "  [offline] Copying node_modules from example..."
+                cp -a "$example_dir/next-js/node_modules" "$project_dir/node_modules" 2>/dev/null && \
+                    echo "  [ok] node_modules copied from example" || \
+                    echo "  [warn] copy failed, falling back to online"
+            fi
+            if [ ! -d "$project_dir/node_modules" ] && [ -f "$project_dir/package.json" ]; then
+                echo "  [online] Running pnpm install..."
+                (cd "$project_dir" && pnpm install 2>/dev/null) || \
+                    echo "  [warn] pnpm install failed"
+            fi
+            ;;
+        react)
+            if [ -d "$project_dir/node_modules" ]; then
+                echo "  [skip] node_modules already present"
+            elif [ -d "$example_dir/react/node_modules" ]; then
+                echo "  [offline] Copying node_modules from example..."
+                cp -a "$example_dir/react/node_modules" "$project_dir/node_modules" 2>/dev/null && \
+                    echo "  [ok] node_modules copied from example" || \
+                    echo "  [warn] copy failed, falling back to online"
+            fi
+            if [ ! -d "$project_dir/node_modules" ] && [ -f "$project_dir/package.json" ]; then
+                echo "  [online] Running pnpm install..."
+                (cd "$project_dir" && pnpm install 2>/dev/null) || \
+                    echo "  [warn] pnpm install failed"
+            fi
+            ;;
+        python)
+            if [ -d "$project_dir/venv" ]; then
+                echo "  [skip] venv already present"
+            elif [ -d "$example_dir/python/venv" ]; then
+                echo "  [offline] Copying venv from example..."
+                cp -a "$example_dir/python/venv" "$project_dir/venv" 2>/dev/null && \
+                    echo "  [ok] venv copied from example" || \
+                    echo "  [warn] copy failed, falling back to online"
+            fi
+            if [ ! -d "$project_dir/venv" ] && [ -f "$project_dir/requirements.txt" ]; then
+                echo "  [online] Creating venv and installing..."
+                (cd "$project_dir" && python3 -m venv venv 2>/dev/null && \
+                    . venv/bin/activate && pip install -r requirements.txt 2>/dev/null) || \
+                    echo "  [warn] Python setup failed"
+            fi
+            ;;
+        *)
+            echo "  [skip] No offline templates for '$project_type'"
+            ;;
+    esac
+}
+
 # Setup a single template
 setup_template() {
     local template="$1"
@@ -285,6 +487,10 @@ main() {
     if [ -n "$template" ]; then
         # Explicit template — single project mode
         setup_template "$template"
+        install_deps_offline_first "$project_dir" "$template"
+        if [ "$template" = "laravel" ]; then
+            configure_laravel_env "$project_dir"
+        fi
         return
     fi
 
@@ -322,9 +528,18 @@ main() {
         [ -z "$line" ] && continue
         local dir_path
         local tmpl
+        local tmpl_dbs
+        local has_redis="false"
         dir_path=$(echo "$line" | awk '{print $1}')
         tmpl=$(echo "$line" | awk '{print $2}')
+        tmpl_dbs=$(get_deps "$tmpl")
+        if echo "$tmpl_dbs" | grep -q "redis"; then
+            has_redis="true"
+        fi
         setup_template "$tmpl"
+        install_deps_offline_first "$dir_path" "$tmpl"
+        configure_laravel_env "$dir_path" "$has_redis"
+        setup_laravel_frontend "$dir_path"
         last_dir="$dir_path"
     done <<< "$selected"
 

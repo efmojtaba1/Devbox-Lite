@@ -24,6 +24,18 @@ function setup-deps {
     Show-Header "Setting up Dependencies"
     docker exec -it $ContainerName bash -c "/scripts/setup-deps.sh $args"
 }
+function new-project {
+    docker exec -it devbox-lite bash -c "/scripts/new-project.sh $args"
+}
+function init-example {
+    docker exec -it devbox-lite bash -c "/scripts/init-example.sh"
+}
+function setup-example {
+    docker exec -it devbox-lite bash -c "/scripts/setup-example.sh"
+}
+function refresh-example {
+    & "$DevBoxRoot\scripts\refresh-example.sh" $args
+}
 
 # Clear terminal and show welcome message
 Clear-Host
@@ -32,7 +44,8 @@ Write-Host ""
 Write-Host "Commands:" -ForegroundColor Cyan
 Write-Host "  up, down, down-v, shell, logs, restart, status" -ForegroundColor White
 Write-Host "  build, rebuild, clean" -ForegroundColor White
-Write-Host "  scan, setup-deps, test-api, run" -ForegroundColor White
+Write-Host "  new-project, setup-deps, setup-example, init-example" -ForegroundColor White
+Write-Host "  refresh-example, scan, test-api, run" -ForegroundColor White
 Write-Host "  backup, restore" -ForegroundColor White
 Write-Host ""
 Write-Host "Start with: up" -ForegroundColor Yellow

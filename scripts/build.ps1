@@ -60,6 +60,38 @@ Write-Host ""
 $buildArgs = @()
 if ($APT_MIRROR) { $buildArgs += "--build-arg"; $buildArgs += "APT_MIRROR=$APT_MIRROR" }
 
+# Copy example templates into build context (Dockerfile needs them)
+# Exclude dependency dirs (symlinks to Docker volumes, can't be copied)
+Write-Host "Copying example templates to build context..."
+$exampleDst = Join-Path $BuildContext "example"
+if (Test-Path $exampleDst) { Remove-Item -Recurse -Force $exampleDst 2>$null }
+foreach ($tmpl in @("laravel", "next-js", "python", "react")) {
+    $src = Join-Path $ScriptDir "example\$tmpl"
+    $dst = Join-Path $exampleDst $tmpl
+    if (Test-Path $src) {
+        New-Item -ItemType Directory -Force -Path $dst | Out-Null
+        Get-ChildItem $src -Directory | Where-Object { $_.Name -notin @("node_modules","vendor","venv",".next","__pycache__") } | ForEach-Object {
+            Copy-Item -Recurse -Force $_.FullName $dst 2>$null
+        }
+        Get-ChildItem $src -File | ForEach-Object {
+            Copy-Item -Force $_.FullName $dst 2>$null
+        }
+    }
+}
+
 docker build @buildArgs -t $ImageName -f $DockerFile $BuildContext
 
 Test-Result "Build completed successfully." "Build failed."
+
+# Cleanup copied example from build context
+Remove-Item -Recurse -Force (Join-Path $BuildContext "example") 2>$null
+
+# Start container and initialize example templates
+Write-Host ""
+Show-Header "Initializing Example Templates"
+docker compose -f $ComposeFile up -d 2>$null
+Start-Sleep -Seconds 3
+docker exec $ContainerName bash -c "/scripts/init-example.sh" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[warn] init-example failed. Run 'devbox init-example' manually." -ForegroundColor Yellow
+}

@@ -29,10 +29,14 @@ services:
       - "6080:6080"
       - "8000:8000"
       - "3000:3000"
+      - "5173:5173"
 
     volumes:
       - ${WORKSPACE_PATH:-../../}:/workspace:cached
       - ${SCRIPTS_PATH:-../../scripts}:/scripts:ro
+      - ${PREBUILT_PATH:-../../prebuilt}:/prebuilt:ro
+      - ${EXAMPLE_PATH:-../../example}:/example:ro
+      - example-templates:/example-data
       - /var/run/docker.sock:/var/run/docker.sock
       - bruno-config:/root/.config/bruno
       - bruno-collections:/root/bruno
@@ -55,3 +59,4 @@ volumes:
   devbox-deps:
   bruno-config:
   bruno-collections:
+  example-templates:

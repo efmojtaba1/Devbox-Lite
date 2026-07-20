@@ -83,6 +83,21 @@ case "${1:-help}" in
         shift
         docker exec -it "$CONTAINER_NAME" bash -c "$*"
         ;;
+    new-project|new)
+        docker exec -it "$CONTAINER_NAME" bash -c "/workspace/scripts/new-project.sh ${2:-} ${3:-}"
+        ;;
+    setup-example|check-example)
+        Show-Header "Verifying example templates"
+        docker exec -it "$CONTAINER_NAME" bash -c "/scripts/setup-example.sh"
+        ;;
+    init-example)
+        Show-Header "Initializing example templates (one-time)"
+        docker exec -it "$CONTAINER_NAME" bash -c "/scripts/init-example.sh"
+        ;;
+    refresh-example)
+        Show-Header "Refreshing example templates"
+        bash "$SCRIPT_DIR/refresh-example.sh" "${2:-all}"
+        ;;
     help|--help|-h|"")
         echo "DevBox Lite - Usage: devbox <command>"
         echo ""
@@ -97,6 +112,9 @@ case "${1:-help}" in
         echo "  restart       Restart the container"
         echo "  status/st     Check container status"
         echo "  clean         Remove image and containers"
+        echo "  new-project   Create new project from template (offline-first)"
+        echo "  setup-example Verify example templates"
+        echo "  refresh-example Update examples to latest framework versions"
         echo "  setup/deps    Setup database dependencies"
         echo "  run <cmd>     Run command inside container"
         echo "  help          Show this help message"

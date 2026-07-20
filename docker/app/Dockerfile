@@ -147,6 +147,26 @@ COPY --from=tools /opt /opt
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Copy example templates and install dependencies (offline-first)
+COPY example/ /prebuilt/example/
+RUN cd /prebuilt/example/laravel && \
+    composer install --no-interaction 2>/dev/null; \
+    [ -f package.json ] && pnpm install 2>/dev/null; \
+    cp .env.example .env 2>/dev/null; \
+    php artisan key:generate --force 2>/dev/null; \
+    echo "[build] Laravel done" && \
+    cd /prebuilt/example/next-js && \
+    [ -f package.json ] && pnpm install 2>/dev/null; \
+    echo "[build] Next.js done" && \
+    cd /prebuilt/example/react && \
+    [ -f package.json ] && pnpm install 2>/dev/null; \
+    echo "[build] React done" && \
+    cd /prebuilt/example/python && \
+    python3 -m venv venv 2>/dev/null && \
+    . venv/bin/activate && \
+    pip install -r requirements.txt 2>/dev/null; \
+    echo "[build] Python done"
+
 # Database management short commands (like VS Code helper scripts)
 RUN echo '' >> /root/.bashrc && \
     echo '# Database management shortcuts' >> /root/.bashrc && \
@@ -160,7 +180,13 @@ RUN echo '' >> /root/.bashrc && \
     echo 'setup-deps() { /workspace/scripts/setup-deps.sh "$@"; }' >> /root/.bashrc && \
     echo '' >> /root/.bashrc && \
     echo '# API testing shortcuts' >> /root/.bashrc && \
-    echo 'bruno() { /usr/local/bin/start-bruno "$@"; }' >> /root/.bashrc
+    echo 'bruno() { /usr/local/bin/start-bruno "$@"; }' >> /root/.bashrc && \
+    echo '' >> /root/.bashrc && \
+    echo '# Laravel shortcuts' >> /root/.bashrc && \
+    echo 'serve() { php artisan serve --host=0.0.0.0 --port="${1:-8000}"; }' >> /root/.bashrc && \
+    echo '' >> /root/.bashrc && \
+    echo '# Project creation' >> /root/.bashrc && \
+    echo 'new-project() { /workspace/scripts/new-project.sh "$@"; }' >> /root/.bashrc
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]

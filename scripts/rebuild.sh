@@ -66,6 +66,35 @@ if [ -n "$APT_MIRROR" ]; then
     BUILD_ARGS="$BUILD_ARGS --build-arg APT_MIRROR=$APT_MIRROR"
 fi
 
+# Copy example templates into build context (Dockerfile needs them)
+# Exclude dependency dirs (symlinks to Docker volumes, can't be copied)
+echo "Copying example templates to build context..."
+rm -rf "$BUILD_CONTEXT/example" 2>/dev/null
+mkdir -p "$BUILD_CONTEXT/example"
+for tmpl in laravel next-js python react; do
+    if [ -d "$PROJECT_ROOT/example/$tmpl" ]; then
+        mkdir -p "$BUILD_CONTEXT/example/$tmpl"
+        for item in "$PROJECT_ROOT/example/$tmpl"/*; do
+            name=$(basename "$item")
+            case "$name" in
+                node_modules|vendor|venv|.next|__pycache__) continue ;;
+            esac
+            cp -a "$item" "$BUILD_CONTEXT/example/$tmpl/" 2>/dev/null
+        done
+    fi
+done
+
 docker build --no-cache $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT"
 
 Test-Result "Rebuild completed successfully." "Rebuild failed."
+
+# Cleanup copied example from build context
+rm -rf "$BUILD_CONTEXT/example" 2>/dev/null
+
+# Start container and initialize example templates
+echo ""
+Show-Header "Initializing Example Templates"
+docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null
+sleep 3
+docker exec "$CONTAINER_NAME" bash -c "/scripts/init-example.sh" 2>/dev/null || \
+    echo "[warn] init-example failed. Run 'devbox init-example' manually."

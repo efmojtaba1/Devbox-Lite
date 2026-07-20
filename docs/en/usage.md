@@ -30,7 +30,7 @@ echo "WORKSPACE_PATH=$PWD" > .env
 ## Daily Workflow
 
 1. Open Docker Desktop
-2. Start the container: `.\scripts\up` (Windows) or `./scripts/up` (WSL2)
+2. Start the container: `.\scripts\up`
 3. Open VS Code → Remote Explorer → Dev Containers
 4. Work inside `/workspace` directory
 
@@ -56,6 +56,9 @@ Use these commands directly in VS Code terminal:
 | `test-api` | API testing tools (Bruno) |
 | `run` | Run arbitrary command inside container |
 | `scan` | Detect project types in workspace |
+| `new-project` | Create new project (offline-first, interactive) |
+| `setup-example` | Install deps in example templates |
+| `refresh-example` | Update examples to latest versions |
 
 ---
 
@@ -63,44 +66,108 @@ Use these commands directly in VS Code terminal:
 
 > **Important:** All development commands run **inside the container**, not on your host machine.
 
-### Using `run` (single commands)
+### Recommended: `new-project` (interactive, offline-first)
+
+The `new-project` command creates projects interactively with an offline-first approach. It copies pre-built templates from `example/` directory (with dependencies already installed), so no internet connection is needed.
+
+#### From Host (PowerShell / WSL2)
 
 ```powershell
-run laravel new my-app
-run pnpm create next-app my-app
-run python3 -m venv my-env
+# Interactive mode — asks for project name, template, and options
+devbox new-project
+
+# With arguments (skips name/template prompts)
+devbox new-project my-app laravel
 ```
 
-### Using `shell` (interactive terminal)
-
-```powershell
-shell
-# Now inside the container:
-cd /workspace
-```
-
-### Laravel
+#### Inside Container
 
 ```bash
+# Interactive mode
+new-project
+
+# With arguments
+new-project my-app react
+```
+
+#### Available Templates
+
+| Template | Description | Port |
+|----------|-------------|------|
+| `laravel` | Laravel + PHP (with starter kit options) | 8000 |
+| `next-js` | Next.js + TypeScript + Tailwind | 3000 |
+| `react` | React + Vite | 5173 |
+| `python` | Python + Flask/FastAPI | 5000/8000 |
+
+#### Laravel Options
+
+When selecting Laravel, you get interactive choices:
+- **Starter kit:** None, Breeze (Blade/React/Vue), Jetstream (Livewire/Inertia)
+- **Database:** SQLite, MySQL, PostgreSQL
+- **Testing:** Pest, PHPUnit
+- **Dark mode:** Yes/No
+- **API routes:** Yes/No
+
+#### React Options
+
+- **TypeScript:** Yes/No
+- **Tailwind CSS:** Yes/No
+
+#### Python Options
+
+- **Framework:** Flask, FastAPI, Plain Python
+
+### Setup Example Templates
+
+Before using `new-project` for the first time, install dependencies into the example templates:
+
+```bash
+# From host
+devbox setup-example
+
+# Inside container
+setup-example
+```
+
+### Refresh Templates
+
+To update example templates with latest framework versions:
+
+```bash
+# From host — refresh all
+devbox refresh-example
+
+# Refresh specific template
+devbox refresh-example laravel
+
+# Inside container
+refresh-example
+```
+
+### Manual Project Creation
+
+You can also create projects manually:
+
+```bash
+# Inside the container
 cd /workspace
+
+# Laravel
 laravel new my-app
 cd my-app
-php artisan serve --host=0.0.0.0 --port=8000
-```
+serve
 
-### Next.js / React
-
-```bash
-cd /workspace
+# Next.js
 pnpm create next-app my-app
 cd my-app
-pnpm dev --hostname 0.0.0.0 --port=3000
-```
+pnpm dev
 
-### Python
+# React
+pnpm create vite my-app --template react
+cd my-app
+pnpm dev
 
-```bash
-cd /workspace
+# Python
 python3 -m venv my-env
 source my-env/bin/activate
 pip install flask
@@ -156,6 +223,43 @@ psql -h devbox-postgres -U postgres
 # Redis
 redis-cli -h devbox-redis
 ```
+
+### Laravel `.env` Configuration
+
+When you run `setup-deps`, the script automatically configures your Laravel `.env` file:
+- Sets `DB_HOST=devbox-mysql`
+- Sets `REDIS_HOST=devbox-redis`
+- Sets `CACHE_STORE=redis` (if Redis is available)
+- Sets `QUEUE_CONNECTION=redis` (if Redis is available)
+- Sets `SESSION_DRIVER=redis` (if Redis is available)
+- Generates `APP_KEY` if empty
+
+If you need to configure manually:
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=devbox-mysql
+DB_PORT=3306
+DB_DATABASE=laravel
+DB_USERNAME=root
+DB_PASSWORD=
+
+REDIS_HOST=devbox-redis
+
+CACHE_STORE=redis
+QUEUE_CONNECTION=redis
+SESSION_DRIVER=redis
+```
+
+> **Note:** Inside the container, use `devbox-mysql` and `devbox-redis` as hostnames, not `127.0.0.1`.
+
+### Laravel with React/Vite (Starter Kits)
+
+When you run `setup-deps`, the script automatically detects Vite and:
+- Installs frontend dependencies (`pnpm install`)
+- Starts Vite dev server with HMR in background
+
+The dev server enables Hot Module Replacement - changes are reflected instantly without rebuilding.
 
 ---
 

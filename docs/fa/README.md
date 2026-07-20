@@ -90,7 +90,11 @@ chmod +x scripts/*.sh
 | `rebuild` | ساخت مجدد ایمیج |
 | `logs` | مشاهده لاگ‌ها |
 | `status` | بررسی وضعیت |
+| `new-project` | ایجاد پروژه جدید (تعاملی، آفلاین) |
 | `setup-deps` | راه‌اندازی خودکار دیتابیس و ابزارها |
+| `init-example` | راه‌اندازی اولیه template ها (یکبار پس از rebuild) |
+| `setup-example` | بررسی صحت template ها |
+| `refresh-example` | بروزرسانی template ها به ورژن‌های جدید |
 
 ---
 
@@ -101,18 +105,18 @@ DevBox_Lite/
 ├── docker/
 │   ├── app/              # فایل‌های ساخت ایمیج
 │   │   ├── Dockerfile
-│   │   ├── .env          # ورژن ابزارها
 │   │   └── install/      # اسکریپت‌های نصب
-│   └── compose/          # Docker Compose + .env
+│   └── compose/          # Docker Compose
 ├── scripts/              # اسکریپت‌های مدیریت
+├── example/              # template های پروژه برای آفلاین
+│   ├── laravel/          # اسکلت لاراول
+│   ├── next-js/          # اسکلت نکست
+│   ├── python/           # اسکلت پایتون
+│   └── react/            # اسکلت ری‌اکت
 ├── docs/                 # مستندات فارسی و انگلیسی
 ├── prebuilt/             # ایمیج‌های آماده برای آفلاین
 │   └── images/           # mysql-8.4.tar, postgres-17.tar, ...
-└── workspace/            # پوشه کاری پروژه‌ها
-    ├── data/bruno/       # Bruno کالکشن‌ها و تنظیمات 
-    ├── laravel/          # پروژه لاراول
-    ├── next-js/          # پروژه نکست  
-    └── python/           # پروژه پایتون
+└── workspace/            # پروژه‌های شما اینجا قرار می‌گیرند
 ```
 
 > **نکته:**  ایمیج های موجود در پوشه `prebuilt/` به صورت خودکار به کانتینر مانت می‌شوند.
@@ -121,49 +125,36 @@ DevBox_Lite/
 
 ## ساخت پروژه جدید
 
-> **نکته مهم:** تمام دستورات توسعه (python, pnpm, composer, php و...) **داخل کانتینر** اجرا می‌شوند.
+> **نکته مهم:** تمام دستورات توسعه **داخل کانتینر** اجرا می‌شوند.
 
-### روش سریع: `run` (دستورات تکی)
-
-```powershell
-run laravel new my-app
-run pnpm create next-app my-app
-run python3 -m venv my-env
-```
-
-### روش تعاملی: `shell` (ترمینال)
+### روش پیشنهادی: `new-project` (تعاملی، آفلاین)
 
 ```powershell
-shell
-# حالا داخل کانتینر:
-cd /workspace
+# از هاست — منوی تعاملی
+.\scripts\devbox.sh new-project
+
+# یا داخل کانتینر
+new-project
 ```
 
-### Laravel
+اسکریپت نام پروژه، فریمورک و گزینه‌ها را مرحله به مرحله می‌پرسد. template ها از پوشه `example/` کپی می‌شوند (بدون نیاز به اینترنت).
 
-```bash
+### template های موجود
+
+| template | گزینه‌ها | پورت |
+|----------|---------|------|
+| `laravel` | starter kit، دیتابیس، تست، dark mode، API | 8000 |
+| `next-js` | TypeScript، Tailwind | 3000 |
+| `react` | Vite + React 19 | 5173 |
+| `python` | Flask، FastAPI، خام | 5000/8000 |
+
+### روش دستی: `shell` (ترمینال)
+
+```powershell
+.\scripts\shell.ps1
+# داخل کانتینر:
 cd /workspace
-laravel new my-app
-cd my-app
-php artisan serve --host=0.0.0.0 --port=8000
-```
-
-### Next.js / React
-
-```bash
-cd /workspace
-pnpm create next-app my-app
-cd my-app
-pnpm dev --hostname 0.0.0.0 --port=3000
-```
-
-### Python
-
-```bash
-cd /workspace
-python3 -m venv my-env
-source my-env/bin/activate
-pip install flask
+laravel new my-app    # یا: pnpm create next-app و...
 ```
 
 ---
