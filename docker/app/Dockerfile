@@ -188,8 +188,8 @@ RUN echo '' >> /root/.bashrc && \
     echo '# Project creation' >> /root/.bashrc && \
     echo 'new-project() { /workspace/scripts/new-project.sh "$@"; }' >> /root/.bashrc && \
     echo '' >> /root/.bashrc && \
-    echo '# Auto-detect and run project' >> /root/.bashrc && \
-    echo 'dev() { if [ -f artisan ]; then php artisan serve --host=0.0.0.0 --port="${1:-8000}"; elif [ -f package.json ]; then pnpm dev; elif [ -f app.py ]; then if grep -q "FastAPI" app.py 2>/dev/null; then . venv/bin/activate 2>/dev/null && uvicorn app:app --reload --host 0.0.0.0 --port="${1:-8000}"; else . venv/bin/activate 2>/dev/null && python app.py; fi; else echo "No recognized project type found."; fi; }' >> /root/.bashrc
+    echo '# Python shortcuts' >> /root/.bashrc && \
+    echo 'dev() { if grep -q "FastAPI" app.py 2>/dev/null; then . venv/bin/activate 2>/dev/null && uvicorn app:app --reload --host 0.0.0.0 --port="${1:-8000}"; elif [ -f requirements.txt ]; then . venv/bin/activate 2>/dev/null && python app.py; else echo "No requirements.txt or app.py found."; fi; }' >> /root/.bashrc
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
