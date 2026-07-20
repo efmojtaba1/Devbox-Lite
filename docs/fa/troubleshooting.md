@@ -142,6 +142,22 @@ mv composer.phar /usr/local/bin/composer
 
 ---
 
+## مشکلات دیتابیس
+
+### خطای Connection Refused هنگام اجرای Laravel Migration
+
+اگر هنگام اجرای `php artisan migrate` خطای `SQLSTATE[HY000] [2002] Connection refused` دیدید:
+
+**علت:** فایل `.env` از `127.0.0.1` به عنوان `DB_HOST` استفاده می‌کند، اما داخل کانتینرهای Docker، سرویس‌ها از طریق نام کانتینر ارتباط برقرار می‌کنند.
+
+**راه‌حل:** فایل `.env` لاراول خود را به‌روزرسانی کنید:
+
+```env
+DB_HOST=devbox-mysql    # نه 127.0.0.1
+```
+
+---
+
 ## مشکلات شبکه
 
 ### ارتباط بین کانتینرها

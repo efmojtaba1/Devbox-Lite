@@ -122,7 +122,9 @@ new-project my-app react
 
 ### راه‌اندازی template های نمونه
 
-قبل از اولین استفاده از `new-project`، dependency ها را در template های نمونه نصب کنید:
+Template ها به صورت خودکار هنگام اجرای `up` راه‌اندازی می‌شوند (بعد از اولین build یا `down-v`). نیازی به راه‌اندازی دستی نیست.
+
+برای بررسی صحت template ها:
 
 ```bash
 # از هاست

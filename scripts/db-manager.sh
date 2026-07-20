@@ -31,7 +31,7 @@ usage() {
 }
 
 # Prebuilt images directory (mounted from host)
-PREBUILT_DIR="${PREBUILT_DIR:-/workspace/prebuilt/images}"
+PREBUILT_DIR="${PREBUILT_DIR:-/prebuilt/images}"
 
 # Map image name to prebuilt tar filename
 image_to_tar() {

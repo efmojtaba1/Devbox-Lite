@@ -119,7 +119,9 @@ When selecting Laravel, you get interactive choices:
 
 ### Setup Example Templates
 
-Before using `new-project` for the first time, install dependencies into the example templates:
+Templates are automatically initialized when you run `up` (after first build or `down-v`). No manual setup needed.
+
+To verify templates are ready:
 
 ```bash
 # From host

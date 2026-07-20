@@ -239,6 +239,18 @@ From the host, use `localhost` with the mapped ports:
 mysql -h 127.0.0.1 -P 3307
 ```
 
+### Laravel Migration Fails with Connection Refused
+
+If you see `SQLSTATE[HY000] [2002] Connection refused` when running `php artisan migrate`:
+
+**Cause:** The `.env` file uses `127.0.0.1` as `DB_HOST`, but inside Docker containers, services communicate via container names.
+
+**Fix:** Update your Laravel `.env` file:
+
+```env
+DB_HOST=devbox-mysql    # NOT 127.0.0.1
+```
+
 ---
 
 ## Volume Issues
