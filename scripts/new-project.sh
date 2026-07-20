@@ -231,6 +231,12 @@ EOF
                         echo 'print("Hello from DevBox Lite!")' > "$project_dir/app.py"
                         ;;
                 esac
+                cat > "$project_dir/.gitignore" << 'EOF'
+venv/
+__pycache__/
+*.pyc
+.env
+EOF
                 ;;
             react)
                 mkdir -p "$project_dir/src"
