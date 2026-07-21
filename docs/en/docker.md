@@ -1,10 +1,173 @@
-# Docker Commands Reference
-
-**[فارسی](../fa/docker.md)** | [Home](../../README.md)
+<div class="doc-nav-header">
+  <h1>Docker Commands Reference</h1>
+  <span class="lang-links">
+    <strong><a href="../fa/docker.md">فارسی</a></strong> | <a href="README.md">Home</a>
+  </span>
+</div>
 
 ---
 
-## Basic Concepts
+## Table of Contents
+
+<style>
+  .custom-toc,
+  .custom-toc ul {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+  }
+  .custom-toc li {
+    line-height: 2;
+  }
+  .custom-toc > li:not(:has(details)) {
+    display: flex;
+    align-items: center;
+  }
+  .custom-toc > li:not(:has(details))::before {
+    content: "•";
+    display: inline-flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 1.2rem;
+    font-size: 1.2rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .custom-toc details {
+    width: 100%;
+  }
+  .custom-toc summary {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    list-style: none;
+  }
+  .custom-toc summary::-webkit-details-marker {
+    display: none;
+  }
+  .custom-toc summary::before {
+    content: "▶";
+    display: inline-flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 1.2rem;
+    font-size: 0.7rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .custom-toc details[open] > summary::before {
+    content: "▼";
+    font-size: 0.65rem;
+  }
+  .custom-toc details ul {
+    padding-left: 1.2rem;
+    margin-top: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+  .custom-toc details ul li {
+    display: flex;
+    align-items: center;
+  }
+  .custom-toc details ul li::before {
+    content: "◦";
+    display: inline-flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 1.2rem;
+    font-size: 1rem;
+    font-weight: bold;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .heading-with-back {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .heading-with-back span {
+    flex: 1;
+  }
+  .back-to-toc {
+    text-decoration: none !important;
+  }
+  .back-to-toc:hover {
+    text-decoration: none !important;
+  }
+  .doc-nav-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    direction: ltr;
+  }
+  .doc-nav-header .lang-links {
+    direction: rtl;
+  }
+</style>
+
+<ul class="custom-toc" dir="ltr">
+<li><a href="#basic-concepts">Basic Concepts</a></li>
+<li>
+<details><summary><a href="#container-management">Container Management</a></summary>
+<ul>
+<li><a href="#start-container">Start Container</a></li>
+<li><a href="#stop-container">Stop Container</a></li>
+<li><a href="#stop-and-remove-volumes">Stop and Remove Volumes</a></li>
+<li><a href="#open-terminal">Open Terminal</a></li>
+<li><a href="#view-logs">View Logs</a></li>
+<li><a href="#restart">Restart</a></li>
+<li><a href="#check-status">Check Status</a></li>
+<li><a href="#run-command-inside-container">Run Command Inside Container</a></li>
+<li><a href="#detect-project-types">Detect Project Types</a></li>
+</ul>
+</details>
+</li>
+<li>
+<details><summary><a href="#image-commands">Image Commands</a></summary>
+<ul>
+<li><a href="#build-image">Build Image</a></li>
+<li><a href="#rebuild-no-cache">Rebuild (No Cache)</a></li>
+<li><a href="#list-images">List Images</a></li>
+<li><a href="#remove-image">Remove Image</a></li>
+</ul>
+</details>
+</li>
+<li>
+<details><summary><a href="#cleanup-commands">Cleanup Commands</a></summary>
+<ul>
+<li><a href="#full-cleanup">Full Cleanup</a></li>
+<li><a href="#clean-cache">Clean Cache</a></li>
+</ul>
+</details>
+</li>
+<li>
+<details><summary><a href="#api-testing">API Testing</a></summary>
+<ul>
+<li><a href="#bruno">Bruno</a></li>
+<li><a href="#offline-usage">Offline Usage</a></li>
+<li><a href="#named-volumes">Named Volumes</a></li>
+</ul>
+</details>
+</li>
+<li>
+<details><summary><a href="#troubleshooting">Troubleshooting</a></summary>
+<ul>
+<li><a href="#container-wont-start">Container Won't Start</a></li>
+<li><a href="#port-in-use">Port in Use</a></li>
+<li><a href="#permission-issues">Permission Issues</a></li>
+</ul>
+</details>
+</li>
+<li><a href="#important-notes">Important Notes</a></li>
+<li><a href="#related-documentation">Related Documentation</a></li>
+</ul>
+
+---
+
+<h2 id="basic-concepts" class="heading-with-back">
+  <span>Basic Concepts</span>
+  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
+</h2>
 
 - **Image:** Template with OS and installed tools
 - **Container:** Running instance of an Image
@@ -13,7 +176,10 @@
 
 ---
 
-## Container Management
+<h2 id="container-management" class="heading-with-back">
+  <span>Container Management</span>
+  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
+</h2>
 
 ### Start Container
 
@@ -127,7 +293,10 @@ scan
 
 ---
 
-## Image Commands
+<h2 id="image-commands" class="heading-with-back">
+  <span>Image Commands</span>
+  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
+</h2>
 
 ### Build Image
 
@@ -167,7 +336,10 @@ docker rmi devbox-lite
 
 ---
 
-## Cleanup Commands
+<h2 id="cleanup-commands" class="heading-with-back">
+  <span>Cleanup Commands</span>
+  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
+</h2>
 
 ### Full Cleanup
 
@@ -190,7 +362,10 @@ docker system prune -a
 
 ---
 
-## API Testing
+<h2 id="api-testing" class="heading-with-back">
+  <span>API Testing</span>
+  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
+</h2>
 
 ### Bruno
 
@@ -219,7 +394,10 @@ docker run --rm -v devbox_bruno-collections:/data:ro alpine tar czf /backup/brun
 
 ---
 
-## Troubleshooting
+<h2 id="troubleshooting" class="heading-with-back">
+  <span>Troubleshooting</span>
+  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
+</h2>
 
 ### Container Won't Start
 
@@ -248,7 +426,10 @@ docker compose exec devbox-lite chmod -R 777 /workspace
 
 ---
 
-## Important Notes
+<h2 id="important-notes" class="heading-with-back">
+  <span>Important Notes</span>
+  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
+</h2>
 
 1. Always use the management scripts
 2. Stop the container before removing the image
@@ -257,7 +438,10 @@ docker compose exec devbox-lite chmod -R 777 /workspace
 
 ---
 
-## Related Documentation
+<h2 id="related-documentation" class="heading-with-back">
+  <span>Related Documentation</span>
+  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
+</h2>
 
 | Document | Description |
 |----------|-------------|

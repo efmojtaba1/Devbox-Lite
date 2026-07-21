@@ -1,36 +1,170 @@
-# DevBox Lite
-
-**[English](../en/README.md)** | [بازگشت به خانه](../../README.md)
+<div class="doc-nav-header">
+  <h1>DevBox Lite</h1>
+  <span class="lang-links">
+    <strong><a href="../en/README.md">English</a></strong> | <a href="../../README.md">بازگشت به خانه</a>
+  </span>
+</div>
 
 سبک، ایزوله، و آماده کار — محیط توسعه‌ای مبتنی بر Docker + Ubuntu 24.04 که برای پروژه‌های **Laravel، Next.js، React و Python** طراحی شده.
 
 ---
 
-## چرا DevBox Lite؟
+## فهرست مطالب
+<style>
+  .custom-toc, 
+  .custom-toc ul {
+    list-style: none; /* حذف کامل بولت‌های پیش‌فرض CSS */
+    padding-right: 0;
+    margin: 0;
+  }
 
-- **سبک و سریع:** حجم ایمیج حدود ۱ گیگابایت
-- **پشتیبانی آفلاین:** دیتابیس‌ها و ابزارها بدون نیاز به اینترنت
-- **ابزارهای کامل:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
-- **مدیریت دیتابیس:** MySQL, PostgreSQL, Redis + محیط گرافیکی (phpMyAdmin, Adminer)
-- **تست API:** Bruno (کاملاً آفلاین)
+  .custom-toc li {
+    line-height: 2;
+  }
 
----
+  /* ۱. تنظیم آیتم‌های اصلی بدون زیرمجموعه (دایره پر) */
+  .custom-toc > li:not(:has(details)) {
+    display: flex;
+    align-items: center;
+  }
 
-## ابزارهای موجود
+  .custom-toc > li:not(:has(details))::before {
+    content: "•";
+    display: inline-flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 1.2rem;       /* عرض ثابت یکسان جهت هم‌راستایی */
+    font-size: 1.2rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
 
-| دسته | ابزارها |
-|------|---------|
-| **PHP** | PHP 8.4 + Composer + Laravel Installer + Xdebug + Pest |
-| **Node.js** | Node.js 22 + pnpm + npm + Bun |
-| **Python** | Python 3.12 + pip + pipx + Jupyter + poetry + black + ruff + pytest |
-| **Database** | MySQL Client + PostgreSQL Client + Redis CLI |
-| **Server** | Nginx + Supervisor + PM2 |
-| **Tools** | Docker CLI + GitHub CLI + Git |
-| **API Testing** | Bruno (via VNC) |
+  /* ۲. تنظیم آیتم‌های دارای زیرمجموعه (مثلث) */
+  .custom-toc details {
+    width: 100%;
+  }
 
----
+  .custom-toc summary {
+    cursor: pointer;
+    display: flex;
+    align-items: center; /* تراز کامل افقی/عمودی لینک و آیکون */
+    list-style: none;    /* حذف مارکر پیش‌فرض استاندارد */
+  }
 
-## شروع سریع
+  /* حذف مارکر پیش‌فرض وب‌کیت */
+  .custom-toc summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* آیکون مثلث در حالت بسته */
+  .custom-toc summary::before {
+    content: "◀";
+    display: inline-flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 1.2rem;       /* هم‌عرض با دایره پر */
+    font-size: 0.7rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  /* آیکون مثلث در حالت باز (استفاده از کاراکتر مستقیم جهت جلوگیری از بهم خوردن مرکز) */
+  .custom-toc details[open] > summary::before {
+    content: "▼";
+    font-size: 0.65rem;  /* تنظیم ظریف سایز برای تناسب بصری */
+  }
+
+  /* ۳. تنظیم زیرمجموعه‌ها (دایره‌های توخالی) */
+  .custom-toc details ul {
+    padding-right: 1.2rem;
+    margin-top: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .custom-toc details ul li {
+    display: flex;
+    align-items: center;
+  }
+
+  .custom-toc details ul li::before {
+    content: "◦";        /* آیکون دایره توخالی */
+    display: inline-flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 1.2rem;       /* هم‌عرض با سطح اصلی */
+    font-size: 1rem;
+    font-weight: bold;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .heading-with-back {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .heading-with-back span {
+    flex: 1;
+  }
+  .back-to-toc {
+    text-decoration: none !important;
+  }
+  .back-to-toc:hover {
+    text-decoration: none !important;
+  }
+  table {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  table th,
+  table td {
+    text-align: left !important;
+    direction: ltr !important;
+  }
+  pre, code {
+    direction: ltr !important;
+    text-align: left !important;
+  }
+  .doc-nav-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .doc-nav-header .lang-links {
+    direction: ltr;
+  }
+</style>
+
+<ul class="custom-toc" dir="rtl">
+  <li><a href="#چرا-devbox-lite">چرا DevBox Lite؟</a></li>
+  <li><a href="#ابزارهای-موجود">ابزارهای موجود</a></li>
+  <li>
+    <details>
+      <summary><a href="#شروع-سریع">شروع سریع</a></summary>
+      <ul>
+        <li><a href="#پیشنیازها">پیش‌نیازها</a></li>
+        <li><a href="#راهاندازی-در-ویندوز">راه‌اندازی در ویندوز</a></li>
+        <li><a href="#راهاندازی-در-wsl2-توصیه-شده">راه‌اندازی در WSL2 (توصیه شده)</a></li>
+        <li><a href="#دستورات-کوتاه-اختیاری">دستورات کوتاه (اختیاری)</a></li>
+      </ul>
+    </details>
+  </li>
+  <li><a href="#ساختار-پوشهبندی">ساختار پوشه‌بندی</a></li>
+  <li>
+    <details>
+      <summary><a href="#ساخت-پروژه-جدید">ساخت پروژه جدید</a></summary>
+      <ul>
+        <li><a href="#روش-پیشنهادی-new-project-تعاملی-آفلاین">روش پیشنهادی: <code>new-project</code> (تعاملی، آفلاین)</a></li>
+        <li><a href="#template-های-موجود">template های موجود</a></li>
+        <li><a href="#روش-دستی-shell-ترمینال">روش دستی: <code>shell</code> (ترمینال)</a></li>
+      </ul>
+    </details>
+  </li>
+  <li><a href="#راهاندازی-خودکار-دیتابیسها">راه‌اندازی خودکار دیتابیس‌ها</a></li>
+  <li><a href="#مستندات">مستندات</a></li>
+  <li><a href="#لایسنس">لایسنس</a></li>
+</ul>
 
 ### پیش‌نیازها
 
@@ -52,19 +186,28 @@ cd D:\DevBox
 
 > **چرا WSL2؟** عملیات فایل در Docker Desktop حدود ۱۰-۲۰ برابر کندتر از فایل‌سیستم بومی WSL2 است. برای توسعه جدی، WSL2 به شدت توصیه می‌شود.
 
-```bash
-# ۱. نصب WSL2 (PowerShell به عنوان Administrator)
-wsl --install
-# ری‌استارت کامپیوتر
+**مرحله ۱:** نصب WSL2 (PowerShell به عنوان Administrator)
 
-# ۲. نصب Docker در Ubuntu
+```bash
+wsl --install
+```
+
+ری‌استارت کامپیوتر
+
+**مرحله ۲:** نصب Docker در Ubuntu
+
+```bash
 sudo apt update && sudo apt install -y docker.io docker-compose-v2
 sudo usermod -aG docker $USER && newgrp docker
+```
 
-# ۳. فعال‌سازی Docker Desktop
-# Docker Desktop → Settings → WSL Integration → Ubuntu را فعال کنید
+**مرحله ۳:** فعال‌سازی Docker Desktop
 
-# ۴. کلون و راه‌اندازی
+Docker Desktop → Settings → WSL Integration → Ubuntu را فعال کنید
+
+**مرحله ۴:** کلون و راه‌اندازی
+
+```bash
 mkdir -p ~/projects && cd ~/projects
 git clone git@github.com:efmojtaba1/DevBox.git && cd DevBox
 echo "WORKSPACE_PATH=$PWD" > .env
@@ -98,7 +241,10 @@ chmod +x scripts/*.sh
 
 ---
 
-## ساختار پوشه‌بندی
+<h2 id="ساختار-پوشهبندی" class="heading-with-back">
+  <span>ساختار پوشه‌بندی</span>
+  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
+</h2>
 
 ```
 DevBox_Lite/
@@ -123,7 +269,10 @@ DevBox_Lite/
 
 ---
 
-## ساخت پروژه جدید
+<h2 id="ساخت-پروژه-جدید" class="heading-with-back">
+  <span>ساخت پروژه جدید</span>
+  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
+</h2>
 
 > **نکته مهم:** تمام دستورات توسعه **داخل کانتینر** اجرا می‌شوند.
 
@@ -146,7 +295,7 @@ new-project
 | `laravel` | starter kit، دیتابیس، تست، dark mode، API | 8000 |
 | `next-js` | TypeScript، Tailwind | 3000 |
 | `react` | Vite + React 19 | 5173 |
-| `python` | Flask، FastAPI، خام | 5000/8000 |
+| `python` | Flask، FastAPI، خام | 5001/8000 |
 
 ### روش دستی: `shell` (ترمینال)
 
@@ -159,7 +308,10 @@ laravel new my-app    # یا: pnpm create next-app و...
 
 ---
 
-## راه‌اندازی خودکار دیتابیس‌ها
+<h2 id="راهاندازی-خودکار-دیتابیسها" class="heading-with-back">
+  <span>راه‌اندازی خودکار دیتابیس‌ها</span>
+  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
+</h2>
 
 اسکریپت `setup-deps` به صورت خودکار نوع پروژه‌ها را شناسایی و دیتابیس و ابزار گرافیکی مورد نیاز را راه‌اندازی می‌کند:
 
@@ -176,7 +328,10 @@ setup-deps
 
 ---
 
-## مستندات
+<h2 id="مستندات" class="heading-with-back">
+  <span>مستندات</span>
+  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
+</h2>
 
 | مستند | توضیحات |
 |-------|---------|
@@ -187,7 +342,10 @@ setup-deps
 
 ---
 
-## لایسنس
+<h2 id="لایسنس" class="heading-with-back">
+  <span>لایسنس</span>
+  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
+</h2>
 
 این پروژه تحت لایسنس [LICENSE](../../LICENSE) است.
 
