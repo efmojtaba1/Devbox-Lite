@@ -319,7 +319,11 @@ EOF
                 echo "[fix] venv broken, recreating..."
                 rm -rf "$project_dir/venv"
             fi
-            if [ ! -d "$project_dir/venv" ] && [ -f "$project_dir/requirements.txt" ]; then
+            # Create requirements.txt if missing (for Flask default)
+            if [ ! -f "$project_dir/requirements.txt" ]; then
+                echo "flask>=3.0" > "$project_dir/requirements.txt"
+            fi
+            if [ ! -d "$project_dir/venv" ]; then
                 echo "[install] venv + pip install..."
                 (cd "$project_dir" && python3 -m venv --without-pip venv 2>/dev/null && . venv/bin/activate && curl -sS https://bootstrap.pypa.io/get-pip.py | python3 2>/dev/null && pip install -r requirements.txt 2>/dev/null) || echo "[warn] python failed"
             else
