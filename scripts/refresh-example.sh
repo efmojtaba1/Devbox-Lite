@@ -177,7 +177,7 @@ def home():
     return {'message': 'Hello from DevBox Lite!'}
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5001)
 EOF
         cat > "$EXAMPLE_DIR/python/requirements.txt" << 'EOF'
 flask>=3.0

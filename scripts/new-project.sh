@@ -215,7 +215,7 @@ app = Flask(__name__)
 def home():
     return {"message": "Hello from DevBox Lite!"}
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5001)
 EOF
                         echo "flask>=3.0" > "$project_dir/requirements.txt"
                         ;;
@@ -326,8 +326,17 @@ EOF
                 echo "flask>=3.0" > "$project_dir/requirements.txt"
             fi
             if [ ! -d "$project_dir/venv" ]; then
-                echo "[install] venv + pip install..."
-                (cd "$project_dir" && python3 -m venv --without-pip venv 2>/dev/null && . venv/bin/activate && curl -sS https://bootstrap.pypa.io/get-pip.py | python3 2>/dev/null && pip install -r requirements.txt 2>/dev/null) || echo "[warn] python failed"
+                # Offline-first: copy pre-built venv from example-data
+                if [ -d "/example-data/python/venv" ] && [ -f "/example-data/python/venv/bin/python" ]; then
+                    echo "[offline] Copying venv from template..."
+                    cp -a /example-data/python/venv "$project_dir/venv" 2>/dev/null && \
+                        echo "[ok] venv copied." || echo "[warn] venv copy failed"
+                fi
+                # Online fallback: create fresh venv
+                if [ ! -d "$project_dir/venv" ]; then
+                    echo "[install] venv + pip install..."
+                    (cd "$project_dir" && python3 -m venv --without-pip venv 2>/dev/null && . venv/bin/activate && curl -sS https://bootstrap.pypa.io/get-pip.py | python3 2>/dev/null && pip install -r requirements.txt 2>/dev/null) || echo "[warn] python failed"
+                fi
             else
                 echo "[skip] venv present"
             fi

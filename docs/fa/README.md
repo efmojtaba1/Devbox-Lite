@@ -306,7 +306,7 @@ cd /workspace
 laravel new my-app    # یا: pnpm create next-app و...
 ```
 
----
+
 
 <h2 id="راهاندازی-خودکار-دیتابیسها" class="heading-with-back">
   <span>راه‌اندازی خودکار دیتابیس‌ها</span>
@@ -326,7 +326,7 @@ setup-deps
 | Next.js / React | PostgreSQL | Adminer |
 | Python | PostgreSQL | Adminer |
 
----
+
 
 <h2 id="مستندات" class="heading-with-back">
   <span>مستندات</span>
@@ -340,7 +340,7 @@ setup-deps
 | [عیب‌یابی](troubleshooting.md) | رفع اشکال و خطاهای متداول |
 | [راهنمای توسعه](development.md) | توسعه و نگهداری DevBox |
 
----
+
 
 <h2 id="لایسنس" class="heading-with-back">
   <span>لایسنس</span>
@@ -349,6 +349,6 @@ setup-deps
 
 این پروژه تحت لایسنس [LICENSE](../../LICENSE) است.
 
----
+
 
 **ورژن فعلی:** lite-1.0.0
