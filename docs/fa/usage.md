@@ -188,7 +188,7 @@ python app.py
 | Laravel | `serve` | http://localhost:8000 |
 | Next.js | `pnpm dev` | http://localhost:3000 |
 | React | `pnpm dev` | http://localhost:5173 |
-| Python (Flask) | `dev` | http://localhost:5000 |
+| Python (Flask) | `dev` | http://localhost:5001 |
 | Python (FastAPI) | `dev` | http://localhost:8000 |
 
 ---
