@@ -70,6 +70,7 @@ fi
 # Exclude dependency dirs (symlinks to Docker volumes, can't be copied)
 echo "Copying example templates to build context..."
 mkdir -p "$BUILD_CONTEXT/example"
+shopt -s dotglob
 for tmpl in laravel next-js python react; do
     if [ -d "$PROJECT_ROOT/example/$tmpl" ]; then
         mkdir -p "$BUILD_CONTEXT/example/$tmpl"
@@ -82,6 +83,7 @@ for tmpl in laravel next-js python react; do
         done
     fi
 done
+shopt -u dotglob
 
 docker build $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT"
 

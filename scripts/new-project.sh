@@ -143,6 +143,7 @@ create_project() {
     if [ -d "$example_dir" ]; then
         echo "[offline] Copying from template..."
         mkdir -p "$project_dir"
+        shopt -s dotglob
         for item in "$example_dir"/*; do
             local name
             name=$(basename "$item")
@@ -151,6 +152,7 @@ create_project() {
             esac
             cp -a "$item" "$project_dir/" 2>/dev/null
         done
+        shopt -u dotglob
         echo "[ok] Source copied."
 
         # Apply framework-specific changes for Python
