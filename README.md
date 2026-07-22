@@ -1,6 +1,6 @@
 # DevBox Lite
 
-**[فارسی](../fa/README.md) | [Back to Home](../../README.md)**
+**[فارسی](./docs/fa/README.md) | [Back to Home](../../README.md)**
 
 Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development environment built for **Laravel, Next.js, React, and Python** projects.
 
