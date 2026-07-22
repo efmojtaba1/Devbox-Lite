@@ -200,10 +200,10 @@ setup-deps /workspace
 
 | Document | Description |
 |----------|-------------|
-| [Usage Guide](usage.md) | Daily workflow and useful commands |
-| [Docker Reference](docker.md) | Complete Docker commands |
-| [Troubleshooting](troubleshooting.md) | Common issues and fixes |
-| [Development Guide](development.md) | DevBox development and maintenance |
+| [Usage Guide](./docs/en/usage.md) | Daily workflow and useful commands |
+| [Docker Reference](./docs/en/docker.md) | Complete Docker commands |
+| [Troubleshooting](./docs/en/troubleshooting.md) | Common issues and fixes |
+| [Development Guide](./docs/en/development.md) | DevBox development and maintenance |
 
 ---
 
