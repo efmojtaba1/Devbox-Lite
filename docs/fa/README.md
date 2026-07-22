@@ -1,4 +1,4 @@
-# DevBox Lite
+# محیط توسعه DevBox Lite
 
 سبک، ایزوله، و آماده کار — محیط توسعه‌ای مبتنی بر **Docker + Ubuntu 24.04** که برای پروژه‌های **Laravel، Next.js، React و Python** طراحی شده.
 
@@ -54,8 +54,8 @@
 
 ### پیش‌نیازها
 
-* [Docker Desktop](https://www.docker.com/products/docker-desktop/) نصب و اجرا شده باشد.
-* [VS Code](https://code.visualstudio.com/) به همراه افزونه [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) نصب شده باشد.
+* ‏[Docker Desktop](https://www.docker.com/products/docker-desktop/) نصب و اجرا شده باشد.
+* ‏[VS Code](https://code.visualstudio.com/) به همراه افزونه [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) نصب شده باشد.
 
 ### راه‌اندازی در ویندوز
 
@@ -74,7 +74,7 @@ cd D:\DevBox
 
 #### مرحله ۱: نصب WSL2
 
-PowerShell را به‌عنوان Administrator اجرا کنید:
+‏PowerShell را به‌عنوان Administrator اجرا کنید:
 
 ```powershell
 wsl --install
@@ -186,7 +186,7 @@ new-project
 
 اسکریپت نام پروژه، فریم‌ورک و گزینه‌های موردنظر را مرحله‌به‌مرحله از شما دریافت می‌کند.
 
-Templateها از پوشه `example/` کپی می‌شوند و برای ایجاد پروژه نیازی به اتصال اینترنت ندارند.
+‏Templateها از پوشه `example/` کپی می‌شوند و برای ایجاد پروژه نیازی به اتصال اینترنت ندارند.
 
 ### Templateهای موجود
 
