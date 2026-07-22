@@ -32,7 +32,7 @@
 
 ---
 
-## معماری پروژه
+## معماری پروژه [🔝](#فهرست-مطالب)
 
 ```text
 DevBox Lite/
@@ -62,7 +62,7 @@ DevBox Lite/
 
 ---
 
-## ساختار Dockerfile
+## ساختار Dockerfile [🔝](#فهرست-مطالب)
 
 ```text
 base → languages → frameworks → tools → extensions → cleanup → runtime
@@ -78,7 +78,7 @@ base → languages → frameworks → tools → extensions → cleanup → runti
 
 ---
 
-## نحوه اضافه کردن نرم‌افزار جدید
+## نحوه اضافه کردن نرم‌افزار جدید [🔝](#فهرست-مطالب)
 
 ### ۱. ایجاد اسکریپت نصب
 
@@ -102,7 +102,7 @@ RUN chmod +x /tmp/install/mytool.sh && /tmp/install/mytool.sh
 
 ---
 
-## نحوه تغییر ورژن ابزارها
+## نحوه تغییر ورژن ابزارها [🔝](#فهرست-مطالب)
 
 فایل `docker/app/.env` را ویرایش کنید:
 
@@ -120,7 +120,7 @@ PYTHON_VERSION=3.12
 
 ---
 
-## تست و اعتبارسنجی
+## تست و اعتبارسنجی [🔝](#فهرست-مطالب)
 
 ### تست ابزارها
 
@@ -146,7 +146,7 @@ docker run --rm devbox-lite:test bash -c "
 
 ---
 
-## سبک کدنویسی
+## سبک کدنویسی [🔝](#فهرست-مطالب)
 
 ### اسکریپت‌های شل
 
@@ -161,19 +161,19 @@ docker run --rm devbox-lite:test bash -c "
 
 ### تنظیمات pnpm 11
 
-DevBox از pnpm 11 با `dangerouslyAllowAllBuilds: true` در تنظیمات جهانی (`~/.config/pnpm/config.yaml`) استفاده می‌کند تا build scripts پکیج‌هایی مانند `sharp` و `unrs-resolver` بدون نیاز به تأیید دستی اجرا شوند.
+‏DevBox از pnpm 11 با `dangerouslyAllowAllBuilds: true` در تنظیمات جهانی (`~/.config/‏pnpm/config.yaml`) استفاده می‌کند تا build scripts پکیج‌هایی مانند `sharp` و ‏`unrs-resolver` بدون نیاز به تأیید دستی اجرا شوند.
 
-Store پکیج‌ها از Docker volume (`pnpm-store`) استفاده می‌کند و در ریشه workspace ایجاد نمی‌شود.
+‏Store پکیج‌ها از Docker volume (`pnpm-store`) استفاده می‌کند و در ریشه workspace ایجاد نمی‌شود.
 
 ---
 
-## پشتیبانی آفلاین
+## پشتیبانی آفلاین [🔝](#فهرست-مطالب)
 
 ### پکیج‌های آماده
 
 پکیج‌ها را در `prebuilt/packages/` قرار دهید:
 
-- `bruno_3.5.2_amd64_linux.deb`
+- ‏`bruno_3.5.2_amd64_linux.deb`
 
 اسکریپت‌های نصب ابتدا پکیج‌های آماده را بررسی می‌کنند و در صورت پیدا نشدن از اینترنت دانلود می‌کنند.
 
@@ -184,25 +184,25 @@ Store پکیج‌ها از Docker volume (`pnpm-store`) استفاده می‌ک
 - `mysql-8.4.tar`
 - `postgres-17.tar`
 - `redis-7.tar`
-- و غیره
+- ‎و غیره
 
 ---
 
-## عملکرد WSL2
+## عملکرد WSL2 [🔝](#فهرست-مطالب)
 
 برای عملکرد بهتر توسعه، DevBox را داخل WSL2 اجرا کنید به جای استفاده از bind mount Docker Desktop.
 
 ### چرا WSL2؟
 
-- Docker Desktop bind mount: عملیات فایل از پل Windows → WSL2 عبور می‌کند (کند)
-- WSL2 native: فایل‌ها روی فایل‌سیستم لینوکس ذخیره می‌شوند (10-20 برابر سریع‌تر)
+- ‏Docker Desktop bind mount: عملیات فایل از پل Windows → WSL2 عبور می‌کند (کند)
+- ‏WSL2 native: فایل‌ها روی فایل‌سیستم لینوکس ذخیره می‌شوند (10-20 برابر سریع‌تر)
 
 ### پیش‌نیازها
 
-1. WSL2 نصب باشد: `wsl --install` (PowerShell به عنوان Administrator)
-2. Docker در WSL2 در دسترس باشد (یکی از روش‌ها):
-   - WSL Integration در Docker Desktop فعال باشد، یا
-   - Docker به صورت بومی نصب باشد: `sudo apt install docker.io docker-compose-v2`
+1. ‏WSL2 نصب باشد: `wsl --install` (PowerShell به عنوان Administrator)
+2. ‏Docker در WSL2 در دسترس باشد (یکی از روش‌ها):
+   - ‏WSL Integration در Docker Desktop فعال باشد، یا
+   - ‏Docker به صورت بومی نصب باشد: `sudo apt install docker.io docker-compose-v2`
 
 ### راه‌اندازی کامل
 
@@ -258,12 +258,10 @@ swap=4GB
 
 ---
 
-## مستندات
+## مستندات [🔝](#فهرست-مطالب)
 
 | مستند | توضیحات |
 |-------|---------|
 | [راهنمای استفاده](usage.md) | گردش کار روزمره و دستورات کاربردی |
 | [مرجع Docker](docker.md) | دستورات کامل Docker |
 | [عیب‌یابی](troubleshooting.md) | رفع اشکال و خطاهای متداول |
-
-[🔝 بازگشت به فهرست مطالب](#فهرست-مطالب)

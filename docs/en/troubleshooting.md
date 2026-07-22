@@ -1,206 +1,57 @@
-<div class="doc-nav-header">
-  <h1>Troubleshooting Guide</h1>
-  <span class="lang-links">
-    <strong><a href="../fa/troubleshooting.md">فارسی</a></strong> | <a href="README.md">Home</a>
-  </span>
-</div>
+# Troubleshooting Guide
+
+**[فارسی](../fa/troubleshooting.md) | [Home](README.md)**
 
 ---
 
 ## Table of Contents
 
-<style>
-  .custom-toc,
-  .custom-toc ul {
-    list-style: none;
-    padding-left: 0;
-    margin: 0;
-  }
-  .custom-toc li {
-    line-height: 2;
-  }
-  .custom-toc > li:not(:has(details)) {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc > li:not(:has(details))::before {
-    content: "•";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1.2rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details {
-    width: 100%;
-  }
-  .custom-toc summary {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    list-style: none;
-  }
-  .custom-toc summary::-webkit-details-marker {
-    display: none;
-  }
-  .custom-toc summary::before {
-    content: "▶";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 0.7rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details[open] > summary::before {
-    content: "▼";
-    font-size: 0.65rem;
-  }
-  .custom-toc details ul {
-    padding-left: 1.2rem;
-    margin-top: 0.25rem;
-    margin-bottom: 0.5rem;
-  }
-  .custom-toc details ul li {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc details ul li::before {
-    content: "◦";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1rem;
-    font-weight: bold;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .heading-with-back {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .heading-with-back span {
-    flex: 1;
-  }
-  .back-to-toc {
-    text-decoration: none !important;
-  }
-  .back-to-toc:hover {
-    text-decoration: none !important;
-  }
-  .doc-nav-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-    direction: ltr;
-  }
-  .doc-nav-header .lang-links {
-    direction: rtl;
-  }
-</style>
-
-<ul class="custom-toc" dir="ltr">
-<li><a href="#quick-fix">Quick Fix</a></li>
-<li>
-<details><summary><a href="#docker-issues">Docker Issues</a></summary>
-<ul>
-<li><a href="#container-wont-start">Container Won't Start</a></li>
-<li><a href="#port-in-use">Port in Use</a></li>
-<li><a href="#permission-denied">Permission Denied</a></li>
-<li><a href="#image-build-fails">Image Build Fails</a></li>
-<li><a href="#disk-space-full">Disk Space Full</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#workspace-issues">Workspace Issues</a></summary>
-<ul>
-<li><a href="#projects-not-visible-in-container">Projects Not Visible in Container</a></li>
-<li><a href="#python-virtual-environment-empty">Python Virtual Environment Empty</a></li>
-<li><a href="#node-modules-not-found">Node Modules Not Found</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#vs-code-issues">VS Code Issues</a></summary>
-<ul>
-<li><a href="#vs-code-wont-connect-to-container">VS Code Won't Connect to Container</a></li>
-<li><a href="#extensions-wont-install">Extensions Won't Install</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#tool-issues">Tool Issues</a></summary>
-<ul>
-<li><a href="#tools-not-installed">Tools Not Installed</a></li>
-<li><a href="#pnpm-err_pnpm_ignored_builds">pnpm ERR_PNPM_IGNORED_BUILDS</a></li>
-<li><a href="#composer-errors">Composer Errors</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#network-issues">Network Issues</a></summary>
-<ul>
-<li><a href="#container-communication">Container Communication</a></li>
-<li><a href="#internet-access">Internet Access</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#database-issues">Database Issues</a></summary>
-<ul>
-<li><a href="#database-container-wont-start">Database Container Won't Start</a></li>
-<li><a href="#cannot-connect-to-database">Cannot Connect to Database</a></li>
-<li><a href="#laravel-migration-fails-with-connection-refused">Laravel Migration Fails with Connection Refused</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#volume-issues">Volume Issues</a></summary>
-<ul>
-<li><a href="#changes-not-saving">Changes Not Saving</a></li>
-<li><a href="#laravel-project-creation-fails-silently">Laravel Project Creation Fails Silently</a></li>
-<li><a href="#named-volumes-stale-after-project-delete">Named Volumes Stale After Project Delete</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#docker-desktop-wont-start">Docker Desktop Won't Start</a></li>
-<li>
-<details><summary><a href="#wsl2-issues">WSL2 Issues</a></summary>
-<ul>
-<li><a href="#wsl2-not-installed">WSL2 Not Installed</a></li>
-<li><a href="#docker-not-available-in-wsl2">Docker Not Available in WSL2</a></li>
-<li><a href="#slow-performance-on-windows">Slow Performance on Windows</a></li>
-<li><a href="#permission-denied-in-wsl2">Permission Denied in WSL2</a></li>
-<li><a href="#docker-build-slow-in-wsl2">Docker Build Slow in WSL2</a></li>
-<li><a href="#cannot-access-windows-files-from-wsl2">Cannot Access Windows Files from WSL2</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#github-authentication">GitHub Authentication</a></summary>
-<ul>
-<li><a href="#option-1-ssh-key-recommended">Option 1: SSH Key (Recommended)</a></li>
-<li><a href="#option-2-personal-access-token">Option 2: Personal Access Token</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#useful-resources">Useful Resources</a></li>
-<li><a href="#related-documentation">Related Documentation</a></li>
-</ul>
+* [Quick Fix](#quick-fix)
+* [Docker Issues](#docker-issues)
+  * [Container Won't Start](#container-wont-start)
+  * [Port in Use](#port-in-use)
+  * [Permission Denied](#permission-denied)
+  * [Image Build Fails](#image-build-fails)
+  * [Disk Space Full](#disk-space-full)
+* [Workspace Issues](#workspace-issues)
+  * [Projects Not Visible in Container](#projects-not-visible-in-container)
+  * [Python Virtual Environment Empty](#python-virtual-environment-empty)
+  * [Node Modules Not Found](#node-modules-not-found)
+* [VS Code Issues](#vs-code-issues)
+  * [VS Code Won't Connect to Container](#vs-code-wont-connect-to-container)
+  * [Extensions Won't Install](#extensions-wont-install)
+* [Tool Issues](#tool-issues)
+  * [Tools Not Installed](#tools-not-installed)
+  * [pnpm ERR_PNPM_IGNORED_BUILDS](#pnpm-err_pnpm_ignored_builds)
+  * [Composer Errors](#composer-errors)
+* [Network Issues](#network-issues)
+  * [Container Communication](#container-communication)
+  * [Internet Access](#internet-access)
+* [Database Issues](#database-issues)
+  * [Database Container Won't Start](#database-container-wont-start)
+  * [Cannot Connect to Database](#cannot-connect-to-database)
+  * [Laravel Migration Fails with Connection Refused](#laravel-migration-fails-with-connection-refused)
+* [Volume Issues](#volume-issues)
+  * [Changes Not Saving](#changes-not-saving)
+  * [Laravel Project Creation Fails Silently](#laravel-project-creation-fails-silently)
+  * [Named Volumes Stale After Project Delete](#named-volumes-stale-after-project-delete)
+* [Docker Desktop Won't Start](#docker-desktop-wont-start)
+* [WSL2 Issues](#wsl2-issues)
+  * [WSL2 Not Installed](#wsl2-not-installed)
+  * [Docker Not Available in WSL2](#docker-not-available-in-wsl2)
+  * [Slow Performance on Windows](#slow-performance-on-windows)
+  * [Permission Denied in WSL2](#permission-denied-in-wsl2)
+  * [Docker Build Slow in WSL2](#docker-build-slow-in-wsl2)
+  * [Cannot Access Windows Files from WSL2](#cannot-access-windows-files-from-wsl2)
+* [GitHub Authentication](#github-authentication)
+  * [Option 1: SSH Key (Recommended)](#option-1-ssh-key-recommended)
+  * [Option 2: Personal Access Token](#option-2-personal-access-token)
+* [Useful Resources](#useful-resources)
+* [Related Documentation](#related-documentation)
 
 ---
 
-<h2 id="quick-fix" class="heading-with-back">
-  <span>Quick Fix</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Quick Fix [🔝](#table-of-contents)
 
 Most issues can be resolved with these steps:
 
@@ -215,25 +66,22 @@ If nothing works, restart Docker Desktop.
 
 ---
 
-<h2 id="docker-issues" class="heading-with-back">
-  <span>Docker Issues</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Docker Issues [🔝](#table-of-contents)
 
 ### Container Won't Start
 
 **Check logs:**
+
 ```powershell
 .\scripts\logs
 ```
 
 **Rebuild and start:**
+
 ```powershell
 .\scripts\rebuild
 .\scripts\up
 ```
-
----
 
 ### Port in Use
 
@@ -243,8 +91,6 @@ Find and kill the process using the port:
 netstat -ano | findstr :8000
 taskkill /PID <PID> /F
 ```
-
----
 
 ### Permission Denied
 
@@ -260,16 +106,12 @@ docker volume rm devbox_workspace
 .\scripts\up
 ```
 
----
-
 ### Image Build Fails
 
 ```powershell
 docker builder prune
 .\scripts\rebuild
 ```
-
----
 
 ### Disk Space Full
 
@@ -280,10 +122,7 @@ docker system prune -a --volumes
 
 ---
 
-<h2 id="workspace-issues" class="heading-with-back">
-  <span>Workspace Issues</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Workspace Issues [🔝](#table-of-contents)
 
 ### Projects Not Visible in Container
 
@@ -298,8 +137,6 @@ The `workspace/` folder on your host is mounted to `/workspace` inside the conta
 ls /workspace
 ```
 
----
-
 ### Python Virtual Environment Empty
 
 When you create a Python project, the `venv` folder might appear empty because Docker volume mounts overwrite it.
@@ -313,8 +150,6 @@ source venv/bin/activate
 pip install flask requests
 ```
 
----
-
 ### Node Modules Not Found
 
 If `node_modules` is missing after container restart:
@@ -326,10 +161,7 @@ npm install
 
 ---
 
-<h2 id="vs-code-issues" class="heading-with-back">
-  <span>VS Code Issues</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## VS Code Issues [🔝](#table-of-contents)
 
 ### VS Code Won't Connect to Container
 
@@ -346,10 +178,7 @@ Then restart VS Code.
 
 ---
 
-<h2 id="tool-issues" class="heading-with-back">
-  <span>Tool Issues</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Tool Issues [🔝](#table-of-contents)
 
 ### Tools Not Installed
 
@@ -381,10 +210,7 @@ mv composer.phar /usr/local/bin/composer
 
 ---
 
-<h2 id="network-issues" class="heading-with-back">
-  <span>Network Issues</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Network Issues [🔝](#table-of-contents)
 
 ### Container Communication
 
@@ -413,10 +239,7 @@ services:
 
 ---
 
-<h2 id="database-issues" class="heading-with-back">
-  <span>Database Issues</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Database Issues [🔝](#table-of-contents)
 
 ### Database Container Won't Start
 
@@ -432,8 +255,6 @@ docker rm -f devbox-mysql
 docker volume rm devbox-mysql-data
 # Then restart and recreate
 ```
-
----
 
 ### Cannot Connect to Database
 
@@ -467,10 +288,7 @@ DB_HOST=devbox-mysql    # NOT 127.0.0.1
 
 ---
 
-<h2 id="volume-issues" class="heading-with-back">
-  <span>Volume Issues</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Volume Issues [🔝](#table-of-contents)
 
 ### Changes Not Saving
 
@@ -486,8 +304,6 @@ If the issue persists:
 docker volume rm devbox_workspace
 .\scripts\up
 ```
-
----
 
 ### Laravel Project Creation Fails Silently
 
@@ -510,8 +326,6 @@ If `laravel new` shows prompts but exits immediately after "Creating Laravel app
 laravel new my-app
 ```
 
----
-
 ### Named Volumes Stale After Project Delete
 
 When you delete a project folder, the associated named volumes remain. To clean them up:
@@ -528,10 +342,7 @@ docker volume rm devbox_vendor-laravel devbox_node-modules-laravel
 
 ---
 
-<h2 id="docker-desktop-wont-start" class="heading-with-back">
-  <span>Docker Desktop Won't Start</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Docker Desktop Won't Start [🔝](#table-of-contents)
 
 ```powershell
 Restart-Service com.docker.service
@@ -541,10 +352,7 @@ Or restart Docker Desktop from the Start menu.
 
 ---
 
-<h2 id="wsl2-issues" class="heading-with-back">
-  <span>WSL2 Issues</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## WSL2 Issues [🔝](#table-of-contents)
 
 ### WSL2 Not Installed
 
@@ -614,6 +422,7 @@ processors=4
 ### Cannot Access Windows Files from WSL2
 
 Windows drives are mounted at `/mnt/`. For example:
+
 - `C:\Users` → `/mnt/c/Users`
 - `D:\Projects` → `/mnt/d/Projects`
 
@@ -621,37 +430,39 @@ For best performance, keep project files inside WSL2 filesystem (`~/projects/`),
 
 ---
 
-<h2 id="github-authentication" class="heading-with-back">
-  <span>GitHub Authentication</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## GitHub Authentication [🔝](#table-of-contents)
 
 GitHub no longer supports password authentication for Git. You must use SSH keys or Personal Access Token.
 
 ### Option 1: SSH Key (Recommended)
 
 **Step 1: Generate SSH key**
+
 ```bash
 ssh-keygen -t ed25519 -C "your-email@example.com"
 ```
 
 **Step 2: Copy public key**
+
 ```bash
 cat ~/.ssh/id_ed25519.pub
 ```
 
 **Step 3: Add key to GitHub**
+
 1. Go to https://github.com/settings/keys
 2. Click **"New SSH key"**
 3. Paste the copied key
 4. Click **"Add SSH key"**
 
 **Step 4: Test connection**
+
 ```bash
 ssh -T git@github.com
 ```
 
 **Step 5: Clone with SSH**
+
 ```bash
 git clone git@github.com:efmojtaba1/DevBox.git
 ```
@@ -659,6 +470,7 @@ git clone git@github.com:efmojtaba1/DevBox.git
 ### Option 2: Personal Access Token
 
 **Step 1: Create token**
+
 1. Go to https://github.com/settings/tokens
 2. Click **"Generate new token (classic)"**
 3. Select scopes: `repo`, `read:org`
@@ -666,21 +478,20 @@ git clone git@github.com:efmojtaba1/DevBox.git
 5. Copy the token immediately
 
 **Step 2: Clone with token**
+
 ```bash
 git clone https://YOUR_TOKEN@github.com/efmojtaba1/DevBox.git
 ```
 
 **Step 3: Cache credentials (optional)**
+
 ```bash
 git config --global credential.helper store
 ```
 
 ---
 
-<h2 id="useful-resources" class="heading-with-back">
-  <span>Useful Resources</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Useful Resources [🔝](#table-of-contents)
 
 - [Docker Documentation](https://docs.docker.com/)
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
@@ -688,10 +499,7 @@ git config --global credential.helper store
 
 ---
 
-<h2 id="related-documentation" class="heading-with-back">
-  <span>Related Documentation</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Related Documentation [🔝](#table-of-contents)
 
 | Document | Description |
 |----------|-------------|

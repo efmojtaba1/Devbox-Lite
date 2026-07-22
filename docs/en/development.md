@@ -1,202 +1,70 @@
-<div class="doc-nav-header">
-  <h1>DevBox Lite Development Guide</h1>
-  <span class="lang-links">
-    <strong><a href="../fa/development.md">فارسی</a></strong> | <a href="README.md">Home</a>
-  </span>
-</div>
+# DevBox Lite Development Guide
+
+**[فارسی](../fa/development.md) | [Home](README.md)**
 
 ---
 
 ## Table of Contents
 
-<style>
-  .custom-toc,
-  .custom-toc ul {
-    list-style: none;
-    padding-left: 0;
-    margin: 0;
-  }
-  .custom-toc li {
-    line-height: 2;
-  }
-  .custom-toc > li:not(:has(details)) {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc > li:not(:has(details))::before {
-    content: "•";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1.2rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details {
-    width: 100%;
-  }
-  .custom-toc summary {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    list-style: none;
-  }
-  .custom-toc summary::-webkit-details-marker {
-    display: none;
-  }
-  .custom-toc summary::before {
-    content: "▶";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 0.7rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details[open] > summary::before {
-    content: "▼";
-    font-size: 0.65rem;
-  }
-  .custom-toc details ul {
-    padding-left: 1.2rem;
-    margin-top: 0.25rem;
-    margin-bottom: 0.5rem;
-  }
-  .custom-toc details ul li {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc details ul li::before {
-    content: "◦";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1rem;
-    font-weight: bold;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .heading-with-back {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .heading-with-back span {
-    flex: 1;
-  }
-  .back-to-toc {
-    text-decoration: none !important;
-  }
-  .back-to-toc:hover {
-    text-decoration: none !important;
-  }
-  .doc-nav-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-    direction: ltr;
-  }
-  .doc-nav-header .lang-links {
-    direction: rtl;
-  }
-</style>
-
-<ul class="custom-toc" dir="ltr">
-<li><a href="#project-architecture">Project Architecture</a></li>
-<li><a href="#dockerfile-structure">Dockerfile Structure</a></li>
-<li>
-<details><summary><a href="#adding-new-software">Adding New Software</a></summary>
-<ul>
-<li><a href="#1-create-install-script">1. Create Install Script</a></li>
-<li><a href="#2-add-to-dockerfile">2. Add to Dockerfile</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#changing-tool-versions">Changing Tool Versions</a></li>
-<li>
-<details><summary><a href="#testing--validation">Testing & Validation</a></summary>
-<ul>
-<li><a href="#test-tools">Test Tools</a></li>
-<li><a href="#test-full-image">Test Full Image</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#coding-style">Coding Style</a></summary>
-<ul>
-<li><a href="#shell-scripts">Shell Scripts</a></li>
-<li><a href="#powershell-scripts">PowerShell Scripts</a></li>
-<li><a href="#pnpm-11-configuration">pnpm 11 Configuration</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#offline-support">Offline Support</a></summary>
-<ul>
-<li><a href="#prebuilt-packages">Prebuilt Packages</a></li>
-<li><a href="#prebuilt-docker-images">Prebuilt Docker Images</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#wsl2-performance">WSL2 Performance</a></summary>
-<ul>
-<li><a href="#why-wsl2">Why WSL2?</a></li>
-<li><a href="#prerequisites">Prerequisites</a></li>
-<li><a href="#full-setup">Full Setup</a></li>
-<li><a href="#optimize-wsl2-resources">Optimize WSL2 Resources</a></li>
-<li><a href="#performance-comparison">Performance Comparison</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#documentation">Documentation</a></li>
-</ul>
+* [Project Architecture](#project-architecture)
+* [Dockerfile Structure](#dockerfile-structure)
+* [Adding New Software](#adding-new-software)
+  * [1. Create Install Script](#1-create-install-script)
+  * [2. Add to Dockerfile](#2-add-to-dockerfile)
+* [Changing Tool Versions](#changing-tool-versions)
+* [Testing & Validation](#testing--validation)
+  * [Test Tools](#test-tools)
+  * [Test Full Image](#test-full-image)
+* [Coding Style](#coding-style)
+  * [Shell Scripts](#shell-scripts)
+  * [PowerShell Scripts](#powershell-scripts)
+  * [pnpm 11 Configuration](#pnpm-11-configuration)
+* [Offline Support](#offline-support)
+  * [Prebuilt Packages](#prebuilt-packages)
+  * [Prebuilt Docker Images](#prebuilt-docker-images)
+* [WSL2 Performance](#wsl2-performance)
+  * [Why WSL2?](#why-wsl2)
+  * [Prerequisites](#prerequisites)
+  * [Full Setup](#full-setup)
+  * [Optimize WSL2 Resources](#optimize-wsl2-resources)
+  * [Performance Comparison](#performance-comparison)
+* [Documentation](#documentation)
 
 ---
 
-<h2 id="project-architecture" class="heading-with-back">
-  <span>Project Architecture</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Project Architecture [🔝](#table-of-contents)
 
-```
+```text
 DevBox Lite/
 ├── docker/
-│   ├── app/              # Image build files
-│   │   ├── Dockerfile    # Main file (multi-stage)
-│   │   ├── .env          # Tool versions
-│   │   ├── entrypoint.sh # Startup script
-│   │   └── install/      # Modular install scripts
-│   └── compose/          # Docker Compose file (.env for WORKSPACE_PATH)
-├── scripts/              # Management scripts
-├── docs/                 # Documentation
-│   ├── fa/               # Farsi documentation
-│   └── en/               # English documentation
-├── prebuilt/             # Pre-downloaded packages for offline use
-│   ├── images/           # Docker image archives
-│   └── packages/         # Bruno packages
-└── workspace/            # Project workspace (mounted to /workspace in container)
-    ├── data/             # Persistent data
-    │   └── bruno/        # Bruno API client data
+│   ├── app/                  # Image build files
+│   │   ├── Dockerfile        # Main file (multi-stage)
+│   │   ├── .env              # Tool versions
+│   │   ├── entrypoint.sh     # Startup script
+│   │   └── install/          # Modular install scripts
+│   └── compose/              # Docker Compose file (.env for WORKSPACE_PATH)
+├── scripts/                  # Management scripts
+├── docs/                     # Documentation
+│   ├── fa/                   # Farsi documentation
+│   └── en/                   # English documentation
+├── prebuilt/                 # Pre-downloaded packages for offline use
+│   ├── images/               # Docker image archives
+│   └── packages/             # Bruno packages
+└── workspace/                # Project workspace (mounted to /workspace in container)
+    ├── data/                 # Persistent data
+    │   └── bruno/            # Bruno API client data
     │       ├── collections/  # Saved collections and requests
     │       └── config/       # Bruno application config
-    ├── laravel/          # Laravel project (example)
-    ├── next-js/          # Next.js project (example)
-    └── python/           # Python project (example)
+    ├── laravel/              # Laravel project (example)
+    ├── next-js/              # Next.js project (example)
+    └── python/               # Python project (example)
 ```
 
 ---
 
-<h2 id="dockerfile-structure" class="heading-with-back">
-  <span>Dockerfile Structure</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Dockerfile Structure [🔝](#table-of-contents)
 
-```
+```text
 base → languages → frameworks → tools → extensions → cleanup → runtime
 ```
 
@@ -210,10 +78,7 @@ base → languages → frameworks → tools → extensions → cleanup → runti
 
 ---
 
-<h2 id="adding-new-software" class="heading-with-back">
-  <span>Adding New Software</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Adding New Software [🔝](#table-of-contents)
 
 ### 1. Create Install Script
 
@@ -237,10 +102,7 @@ RUN chmod +x /tmp/install/mytool.sh && /tmp/install/mytool.sh
 
 ---
 
-<h2 id="changing-tool-versions" class="heading-with-back">
-  <span>Changing Tool Versions</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Changing Tool Versions [🔝](#table-of-contents)
 
 Edit `docker/app/.env`:
 
@@ -258,10 +120,7 @@ Then rebuild the image:
 
 ---
 
-<h2 id="testing--validation" class="heading-with-back">
-  <span>Testing & Validation</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Testing & Validation [🔝](#table-of-contents)
 
 ### Test Tools
 
@@ -287,10 +146,7 @@ docker run --rm devbox-lite:test bash -c "
 
 ---
 
-<h2 id="coding-style" class="heading-with-back">
-  <span>Coding Style</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Coding Style [🔝](#table-of-contents)
 
 ### Shell Scripts
 
@@ -311,14 +167,12 @@ The pnpm store is configured to use a Docker volume (`pnpm-store`) instead of th
 
 ---
 
-<h2 id="offline-support" class="heading-with-back">
-  <span>Offline Support</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Offline Support [🔝](#table-of-contents)
 
 ### Prebuilt Packages
 
 Place packages in `prebuilt/packages/`:
+
 - `bruno_3.5.2_amd64_linux.deb`
 
 The install scripts check for prebuilt packages first, then download from internet if not found.
@@ -326,6 +180,7 @@ The install scripts check for prebuilt packages first, then download from intern
 ### Prebuilt Docker Images
 
 Place exported images in `prebuilt/images/`:
+
 - `mysql-8.4.tar`
 - `postgres-17.tar`
 - `redis-7.tar`
@@ -333,10 +188,7 @@ Place exported images in `prebuilt/images/`:
 
 ---
 
-<h2 id="wsl2-performance" class="heading-with-back">
-  <span>WSL2 Performance</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## WSL2 Performance [🔝](#table-of-contents)
 
 For better development performance, run DevBox inside WSL2 instead of using Docker Desktop's bind mount.
 
@@ -397,10 +249,7 @@ Then restart WSL: `wsl --shutdown`
 
 ---
 
-<h2 id="documentation" class="heading-with-back">
-  <span>Documentation</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Documentation [🔝](#table-of-contents)
 
 | Document | Description |
 |----------|-------------|

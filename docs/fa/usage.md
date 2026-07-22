@@ -8,7 +8,7 @@
 
 * [راه‌اندازی اولیه](#راهاندازی-اولیه)
   * [ویندوز](#ویندوز)
-  * [WSL2 (توصیه شده)](#wsl2-توصیه-شده)
+  * [محیط WSL2 (توصیه شده)](#wsl2-توصیه-شده)
 * [گردش کار روزمره](#گردش-کار-روزمره)
 * [اسکریپت‌های مدیریت](#اسکریپتهای-مدیریت)
 * [ساخت پروژه](#ساخت-پروژه)
@@ -30,7 +30,7 @@
 * [پورت‌های پیش‌فرض](#پورتهای-پیشفرض)
 * [اتصال VS Code به کانتینر](#اتصال-vs-code-به-کانتینر)
 * [تست API](#تست-api)
-  * [Bruno](#bruno)
+  * [نرم افزار Bruno](#bruno)
   * [استفاده آفلاین](#استفاده-آفلاین)
 * [ورژن ابزارها](#ورژن-ابزارها)
 * [نکات مهم](#نکات-مهم)
@@ -63,9 +63,9 @@ echo "WORKSPACE_PATH=$PWD" > .env
 
 ## گردش کار روزمره
 
-1. Docker Desktop را باز کنید
+1. ابتدا Docker Desktop را باز کنید
 2. کانتینر را بالا بیاورید.
-3. VS Code را باز کنید → Remote Explorer → Dev Containers
+3. سپس VS Code را باز کنید → Remote Explorer → Dev Containers
 4. داخل پوشه `workspace/` کار کنید
 
 ---
@@ -147,7 +147,7 @@ new-project my-app react
 
 هنگام انتخاب Laravel، گزینه‌های تعاملی زیر نمایش داده می‌شوند:
 
-- **Starter kit:** Breeze (Blade/React/Vue), Jetstream (Livewire/Inertia), None
+- **استارتر کیت:** Breeze (Blade/React/Vue), Jetstream (Livewire/Inertia), None
 - **دیتابیس:** SQLite, MySQL, PostgreSQL
 - **تست:** Pest, PHPUnit
 - **حالت تاریک:** بله/خیر
@@ -155,8 +155,8 @@ new-project my-app react
 
 ### گزینه‌های React
 
-- **TypeScript:** بله/خیر
-- **Tailwind CSS:** بله/خیر
+- **تایپ اسکریپت:** بله/خیر
+- **تیلویند:** بله/خیر
 
 ### گزینه‌های Python
 
@@ -164,7 +164,7 @@ new-project my-app react
 
 ### راه‌اندازی template های نمونه
 
-Template ها به صورت خودکار هنگام اجرای `up` راه‌اندازی می‌شوند (بعد از اولین build یا `down-v`). نیازی به راه‌اندازی دستی نیست.
+‏Template ها به صورت خودکار هنگام اجرای `up` راه‌اندازی می‌شوند (بعد از اولین build یا `down-v`). نیازی به راه‌اندازی دستی نیست.
 
 برای بررسی صحت template ها:
 
@@ -263,7 +263,7 @@ python app.py
 
 اگر نیاز به ریست کامل دارید (حذف تمام volume های named مثل `node_modules`، `vendor`، `bruno`):
 
-### ویندوز
+### ‎ویندوز
 
 ```powershell
 .\scripts\down-v
@@ -393,25 +393,25 @@ SESSION_DRIVER=redis
 
 ## پورت‌های پیش‌فرض
 
-| سرویس | پورت | نام کانتینر |
-|-------|------|-------------|
-| MySQL | 3307 | devbox-mysql |
+| سرویس      | پورت | نام کانتینر     |
+|------------|------|-----------------|
+| MySQL      | 3307 | devbox-mysql    |
 | PostgreSQL | 5433 | devbox-postgres |
-| Redis | 6380 | devbox-redis |
-| MongoDB | 27017 | devbox-mongo |
-| MariaDB | 3308 | devbox-mariadb |
-| phpMyAdmin | 8081 | - |
-| Adminer | 8082 | - |
-| pgAdmin | 8083 | - |
+| Redis      | 6380 | devbox-redis    |
+| MongoDB    | 27017| devbox-mongo    |
+| MariaDB    | 3308 | devbox-mariadb  |
+| phpMyAdmin | 8081 |        -        |
+| Adminer    | 8082 |        -        |
+| pgAdmin    | 8083 |        -        |
 
 ---
 
 ## اتصال VS Code به کانتینر
 
-1. VS Code را باز کنید
-2. Remote Explorer → Dev Containers را انتخاب کنید
+1. ادیتور VS Code را باز کنید
+2. سپس Remote Explorer → Dev Containers را انتخاب کنید
 3. روی **"+"** کلیک کنید و مسیر پروژه را انتخاب کنید
-4. VS Code به صورت خودکار کانتینر را شناسایی و متصل می‌شود
+4. ادیتور VS Code به صورت خودکار کانتینر را شناسایی و متصل می‌شود
 
 ---
 
@@ -475,5 +475,3 @@ PYTHON_VERSION=3.12
 | [مرجع Docker](docker.md) | دستورات کامل Docker |
 | [عیب‌یابی](troubleshooting.md) | رفع اشکال و خطاهای متداول |
 | [راهنمای توسعه](development.md) | توسعه و نگهداری DevBox |
-
-[🔝 بازگشت به فهرست مطالب](#فهرست-مطالب)

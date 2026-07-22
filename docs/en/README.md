@@ -1,9 +1,6 @@
-<div class="doc-nav-header">
-  <h1>DevBox Lite</h1>
-  <span class="lang-links">
-    <strong><a href="../fa/README.md">فارسی</a></strong> | <a href="../../README.md">Back to Home</a>
-  </span>
-</div>
+# DevBox Lite
+
+**[فارسی](../fa/README.md) | [Back to Home](../../README.md)**
 
 Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development environment built for **Laravel, Next.js, React, and Python** projects.
 
@@ -11,136 +8,25 @@ Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development env
 
 ## Table of Contents
 
-<style>
-  .custom-toc,
-  .custom-toc ul {
-    list-style: none;
-    padding-left: 0;
-    margin: 0;
-  }
-  .custom-toc li {
-    line-height: 2;
-  }
-  .custom-toc > li:not(:has(details)) {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc > li:not(:has(details))::before {
-    content: "•";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1.2rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details {
-    width: 100%;
-  }
-  .custom-toc summary {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    list-style: none;
-  }
-  .custom-toc summary::-webkit-details-marker {
-    display: none;
-  }
-  .custom-toc summary::before {
-    content: "▶";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 0.7rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details[open] > summary::before {
-    content: "▼";
-    font-size: 0.65rem;
-  }
-  .custom-toc details ul {
-    padding-left: 1.2rem;
-    margin-top: 0.25rem;
-    margin-bottom: 0.5rem;
-  }
-  .custom-toc details ul li {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc details ul li::before {
-    content: "◦";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1rem;
-    font-weight: bold;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .heading-with-back {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .heading-with-back span {
-    flex: 1;
-  }
-  .back-to-toc {
-    text-decoration: none !important;
-  }
-  .back-to-toc:hover {
-    text-decoration: none !important;
-  }
-  .doc-nav-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-    direction: ltr;
-  }
-  .doc-nav-header .lang-links {
-    direction: rtl;
-  }
-</style>
-
-<ul class="custom-toc" dir="ltr">
-<li><a href="#why-devbox-lite">Why DevBox Lite?</a></li>
-<li><a href="#available-tools">Available Tools</a></li>
-<li>
-<details><summary><a href="#quick-start">Quick Start</a></summary>
-<ul>
-<li><a href="#prerequisites">Prerequisites</a></li>
-<li><a href="#windows-setup">Windows Setup</a></li>
-<li><a href="#wsl2-setup-recommended">WSL2 Setup (Recommended)</a></li>
-<li><a href="#short-commands-optional">Short Commands (Optional)</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#folder-structure">Folder Structure</a></li>
-<li>
-<details><summary><a href="#creating-new-projects">Creating New Projects</a></summary>
-<ul>
-<li><a href="#recommended-new-project-interactive-offline-first">Recommended: <code>new-project</code> (Interactive, Offline-First)</a></li>
-<li><a href="#available-templates">Available Templates</a></li>
-<li><a href="#manual-method-shell-terminal">Manual Method: <code>shell</code> (Terminal)</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#auto-setup-databases">Auto-Setup Databases</a></li>
-<li><a href="#documentation">Documentation</a></li>
-<li><a href="#license">License</a></li>
-</ul>
+* [Why DevBox Lite?](#why-devbox-lite)
+* [Available Tools](#available-tools)
+* [Quick Start](#quick-start)
+  * [Prerequisites](#prerequisites)
+  * [Windows Setup](#windows-setup)
+  * [WSL2 Setup (Recommended)](#wsl2-setup-recommended)
+  * [Short Commands (Optional)](#short-commands-optional)
+* [Folder Structure](#folder-structure)
+* [Creating New Projects](#creating-new-projects)
+  * [Recommended: `new-project` (Interactive, Offline-First)](#recommended-new-project-interactive-offline-first)
+  * [Available Templates](#available-templates)
+  * [Manual Method: `shell` (Terminal)](#manual-method-shell-terminal)
+* [Auto-Setup Databases](#auto-setup-databases)
+* [Documentation](#documentation)
+* [License](#license)
 
 ---
 
-<h2 id="why-devbox-lite" class="heading-with-back">
-  <span>Why DevBox Lite?</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Why DevBox Lite? [🔝](#table-of-contents)
 
 - **Lightweight & Fast:** Image size ~1 GB
 - **Offline Support:** Databases and tools work without internet
@@ -150,10 +36,7 @@ Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development env
 
 ---
 
-<h2 id="available-tools" class="heading-with-back">
-  <span>Available Tools</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Available Tools [🔝](#table-of-contents)
 
 | Category | Tools |
 |----------|-------|
@@ -167,10 +50,7 @@ Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development env
 
 ---
 
-<h2 id="quick-start" class="heading-with-back">
-  <span>Quick Start</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Quick Start [🔝](#table-of-contents)
 
 ### Prerequisites
 
@@ -238,12 +118,9 @@ Now you can use these commands:
 
 ---
 
-<h2 id="folder-structure" class="heading-with-back">
-  <span>Folder Structure</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Folder Structure [🔝](#table-of-contents)
 
-```
+```text
 DevBox_Lite/
 ├── docker/
 │   ├── app/              # Image build files
@@ -266,10 +143,7 @@ DevBox_Lite/
 
 ---
 
-<h2 id="creating-new-projects" class="heading-with-back">
-  <span>Creating New Projects</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Creating New Projects [🔝](#table-of-contents)
 
 > **Important:** All development commands run **inside the container**.
 
@@ -305,10 +179,7 @@ laravel new my-app    # or: pnpm create next-app, etc.
 
 ---
 
-<h2 id="auto-setup-databases" class="heading-with-back">
-  <span>Auto-Setup Databases</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Auto-Setup Databases [🔝](#table-of-contents)
 
 The `setup-deps` script automatically detects project types and starts required databases and GUI tools:
 
@@ -325,10 +196,7 @@ setup-deps /workspace
 
 ---
 
-<h2 id="documentation" class="heading-with-back">
-  <span>Documentation</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Documentation [🔝](#table-of-contents)
 
 | Document | Description |
 |----------|-------------|
@@ -339,10 +207,7 @@ setup-deps /workspace
 
 ---
 
-<h2 id="license" class="heading-with-back">
-  <span>License</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## License [🔝](#table-of-contents)
 
 This project is under [LICENSE](../../LICENSE).
 

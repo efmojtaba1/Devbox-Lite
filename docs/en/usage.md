@@ -1,173 +1,44 @@
-<div class="doc-nav-header">
-  <h1>Daily Usage Guide</h1>
-  <span class="lang-links">
-    <strong><a href="../fa/usage.md">فارسی</a></strong> | <a href="README.md">Home</a>
-  </span>
-</div>
+# Daily Usage Guide
+
+**[فارسی](../fa/usage.md) | [Home](README.md)**
 
 ---
 
 ## Table of Contents
 
-<style>
-  .custom-toc,
-  .custom-toc ul {
-    list-style: none;
-    padding-left: 0;
-    margin: 0;
-  }
-  .custom-toc li {
-    line-height: 2;
-  }
-  .custom-toc > li:not(:has(details)) {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc > li:not(:has(details))::before {
-    content: "•";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1.2rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details {
-    width: 100%;
-  }
-  .custom-toc summary {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    list-style: none;
-  }
-  .custom-toc summary::-webkit-details-marker {
-    display: none;
-  }
-  .custom-toc summary::before {
-    content: "▶";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 0.7rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details[open] > summary::before {
-    content: "▼";
-    font-size: 0.65rem;
-  }
-  .custom-toc details ul {
-    padding-left: 1.2rem;
-    margin-top: 0.25rem;
-    margin-bottom: 0.5rem;
-  }
-  .custom-toc details ul li {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc details ul li::before {
-    content: "◦";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1rem;
-    font-weight: bold;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .heading-with-back {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .heading-with-back span {
-    flex: 1;
-  }
-  .back-to-toc {
-    text-decoration: none !important;
-  }
-  .back-to-toc:hover {
-    text-decoration: none !important;
-  }
-  .doc-nav-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-    direction: ltr;
-  }
-  .doc-nav-header .lang-links {
-    direction: rtl;
-  }
-</style>
-
-<ul class="custom-toc" dir="ltr">
-<li>
-<details><summary><a href="#first-time-setup">First Time Setup</a></summary>
-<ul>
-<li><a href="#windows">Windows</a></li>
-<li><a href="#wsl2-recommended">WSL2 (Recommended)</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#daily-workflow">Daily Workflow</a></li>
-<li><a href="#management-scripts">Management Scripts</a></li>
-<li>
-<details><summary><a href="#creating-projects">Creating Projects</a></summary>
-<ul>
-<li><a href="#recommended-new-project-interactive-offline-first">Recommended: <code>new-project</code> (interactive, offline-first)</a></li>
-<li><a href="#setup-example-templates">Setup Example Templates</a></li>
-<li><a href="#refresh-templates">Refresh Templates</a></li>
-<li><a href="#manual-project-creation">Manual Project Creation</a></li>
-<li><a href="#running-projects">Running Projects</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#stop-and-remove-volumes">Stop and Remove Volumes</a></li>
-<li>
-<details><summary><a href="#auto-setup-databases">Auto-Setup Databases</a></summary>
-<ul>
-<li><a href="#what-it-detects">What it detects</a></li>
-<li><a href="#connection-info-inside-container">Connection Info (inside container)</a></li>
-<li><a href="#laravel-env-configuration">Laravel <code>.env</code> Configuration</a></li>
-<li><a href="#laravel-with-reactvite-starter-kits">Laravel with React/Vite (Starter Kits)</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#database-management">Database Management</a></summary>
-<ul>
-<li><a href="#creating-databases">Creating Databases</a></li>
-<li><a href="#container-management">Container Management</a></li>
-<li><a href="#gui-tools">GUI Tools</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#default-ports">Default Ports</a></li>
-<li><a href="#connecting-vs-code-to-container">Connecting VS Code to Container</a></li>
-<li>
-<details><summary><a href="#api-testing">API Testing</a></summary>
-<ul>
-<li><a href="#bruno">Bruno</a></li>
-<li><a href="#offline-usage">Offline Usage</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#tool-versions">Tool Versions</a></li>
-<li><a href="#important-notes">Important Notes</a></li>
-<li><a href="#related-documentation">Related Documentation</a></li>
-</ul>
+* [First Time Setup](#first-time-setup)
+  * [Windows](#windows)
+  * [WSL2 (Recommended)](#wsl2-recommended)
+* [Daily Workflow](#daily-workflow)
+* [Management Scripts](#management-scripts)
+* [Creating Projects](#creating-projects)
+  * [Recommended: `new-project` (interactive, offline-first)](#recommended-new-project-interactive-offline-first)
+  * [Setup Example Templates](#setup-example-templates)
+  * [Refresh Templates](#refresh-templates)
+  * [Manual Project Creation](#manual-project-creation)
+  * [Running Projects](#running-projects)
+* [Stop and Remove Volumes](#stop-and-remove-volumes)
+* [Auto-Setup Databases](#auto-setup-databases)
+  * [What it detects](#what-it-detects)
+  * [Connection Info (inside container)](#connection-info-inside-container)
+  * [Laravel `.env` Configuration](#laravel-env-configuration)
+  * [Laravel with React/Vite (Starter Kits)](#laravel-with-reactvite-starter-kits)
+* [Database Management](#database-management)
+  * [Creating Databases](#creating-databases)
+  * [Container Management](#container-management)
+  * [GUI Tools](#gui-tools)
+* [Default Ports](#default-ports)
+* [Connecting VS Code to Container](#connecting-vs-code-to-container)
+* [API Testing](#api-testing)
+  * [Bruno](#bruno)
+  * [Offline Usage](#offline-usage)
+* [Tool Versions](#tool-versions)
+* [Important Notes](#important-notes)
+* [Related Documentation](#related-documentation)
 
 ---
 
-<h2 id="first-time-setup" class="heading-with-back">
-  <span>First Time Setup</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## First Time Setup [🔝](#table-of-contents)
 
 ### Windows
 
@@ -190,10 +61,7 @@ echo "WORKSPACE_PATH=$PWD" > .env
 
 ---
 
-<h2 id="daily-workflow" class="heading-with-back">
-  <span>Daily Workflow</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Daily Workflow [🔝](#table-of-contents)
 
 1. Open Docker Desktop
 2. Start the container: `.\scripts\up`
@@ -202,10 +70,7 @@ echo "WORKSPACE_PATH=$PWD" > .env
 
 ---
 
-<h2 id="management-scripts" class="heading-with-back">
-  <span>Management Scripts</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Management Scripts [🔝](#table-of-contents)
 
 Use these commands directly in VS Code terminal:
 
@@ -231,10 +96,7 @@ Use these commands directly in VS Code terminal:
 
 ---
 
-<h2 id="creating-projects" class="heading-with-back">
-  <span>Creating Projects</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Creating Projects [🔝](#table-of-contents)
 
 > **Important:** All development commands run **inside the container**, not on your host machine.
 
@@ -274,6 +136,7 @@ new-project my-app react
 #### Laravel Options
 
 When selecting Laravel, you get interactive choices:
+
 - **Starter kit:** None, Breeze (Blade/React/Vue), Jetstream (Livewire/Inertia)
 - **Database:** SQLite, MySQL, PostgreSQL
 - **Testing:** Pest, PHPUnit
@@ -362,10 +225,7 @@ After creating a project, start the dev server:
 
 ---
 
-<h2 id="stop-and-remove-volumes" class="heading-with-back">
-  <span>Stop and Remove Volumes</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Stop and Remove Volumes [🔝](#table-of-contents)
 
 If you need to completely reset (remove all named volumes like `node_modules`, `vendor`, `bruno`):
 
@@ -381,10 +241,7 @@ If you need to completely reset (remove all named volumes like `node_modules`, `
 
 ---
 
-<h2 id="auto-setup-databases" class="heading-with-back">
-  <span>Auto-Setup Databases</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Auto-Setup Databases [🔝](#table-of-contents)
 
 The `setup-deps` script automatically detects your project type and starts the required databases and GUI tools:
 
@@ -420,6 +277,7 @@ redis-cli -h devbox-redis
 ### Laravel `.env` Configuration
 
 When you run `setup-deps`, the script automatically configures your Laravel `.env` file:
+
 - Sets `DB_HOST=devbox-mysql`
 - Sets `REDIS_HOST=devbox-redis`
 - Sets `CACHE_STORE=redis` (if Redis is available)
@@ -449,6 +307,7 @@ SESSION_DRIVER=redis
 ### Laravel with React/Vite (Starter Kits)
 
 When you run `setup-deps`, the script automatically detects Vite and:
+
 - Installs frontend dependencies (`pnpm install`)
 - Starts Vite dev server with HMR in background
 
@@ -456,10 +315,7 @@ The dev server enables Hot Module Replacement - changes are reflected instantly 
 
 ---
 
-<h2 id="database-management" class="heading-with-back">
-  <span>Database Management</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Database Management [🔝](#table-of-contents)
 
 ### Creating Databases
 
@@ -490,10 +346,7 @@ The dev server enables Hot Module Replacement - changes are reflected instantly 
 
 ---
 
-<h2 id="default-ports" class="heading-with-back">
-  <span>Default Ports</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Default Ports [🔝](#table-of-contents)
 
 | Service | Port | Container Name |
 |---------|------|----------------|
@@ -508,10 +361,7 @@ The dev server enables Hot Module Replacement - changes are reflected instantly 
 
 ---
 
-<h2 id="connecting-vs-code-to-container" class="heading-with-back">
-  <span>Connecting VS Code to Container</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Connecting VS Code to Container [🔝](#table-of-contents)
 
 1. Open VS Code
 2. Select Remote Explorer → Dev Containers
@@ -520,10 +370,7 @@ The dev server enables Hot Module Replacement - changes are reflected instantly 
 
 ---
 
-<h2 id="api-testing" class="heading-with-back">
-  <span>API Testing</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## API Testing [🔝](#table-of-contents)
 
 ### Bruno
 
@@ -545,10 +392,7 @@ Bruno opens at http://localhost:6080
 
 ---
 
-<h2 id="tool-versions" class="heading-with-back">
-  <span>Tool Versions</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Tool Versions [🔝](#table-of-contents)
 
 Tool versions are controlled by `docker/app/.env`:
 
@@ -566,10 +410,7 @@ To change versions, edit the values and rebuild:
 
 ---
 
-<h2 id="important-notes" class="heading-with-back">
-  <span>Important Notes</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Important Notes [🔝](#table-of-contents)
 
 1. Projects go in the `workspace/` folder
 2. Use VS Code Dev Containers for best experience
@@ -578,10 +419,7 @@ To change versions, edit the values and rebuild:
 
 ---
 
-<h2 id="related-documentation" class="heading-with-back">
-  <span>Related Documentation</span>
-  <a href="#table-of-contents" title="Back to Table of Contents" class="back-to-toc">🔝</a>
-</h2>
+## Related Documentation [🔝](#table-of-contents)
 
 | Document | Description |
 |----------|-------------|
