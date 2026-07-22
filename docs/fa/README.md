@@ -2,7 +2,7 @@
 
 سبک، ایزوله، و آماده کار — محیط توسعه‌ای مبتنی بر **Docker + Ubuntu 24.04** که برای پروژه‌های **Laravel، Next.js، React و Python** طراحی شده.
 
-**[English](../en/README.md) | [بازگشت به خانه](../../README.md)**
+**[English](../../README.md) | [بازگشت به خانه](../../README.md)**
 
 ---
 
