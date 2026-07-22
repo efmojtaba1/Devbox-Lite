@@ -7,7 +7,6 @@
 Lightweight, isolated development environment based on Docker + Ubuntu 24.04, designed for **Laravel, Next.js, React, and Python** projects.
 
 ## Features
-- **Lightweight and fast:** Image size is approximately 1 GB.
 - **Offline Support:** Database management with offline image support
 - **Complete Toolset:** PHP, Node.js, Python, Composer, Laravel, Xdebug, Pest
 - **Database Management:** MySQL, PostgreSQL, Redis + GUI tools
