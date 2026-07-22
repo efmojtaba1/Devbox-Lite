@@ -1,230 +1,75 @@
-<div class="doc-nav-header">
-  <h1>راهنمای عیب‌یابی (DevBox Lite)</h1>
-  <span class="lang-links">
-    <strong><a href="../en/troubleshooting.md">English</a></strong> | <a href="README.md">بازگشت به خانه</a>
-  </span>
-</div>
+# راهنمای عیب‌یابی (DevBox Lite)
 
+**[English](../en/troubleshooting.md) | [بازگشت به خانه](README.md)**
 
+---
 
 ## فهرست مطالب
 
-<style>
-  .custom-toc,
-  .custom-toc ul {
-    list-style: none;
-    padding-right: 0;
-    margin: 0;
-  }
-  .custom-toc li {
-    line-height: 2;
-  }
-  .custom-toc > li:not(:has(details)) {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc > li:not(:has(details))::before {
-    content: "•";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1.2rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details {
-    width: 100%;
-  }
-  .custom-toc summary {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    list-style: none;
-  }
-  .custom-toc summary::-webkit-details-marker {
-    display: none;
-  }
-  .custom-toc summary::before {
-    content: "◀";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 0.7rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details[open] > summary::before {
-    content: "▼";
-    font-size: 0.65rem;
-  }
-  .custom-toc details ul {
-    padding-right: 1.2rem;
-    margin-top: 0.25rem;
-    margin-bottom: 0.5rem;
-  }
-  .custom-toc details ul li {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc details ul li::before {
-    content: "◦";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1rem;
-    font-weight: bold;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .heading-with-back {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .heading-with-back span {
-    flex: 1;
-  }
-  .back-to-toc {
-    text-decoration: none !important;
-  }
-  .back-to-toc:hover {
-    text-decoration: none !important;
-  }
-  table {
-    margin-left: 0;
-    margin-right: auto;
-  }
+* [عیب‌یابی سریع](#عیبیابی-سریع)
+* [مشکلات Docker](#مشکلات-docker)
+  * [کانتینر بالا نمی‌آید](#کانتینر-بالا-نمیآید)
+  * [پورت در حال استفاده است](#پورت-در-حال-استفاده-است)
+  * [Permission Denied](#permission-denied)
+  * [Image Build نمی‌شود](#image-build-نمیشود)
+  * [فضای دیسک پر است](#فضای-دیسک-پر-است)
+* [مشکلات VS Code](#مشکلات-vs-code)
+  * [VS Code به کانتینر وصل نمی‌شود](#vs-code-به-کانتینر-وصل-نمیشود)
+  * [افزونه‌ها نصب نمی‌شوند](#افزونهها-نصب-نمیشوند)
+* [مشکلات ابزارها](#مشکلات-ابزارها)
+  * [ابزارها نصب نشده‌اند](#ابزارها-نصب-نشدهاند)
+  * [خطای pnpm ERR_PNPM_IGNORED_BUILDS](#خطای-pnpm-err_pnpm_ignored_builds)
+  * [Composer خطا می‌دهد](#composer-خطا-میدهد)
+* [مشکلات دیتابیس](#مشکلات-دیتابیس)
+  * [خطای Connection Refused هنگام اجرای Laravel Migration](#خطای-connection-refused-هنگام-اجرای-laravel-migration)
+* [مشکلات شبکه](#مشکلات-شبکه)
+  * [ارتباط بین کانتینرها](#ارتباط-بین-کانتینرها)
+  * [دسترسی به اینترنت](#دسترسی-به-اینترنت)
+* [مشکلات Volume](#مشکلات-volume)
+  * [تغییرات ذخیره نمی‌شود](#تغییرات-ذخیره-نمیشود)
+  * [ساخت پروژه Laravel با خاموشی مواجه می‌شود](#ساخت-پروژه-laravel-با-خاموشی-مواجه-میشود)
+  * [Volume های قدیمی پس از حذف پروژه](#volume-های-قدیمی-پس-از-حذف-پروژه)
+* [Docker Desktop اجرا نمی‌شود](#docker-desktop-اجرا-نمیشود)
+* [مشکلات WSL2](#مشکلات-wsl2)
+  * [WSL2 نصب نیست](#wsl2-نصب-نیست)
+  * [Docker در WSL2 در دسترس نیست](#docker-در-wsl2-در-دسترس-نیست)
+  * [کندی عملکرد در ویندوز](#کندی-عملکرد-در-ویندوز)
+  * [Permission Denied در WSL2](#permission-denied-در-wsl2)
+  * [بیلد کند Docker در WSL2](#بیلد-کند-docker-در-wsl2)
+  * [دسترسی به فایل‌های ویندوز از WSL2](#دسترسی-به-فایلهای-ویندوز-از-wsl2)
+* [احراز هویت GitHub](#احراز-هویت-github)
+  * [روش ۱: SSH Key (توصیه شده)](#روش-۱-ssh-key-توصیه-شده)
+  * [روش ۲: Personal Access Token](#روش-۲-personal-access-token)
+* [منابع مفید](#منابع-مفید)
+* [مستندات مرتبط](#مستندات-مرتبط)
 
-  table th,
-  table td {
-    text-align: left !important;
-    direction: ltr !important;
-  }
-  pre, code {
-    direction: ltr !important;
-    text-align: left !important;
-  }
-  .doc-nav-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-  }
-  .doc-nav-header .lang-links {
-    direction: ltr;
-  }
-</style>
+---
 
-<ul class="custom-toc" dir="rtl">
-<li><a href="#عیبیابی-سریع">عیب‌یابی سریع</a></li>
-<li>
-<details><summary><a href="#مشکلات-docker">مشکلات Docker</a></summary>
-<ul>
-<li><a href="#کانتینر-بالا-نمیآید">کانتینر بالا نمی‌آید</a></li>
-<li><a href="#پورت-در-حال-استفاده-است">پورت در حال استفاده است</a></li>
-<li><a href="#permission-denied">Permission Denied</a></li>
-<li><a href="#image-build-نمیشود">Image Build نمی‌شود</a></li>
-<li><a href="#فضای-دیسک-پر-است">فضای دیسک پر است</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#مشکلات-vs-code">مشکلات VS Code</a></summary>
-<ul>
-<li><a href="#vs-code-به-کانتینر-وصل-نمیشود">VS Code به کانتینر وصل نمی‌شود</a></li>
-<li><a href="#افزونهها-نصب-نمیشوند">افزونه‌ها نصب نمی‌شوند</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#مشکلات-ابزارها">مشکلات ابزارها</a></summary>
-<ul>
-<li><a href="#ابزارها-نصب-نشدهاند">ابزارها نصب نشده‌اند</a></li>
-<li><a href="#خطای-pnpm-err_pnpm_ignored_builds">خطای pnpm ERR_PNPM_IGNORED_BUILDS</a></li>
-<li><a href="#composer-خطا-میدهد">Composer خطا می‌دهد</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#مشکلات-دیتابیس">مشکلات دیتابیس</a></summary>
-<ul>
-<li><a href="#خطای-connection-refused-هنگام-اجرای-laravel-migration">خطای Connection Refused هنگام اجرای Laravel Migration</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#مشکلات-شبکه">مشکلات شبکه</a></summary>
-<ul>
-<li><a href="#ارتباط-بین-کانتینرها">ارتباط بین کانتینرها</a></li>
-<li><a href="#دسترسی-به-اینترنت">دسترسی به اینترنت</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#مشکلات-volume">مشکلات Volume</a></summary>
-<ul>
-<li><a href="#تغییرات-ذخیره-نمیشود">تغییرات ذخیره نمی‌شود</a></li>
-<li><a href="#ساخت-پروژه-laravel-با-خاموشی-مواجه-میشود">ساخت پروژه Laravel با خاموشی مواجه می‌شود</a></li>
-<li><a href="#volume-های-قدیمی-پس-از-حذف-پروژه">Volume های قدیمی پس از حذف پروژه</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#docker-desktop-اجرا-نمیشود">Docker Desktop اجرا نمی‌شود</a></li>
-<li>
-<details><summary><a href="#مشکلات-wsl2">مشکلات WSL2</a></summary>
-<ul>
-<li><a href="#wsl2-نصب-نیست">WSL2 نصب نیست</a></li>
-<li><a href="#docker-در-wsl2-در-دسترس-نیست">Docker در WSL2 در دسترس نیست</a></li>
-<li><a href="#کندی-عملکرد-در-ویندوز">کندی عملکرد در ویندوز</a></li>
-<li><a href="#permission-denied-در-wsl2">Permission Denied در WSL2</a></li>
-<li><a href="#بیلد-کند-docker-در-wsl2">بیلد کند Docker در WSL2</a></li>
-<li><a href="#دسترسی-به-فایلهای-ویندوز-از-wsl2">دسترسی به فایل‌های ویندوز از WSL2</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#احراز-هویت-github">احراز هویت GitHub</a></summary>
-<ul>
-<li><a href="#روش-۱-ssh-key-توصیه-شده">روش ۱: SSH Key (توصیه شده)</a></li>
-<li><a href="#روش-۲-personal-access-token">روش ۲: Personal Access Token</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#منابع-مفید">منابع مفید</a></li>
-<li><a href="#مستندات-مرتبط">مستندات مرتبط</a></li>
-</ul>
-
-
-
-<h2 id="عیبیابی-سریع" class="heading-with-back">
-  <span>عیب‌یابی سریع</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## عیب‌یابی سریع
 
 - لاگ‌ها را ببینید:
+
 ```powershell
 .\scripts\logs
 ```
+
 - وضعیت کانتینر:
+
 ```powershell
 .\scripts\status
 ```
+
 - کانتینر را ری‌استارت کنید:
+
 ```powershell
 .\scripts\restart
 ```
 
-- ‏Docker Desktop را ری‌استارت کنید
+- Docker Desktop را ری‌استارت کنید
 
+---
 
-
-<h2 id="مشکلات-docker" class="heading-with-back">
-  <span>مشکلات Docker</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## مشکلات Docker
 
 ### کانتینر بالا نمی‌آید
 
@@ -239,11 +84,10 @@
 ```powershell
 .\scripts\rebuild
 ```
+
 ```powershell
 .\scripts\up
 ```
-
-
 
 ### پورت در حال استفاده است
 
@@ -251,8 +95,6 @@
 netstat -ano | findstr :8000
 taskkill /PID <PID> /F
 ```
-
-
 
 ### Permission Denied
 
@@ -265,22 +107,21 @@ docker compose exec devbox-lite chmod -R 777 /workspace
 ```powershell
 .\scripts\down
 ```
+
 ```powershell
 docker volume rm devbox_workspace
 ```
+
 ```powershell
 .\scripts\up
 ```
 
-
-### ‏Image Build نمی‌شود
+### Image Build نمی‌شود
 
 ```powershell
 docker builder prune
 .\scripts\rebuild
 ```
-
-
 
 ### فضای دیسک پر است
 
@@ -289,19 +130,18 @@ docker system df
 docker system prune -a --volumes
 ```
 
+---
 
+## مشکلات VS Code
 
-<h2 id="مشکلات-vs-code" class="heading-with-back">
-  <span>مشکلات VS Code</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
-
-### ‏VS Code به کانتینر وصل نمی‌شود
+### VS Code به کانتینر وصل نمی‌شود
 
 1. ری‌استارت کانتینر:
+
 ```powershell
 .\scripts\restart
 ```
+
 2. در VS Code: F1 → "Dev Containers: Reopen in Container"
 
 ### افزونه‌ها نصب نمی‌شوند
@@ -312,12 +152,9 @@ docker compose exec devbox-lite rm -rf /root/.vscode-server
 
 سپس VS Code را ری‌استارت کنید
 
+---
 
-
-<h2 id="مشکلات-ابزارها" class="heading-with-back">
-  <span>مشکلات ابزارها</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## مشکلات ابزارها
 
 ### ابزارها نصب نشده‌اند
 
@@ -339,7 +176,7 @@ pnpm approve-builds --all
 
 این یک ویژگی امنیتی pnpm 10+ است. DevBox با تنظیم `dangerouslyAllowAllBuilds: true` در تنظیمات جهانی، این مشکل را بعد از rebuild حل کرده است.
 
-### ‏Composer خطا می‌دهد
+### Composer خطا می‌دهد
 
 ```powershell
 docker compose exec devbox-lite bash
@@ -347,12 +184,9 @@ curl -sS https://getcomposer.org/installer | php
 mv composer.phar /usr/local/bin/composer
 ```
 
+---
 
-
-<h2 id="مشکلات-دیتابیس" class="heading-with-back">
-  <span>مشکلات دیتابیس</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## مشکلات دیتابیس
 
 ### خطای Connection Refused هنگام اجرای Laravel Migration
 
@@ -366,12 +200,9 @@ mv composer.phar /usr/local/bin/composer
 DB_HOST=devbox-mysql    # نه 127.0.0.1
 ```
 
+---
 
-
-<h2 id="مشکلات-شبکه" class="heading-with-back">
-  <span>مشکلات شبکه</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## مشکلات شبکه
 
 ### ارتباط بین کانتینرها
 
@@ -398,12 +229,9 @@ services:
       - 8.8.4.4
 ```
 
+---
 
-
-<h2 id="مشکلات-volume" class="heading-with-back">
-  <span>مشکلات Volume</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## مشکلات Volume
 
 ### تغییرات ذخیره نمی‌شود
 
@@ -419,8 +247,6 @@ docker compose exec devbox-lite chmod -R 777 /workspace
 .\scripts\down-v
 .\scripts\up
 ```
-
-
 
 ### ساخت پروژه Laravel با خاموشی مواجه می‌شود
 
@@ -454,8 +280,6 @@ docker compose exec devbox-lite chmod -R 777 /workspace
 laravel new my-app
 ```
 
-
-
 ### Volume های قدیمی پس از حذف پروژه
 
 وقتی پوشه پروژه را حذف می‌کنید، volume های مرتبط باقی می‌مانند. برای پاک کردن آنها:
@@ -474,11 +298,9 @@ docker volume rm devbox_vendor-laravel devbox_node-modules-laravel
 .\scripts\up
 ```
 
+---
 
-<h2 id="docker-desktop-اجرا-نمیشود" class="heading-with-back">
-  <span>Docker Desktop اجرا نمی‌شود</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## Docker Desktop اجرا نمی‌شود
 
 ```powershell
 Restart-Service com.docker.service
@@ -486,14 +308,11 @@ Restart-Service com.docker.service
 
 یا Docker Desktop را از منوی Start ری‌استارت کنید
 
+---
 
+## مشکلات WSL2
 
-<h2 id="مشکلات-wsl2" class="heading-with-back">
-  <span>مشکلات WSL2</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
-
-### ‏WSL2 نصب نیست
+### WSL2 نصب نیست
 
 ```powershell
 wsl --install
@@ -501,11 +320,11 @@ wsl --install
 
 پس از نصب، کامپیوتر را ری‌استارت کنید.
 
-‏### Docker در WSL2 در دسترس نیست
+### Docker در WSL2 در دسترس نیست
 
 **روش ۱: فعال‌سازی WSL Integration در Docker Desktop (توصیه شده)**
 
-1. ‏Docker Desktop را باز کنید
+1. Docker Desktop را باز کنید
 2. به Settings → Resources → WSL Integration بروید
 3. توزیع Ubuntu خود را فعال کنید
 4. روی "Apply & Restart" کلیک کنید
@@ -536,7 +355,7 @@ echo "WORKSPACE_PATH=$PWD" > .env
 ./scripts/shell
 ```
 
-### ‏Permission Denied در WSL2
+### Permission Denied در WSL2
 
 ```bash
 sudo chmod -R 777 ~/projects/DevBox
@@ -561,47 +380,53 @@ processors=4
 ### دسترسی به فایل‌های ویندوز از WSL2
 
 درایوهای ویندوز در مسیر `/mnt/` مانت می‌شوند. مثال:
+
 - `C:\Users` → `/mnt/c/Users`
 - `D:\Projects` → `/mnt/d/Projects`
 
 برای عملکرد بهتر، فایل‌های پروژه را داخل فایل‌سیستم WSL2 (`~/projects/`) نگه دارید، نه روی درایوهای ویندوز.
 
+---
 
+## احراز هویت GitHub
 
-<h2 id="احراز-هویت-github" class="heading-with-back">
-  <span>احراز هویت GitHub</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
-
-‏GitHub دیگر از پسورد برای عملیات Git پشتیبانی نمی‌کند. باید از SSH key یا Personal Access Token استفاده کنید.
+GitHub دیگر از پسورد برای عملیات Git پشتیبانی نمی‌کند. باید از SSH key یا Personal Access Token استفاده کنید.
 
 ### روش ۱: SSH Key (توصیه شده)
 
 **مرحله ۱: ساخت SSH key**
+
 ```bash
 ssh-keygen -t ed25519 -C "your-email@example.com"
 ```
-‏Enter بزنید تا مسیر پیش‌فرض و بدون رمز عبور قبول شود.
+
+Enter بزنید تا مسیر پیش‌فرض و بدون رمز عبور قبول شود.
 
 **مرحله ۲: کپی کلید عمومی**
+
 ```bash
 cat ~/.ssh/id_ed25519.pub
 ```
+
 خروجی را کامل کپی کنید.
 
 **مرحله ۳: اضافه کردن کلید به GitHub**
+
 1. به https://github.com/settings/keys بروید
 2. روی **"New SSH key"** کلیک کنید
 3. کلید کپی شده را Paste کنید
 4. روی **"Add SSH key"** کلیک کنید
 
 **مرحله ۴: تست اتصال**
+
 ```bash
 ssh -T git@github.com
 ```
+
 اگر پیام "Hi username! You've successfully authenticated..." را دیدید، کار می‌کند.
 
 **مرحله ۵: کلون با SSH**
+
 ```bash
 git clone git@github.com:efmojtaba1/DevBox.git
 ```
@@ -609,41 +434,41 @@ git clone git@github.com:efmojtaba1/DevBox.git
 ### روش ۲: Personal Access Token
 
 **مرحله ۱: ساخت token**
+
 1. به https://github.com/settings/tokens بروید
 2. روی **"Generate new token (classic)"** کلیک کنید
-3. ‏scopes را انتخاب کنید: `repo`، `read:org`
+3. scopes را انتخاب کنید: `repo`، `read:org`
 4. روی **"Generate token"** کلیک کنید
-5. ‏token را فوراً کپی کنید
+5. token را فوراً کپی کنید
 
 **مرحله ۲: کلون با token**
+
 ```bash
 git clone https://YOUR_TOKEN@github.com/efmojtaba1/DevBox.git
 ```
 
 **مرحله ۳: ذخیره credential (اختیاری)**
+
 ```bash
 git config --global credential.helper store
 ```
 
+---
 
-<h2 id="منابع-مفید" class="heading-with-back">
-  <span>منابع مفید</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## منابع مفید
 
 - [مستندات Docker](https://docs.docker.com/)
 - [مستندات Docker Compose](https://docs.docker.com/compose/)
-- ‏[VS Code Dev Containers](https://code.visualstudio.com/docs/remote/containers)
+- [VS Code Dev Containers](https://code.visualstudio.com/docs/remote/containers)
 
+---
 
-
-<h2 id="مستندات-مرتبط" class="heading-with-back">
-  <span>مستندات مرتبط</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## مستندات مرتبط
 
 | مستند | توضیحات |
 |-------|---------|
 | [راهنمای استفاده](usage.md) | گردش کار روزمره و دستورات کاربردی |
 | [مرجع Docker](docker.md) | دستورات کامل Docker |
 | [راهنمای توسعه](development.md) | توسعه و نگهداری DevBox |
+
+[🔝 بازگشت به فهرست مطالب](#فهرست-مطالب)

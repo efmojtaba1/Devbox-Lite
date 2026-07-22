@@ -1,206 +1,70 @@
-<div class="doc-nav-header">
-  <h1>مرجع دستورات Docker</h1>
-  <span class="lang-links">
-    <strong><a href="../en/docker.md">English</a></strong> | <a href="README.md">بازگشت به خانه</a>
-  </span>
-</div>
+# مرجع دستورات Docker
+
+**[English](../en/docker.md) | [بازگشت به خانه](README.md)**
+
+---
 
 ## فهرست مطالب
 
-<style>
-  .custom-toc,
-  .custom-toc ul {
-    list-style: none;
-    padding-right: 0;
-    margin: 0;
-  }
-  .custom-toc li {
-    line-height: 2;
-  }
-  .custom-toc > li:not(:has(details)) {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc > li:not(:has(details))::before {
-    content: "•";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1.2rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details {
-    width: 100%;
-  }
-  .custom-toc summary {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    list-style: none;
-  }
-  .custom-toc summary::-webkit-details-marker {
-    display: none;
-  }
-  .custom-toc summary::before {
-    content: "◀";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 0.7rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .custom-toc details[open] > summary::before {
-    content: "▼";
-    font-size: 0.65rem;
-  }
-  .custom-toc details ul {
-    padding-right: 1.2rem;
-    margin-top: 0.25rem;
-    margin-bottom: 0.5rem;
-  }
-  .custom-toc details ul li {
-    display: flex;
-    align-items: center;
-  }
-  .custom-toc details ul li::before {
-    content: "◦";
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 1.2rem;
-    font-size: 1rem;
-    font-weight: bold;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  .heading-with-back {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .heading-with-back span {
-    flex: 1;
-  }
-  .back-to-toc {
-    text-decoration: none !important;
-  }
-  .back-to-toc:hover {
-    text-decoration: none !important;
-  }
-  table {
-    margin-left: 0;
-    margin-right: auto;
-  }
+* [مفاهیم پایه](#مفاهیم-پایه)
+* [مدیریت کانتینر](#مدیریت-کانتینر)
+  * [بالا آوردن کانتینر](#بالا-آوردن-کانتینر)
+  * [توقف کانتینر](#توقف-کانتینر)
+  * [توقف و حذف Volume ها](#توقف-و-حذف-volume-ها)
+  * [ورود به ترمینال](#ورود-به-ترمینال)
+  * [مشاهده لاگ‌ها](#مشاهده-لاگها)
+  * [ری‌استارت](#ریاستارت)
+  * [بررسی وضعیت](#بررسی-وضعیت)
+  * [اجرای دستور داخل کانتینر](#اجرای-دستور-داخل-کانتینر)
+  * [شناسایی پروژه‌ها](#شناسایی-پروژهها)
+* [دستورات Image](#دستورات-image)
+  * [ساخت ایمیج](#ساخت-ایمیج)
+  * [ساخت مجدد (بدون کش)](#ساخت-مجدد-بدون-کش)
+  * [مشاهده ایمیج‌ها](#مشاهده-ایمیجها)
+  * [حذف ایمیج](#حذف-ایمیج)
+* [دستورات پاک‌سازی](#دستورات-پاکسازی)
+  * [پاک کردن کامل](#پاک-کردن-کامل)
+  * [پاک کردن کش](#پاک-کردن-کش)
+* [تست API](#تست-api)
+  * [Bruno](#bruno)
+  * [استفاده آفلاین](#استفاده-آفلاین)
+  * [Volume های Bruno](#volume-های-bruno)
+* [عیب‌یابی](#عیبیابی)
+  * [کانتینر بالا نمی‌آید](#کانتینر-بالا-نمیآید)
+  * [پورت در حال استفاده است](#پورت-در-حال-استفاده-است)
+  * [مشکل دسترسی](#مشکل-دسترسی)
+* [نکات مهم](#نکات-مهم)
+* [مستندات مرتبط](#مستندات-مرتبط)
 
-  table th,
-  table td {
-    text-align: left !important;
-    direction: ltr !important;
-  }
-  pre, code {
-    direction: ltr !important;
-    text-align: left !important;
-  }
-  .doc-nav-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-  }
-  .doc-nav-header .lang-links {
-    direction: ltr;
-  }
-</style>
+---
 
-<ul class="custom-toc" dir="rtl">
-<li><a href="#مفاهیم-پایه">مفاهیم پایه</a></li>
-<li>
-<details><summary><a href="#مدیریت-کانتینر">مدیریت کانتینر</a></summary>
-<ul>
-<li><a href="#بالا-آوردن-کانتینر">بالا آوردن کانتینر</a></li>
-<li><a href="#توقف-کانتینر">توقف کانتینر</a></li>
-<li><a href="#توقف-و-حذف-volume-ها">توقف و حذف Volume ها</a></li>
-<li><a href="#ورود-به-ترمینال">ورود به ترمینال</a></li>
-<li><a href="#مشاهده-لاگها">مشاهده لاگ‌ها</a></li>
-<li><a href="#ریاستارت">ری‌استارت</a></li>
-<li><a href="#بررسی-وضعیت">بررسی وضعیت</a></li>
-<li><a href="#اجرای-دستور-داخل-کانتینر">اجرای دستور داخل کانتینر</a></li>
-<li><a href="#شناسایی-پروژهها">شناسایی پروژه‌ها</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#دستورات-image">دستورات Image</a></summary>
-<ul>
-<li><a href="#ساخت-ایمیج">ساخت ایمیج</a></li>
-<li><a href="#ساخت-مجدد-بدون-کش">ساخت مجدد (بدون کش)</a></li>
-<li><a href="#مشاهده-ایمیجها">مشاهده ایمیج‌ها</a></li>
-<li><a href="#حذف-ایمیج">حذف ایمیج</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#دستورات-پاکسازی">دستورات پاک‌سازی</a></summary>
-<ul>
-<li><a href="#پاک-کردن-کامل">پاک کردن کامل</a></li>
-<li><a href="#پاک-کردن-کش">پاک کردن کش</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#تست-api">تست API</a></summary>
-<ul>
-<li><a href="#bruno">Bruno</a></li>
-<li><a href="#استفاده-آفلاین">استفاده آفلاین</a></li>
-<li><a href="#volume-های-bruno">Volume های Bruno</a></li>
-</ul>
-</details>
-</li>
-<li>
-<details><summary><a href="#عیبیابی">عیب‌یابی</a></summary>
-<ul>
-<li><a href="#کانتینر-بالا-نمیآید">کانتینر بالا نمی‌آید</a></li>
-<li><a href="#پورت-در-حال-استفاده-است">پورت در حال استفاده است</a></li>
-<li><a href="#مشکل-دسترسی">مشکل دسترسی</a></li>
-</ul>
-</details>
-</li>
-<li><a href="#نکات-مهم">نکات مهم</a></li>
-<li><a href="#مستندات-مرتبط">مستندات مرتبط</a></li>
-</ul>
-
-<h2 id="مفاهیم-پایه" class="heading-with-back">
-  <span>مفاهیم پایه</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## مفاهیم پایه
 
 - **Image:** قالب سیستم‌عامل و ابزارهای نصب‌شده
 - **Container:** نمونه اجرا شده از ایمیج
 - **Volume:** ذخیره دائمی داده‌ها
 - **Network:** ارتباط بین کانتینرها (devbox-network)
 
-<h2 id="مدیریت-کانتینر" class="heading-with-back">
-  <span>مدیریت کانتینر</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+---
+
+## مدیریت کانتینر
 
 ### بالا آوردن کانتینر
 
-‎**ویندوز:**
+**ویندوز:**
+
 ```powershell
 .\scripts\up
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/up
 ```
 
 یا مستقیماً:
+
 ```bash
 cd docker/compose
 docker compose up -d
@@ -208,24 +72,28 @@ docker compose up -d
 
 ### توقف کانتینر
 
-‎**ویندوز:**
+**ویندوز:**
+
 ```powershell
 .\scripts\down
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/down
 ```
 
 ### توقف و حذف Volume ها
 
-‎**ویندوز:**
+**ویندوز:**
+
 ```powershell
 .\scripts\down-v
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/down-v.sh
 ```
@@ -234,47 +102,56 @@ docker compose up -d
 
 ### ورود به ترمینال
 
-‎**ویندوز:**
+**ویندوز:**
+
 ```powershell
 .\scripts\shell
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/shell
 ```
 
-## مشاهده لاگ‌ها
-‎**ویندوز:**
+### مشاهده لاگ‌ها
+
+**ویندوز:**
+
 ```powershell
 .\scripts\logs
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/logs
 ```
 
 ### ری‌استارت
 
-‎**ویندوز:**
+**ویندوز:**
+
 ```powershell
 .\scripts\restart
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/restart
 ```
 
 ### بررسی وضعیت
 
-‎**ویندوز:**
+**ویندوز:**
+
 ```powershell
 .\scripts\status
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/status
 ```
@@ -286,6 +163,7 @@ run <command>
 ```
 
 مثال:
+
 ```powershell
 run pnpm create next-app my-app
 run php artisan serve
@@ -297,33 +175,34 @@ run php artisan serve
 scan
 ```
 
+---
 
-
-<h2 id="دستورات-image" class="heading-with-back">
-  <span>دستورات Image</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## دستورات Image
 
 ### ساخت ایمیج
 
-‎**ویندوز:**
+**ویندوز:**
+
 ```powershell
 .\scripts\build
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/build
 ```
 
 ### ساخت مجدد (بدون کش)
 
-‎**ویندوز:**
+**ویندوز:**
+
 ```powershell
 .\scripts\rebuild
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/rebuild
 ```
@@ -340,21 +219,20 @@ docker images
 docker rmi devbox-lite
 ```
 
+---
 
-
-<h2 id="دستورات-پاکسازی" class="heading-with-back">
-  <span>دستورات پاک‌سازی</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## دستورات پاک‌سازی
 
 ### پاک کردن کامل
 
-‎**ویندوز:**
+**ویندوز:**
+
 ```powershell
 .\scripts\clean
 ```
 
 **WSL2:**
+
 ```bash
 ./scripts/clean
 ```
@@ -366,12 +244,9 @@ docker builder prune
 docker system prune -a
 ```
 
+---
 
-
-<h2 id="تست-api" class="heading-with-back">
-  <span>تست API</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## تست API
 
 ### Bruno
 
@@ -390,19 +265,19 @@ test-api bruno
 ### Volume های Bruno
 
 Bruno از volume های named Docker برای ذخیره‌سازی استفاده می‌کند:
+
 - `bruno-config` → `/root/.config/bruno` (تنظیمات Electron)
 - `bruno-collections` → `/root/bruno` (کالکشن‌های API)
 
 برای پشتیبان‌گیری از داده‌های Bruno:
+
 ```bash
 docker run --rm -v devbox_bruno-collections:/data:ro alpine tar czf /backup/bruno-collections.tar.gz -C /data .
 ```
 
+---
 
-<h2 id="عیبیابی" class="heading-with-back">
-  <span>عیب‌یابی</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## عیب‌یابی
 
 ### کانتینر بالا نمی‌آید
 
@@ -411,6 +286,7 @@ docker run --rm -v devbox_bruno-collections:/data:ro alpine tar czf /backup/brun
 ```
 
 یا:
+
 ```powershell
 cd docker/compose
 docker compose logs devbox-lite
@@ -429,27 +305,23 @@ taskkill /PID <PID> /F
 docker compose exec devbox-lite chmod -R 777 /workspace
 ```
 
+---
 
-
-<h2 id="نکات-مهم" class="heading-with-back">
-  <span>نکات مهم</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## نکات مهم
 
 1. همیشه از اسکریپت‌های مدیریت استفاده کنید
 2. قبل از حذف ایمیج، کانتینر را متوقف کنید
 3. از `docker system prune` با احتیاط استفاده کنید
 4. لاگ‌ها را برای عیب‌یابی بررسی کنید
 
+---
 
-
-<h2 id="مستندات-مرتبط" class="heading-with-back">
-  <span>مستندات مرتبط</span>
-  <a href="#فهرست-مطالب" title="بازگشت به فهرست مطالب" class="back-to-toc">🔝</a>
-</h2>
+## مستندات مرتبط
 
 | مستند | توضیحات |
 |-------|---------|
 | [راهنمای استفاده](usage.md) | گردش کار روزمره و دستورات کاربردی |
 | [عیب‌یابی](troubleshooting.md) | رفع اشکال و خطاهای متداول |
 | [راهنمای توسعه](development.md) | توسعه و نگهداری DevBox |
+
+[🔝 بازگشت به فهرست مطالب](#فهرست-مطالب)
