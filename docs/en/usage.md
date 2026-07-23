@@ -1,6 +1,6 @@
 # Daily Usage Guide
 
-**[فارسی](../fa/usage.md) | [Home](README.md)**
+**[فارسی](../fa/usage.md) | [Home](../README.md)**
 
 ---
 

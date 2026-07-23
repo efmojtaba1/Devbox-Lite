@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-**[فارسی](../fa/troubleshooting.md) | [Home](README.md)**
+**[فارسی](../fa/troubleshooting.md) | [Home](../README.md)**
 
 ---
 

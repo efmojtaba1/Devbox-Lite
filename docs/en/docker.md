@@ -1,6 +1,6 @@
 # Docker Commands Reference
 
-**[فارسی](../fa/docker.md) | [Home](README.md)**
+**[فارسی](../fa/docker.md) | [Home](../README.md)**
 
 ---
 

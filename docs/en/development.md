@@ -1,6 +1,6 @@
 # DevBox Lite Development Guide
 
-**[فارسی](../fa/development.md) | [Home](README.md)**
+**[فارسی](../fa/development.md) | [Home](../README.md)**
 
 ---
 
