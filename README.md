@@ -60,7 +60,7 @@ Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development env
 ### Windows Setup
 
 ```powershell
-git clone https://github.com/efmojtaba1/DevBox.git D:\DevBox
+git clone https://github.com/efmojtaba1/Devbox-Lite.git D:\DevBox
 cd D:\DevBox
 .\scripts\build
 .\scripts\up
@@ -86,7 +86,7 @@ sudo usermod -aG docker $USER && newgrp docker
 
 # 4. Clone and setup
 mkdir -p ~/projects && cd ~/projects
-git clone git@github.com:efmojtaba1/DevBox.git && cd DevBox
+git clone https://github.com/efmojtaba1/Devbox-Lite.git && cd DevBox
 echo "WORKSPACE_PATH=$PWD" > .env
 chmod +x scripts/*.sh
 ./scripts/build.sh && ./scripts/up.sh && ./scripts/shell.sh
