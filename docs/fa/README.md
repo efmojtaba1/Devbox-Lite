@@ -101,7 +101,7 @@ sudo usermod -aG docker $USER && newgrp docker
 
 ```bash
 mkdir -p ~/projects && cd ~/projects
-git clone git@github.com:efmojtaba1/DevBox.git
+git clone https://github.com/efmojtaba1/Devbox-Lite.git
 cd DevBox
 
 echo "WORKSPACE_PATH=$PWD" > .env
