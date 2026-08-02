@@ -60,7 +60,7 @@
 ### راه‌اندازی در ویندوز
 
 ```powershell
-git clone https://github.com/efmojtaba1/DevBox.git D:\DevBox
+git clone https://github.com/efmojtaba1/Devbox-Lite.git D:\DevBox
 cd D:\DevBox
 .\scripts\build
 .\scripts\up
