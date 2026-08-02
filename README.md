@@ -9,7 +9,7 @@ Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development env
 ## Table of Contents
 
 * [Why DevBox Lite?](#why-devbox-lite)
-* [Available Tools](#available-tools)
+* [Available Tools](#Available-Tools)
 * [Quick Start](#quick-start)
   * [Prerequisites](#prerequisites)
   * [Windows Setup](#windows-setup)
