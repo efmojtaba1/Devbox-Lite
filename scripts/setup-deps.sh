@@ -277,17 +277,32 @@ setup_laravel_frontend() {
     echo "Setting up Laravel frontend (Vite)..."
 
     # ----------------------------------------------------
-    # ۱. اصلاح خودکار مجوز دسترسی فایل برای جلوگیری از خطای Permission Denied
+    # ۱. تضمین وجود فایل resources/js/bootstrap.js برای جلوگیری از خطای Vite
+    # ----------------------------------------------------
+    local js_dir="$project_dir/resources/js"
+    if [ -d "$js_dir" ]; then
+        if [ ! -f "$js_dir/bootstrap.js" ] && [ ! -f "$js_dir/bootstrap.ts" ]; then
+            echo "  [create] Creating missing resources/js/bootstrap.js..."
+            cat << 'EOF' > "$js_dir/bootstrap.js"
+import axios from 'axios';
+window.axios = axios;
+
+window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+EOF
+            echo "  [ok] resources/js/bootstrap.js created successfully"
+        fi
+    fi
+
+    # ----------------------------------------------------
+    # ۲. اصلاح خودکار مجوز دسترسی فایل کانفیگ Vite
     # ----------------------------------------------------
     local vite_config="$project_dir/vite.config.js"
     if [ -f "$vite_config" ]; then
         chmod 666 "$vite_config" 2>/dev/null || true
 
-        # ۲. تزریق هوشمند تنظیمات Server به Vite
         if ! grep -q "0.0.0.0" "$vite_config" 2>/dev/null; then
             echo "  [patch] Patching vite.config.js for Docker compatibility..."
 
-            # اگر فایل شامل server نباشد، آن را به صورت تمیز تزریق می‌کند
             node -e "
             const fs = require('fs');
             let content = fs.readFileSync('$vite_config', 'utf8');
