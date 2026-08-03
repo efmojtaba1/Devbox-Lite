@@ -358,7 +358,7 @@ echo "WORKSPACE_PATH=$PWD" > .env
 ### ‏Permission Denied در WSL2
 
 ```bash
-sudo chmod -R 777 ~/projects/DevBox
+sudo chmod -R 777 ~/projects/Devbox-Lite
 ```
 
 ### بیلد کند Docker در WSL2
