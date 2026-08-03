@@ -205,9 +205,12 @@ configure_laravel_env() {
     echo ""
     echo "Configuring Laravel .env..."
 
-    # Update DB_HOST to devbox-mysql
-    if grep -q "^DB_HOST=.*" "$env_file"; then
+    # Update DB_HOST to devbox-mysql for Docker container compatibility
+    if grep -q "^DB_HOST=" "$env_file"; then
         sed -i 's/^DB_HOST=.*/DB_HOST=devbox-mysql/' "$env_file"
+        echo "  [ok] DB_HOST set to devbox-mysql"
+    elif grep -q "DB_HOST=" "$env_file"; then
+        sed -i 's/DB_HOST=.*/DB_HOST=devbox-mysql/' "$env_file"
         echo "  [ok] DB_HOST set to devbox-mysql"
     fi
 
