@@ -86,7 +86,7 @@ sudo usermod -aG docker $USER && newgrp docker
 
 # 4. Clone and setup
 mkdir -p ~/projects && cd ~/projects
-git clone https://github.com/efmojtaba1/Devbox-Lite.git && cd DevBox
+git clone https://github.com/efmojtaba1/Devbox-Lite.git && cd Devbox-Lite
 echo "WORKSPACE_PATH=$PWD" > .env
 chmod +x scripts/*.sh
 ./scripts/build.sh && ./scripts/up.sh && ./scripts/shell.sh
