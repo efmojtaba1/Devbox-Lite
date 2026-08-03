@@ -23,8 +23,6 @@ backups/*
 # نادیده گرفتن فایل‌های لاگ داکر
 *.log
 
-*.exe
-.mimocode
 prebuilt
 MEMORY.md
 

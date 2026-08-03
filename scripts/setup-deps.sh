@@ -195,6 +195,8 @@ configure_laravel_env() {
         return 0
     fi
 
+    [ -f "$env_file" ] && chmod 666 "$env_file" 2>/dev/null || true
+
     if [ ! -f "$env_file" ]; then
         echo "  [skip] No .env file found in Laravel project"
         return 0
@@ -260,7 +262,6 @@ setup_laravel_frontend() {
         return 0
     fi
 
-    # Check if package.json exists with vite dependency
     if [ ! -f "$project_dir/package.json" ]; then
         return 0
     fi
@@ -271,6 +272,32 @@ setup_laravel_frontend() {
 
     echo ""
     echo "Setting up Laravel frontend (Vite)..."
+
+    # ----------------------------------------------------
+    # ۱. اصلاح خودکار مجوز دسترسی فایل برای جلوگیری از خطای Permission Denied
+    # ----------------------------------------------------
+    local vite_config="$project_dir/vite.config.js"
+    if [ -f "$vite_config" ]; then
+        chmod 666 "$vite_config" 2>/dev/null || true
+
+        # ۲. تزریق هوشمند تنظیمات Server به Vite
+        if ! grep -q "0.0.0.0" "$vite_config" 2>/dev/null; then
+            echo "  [patch] Patching vite.config.js for Docker compatibility..."
+
+            # اگر فایل شامل server نباشد، آن را به صورت تمیز تزریق می‌کند
+            node -e "
+            const fs = require('fs');
+            let content = fs.readFileSync('$vite_config', 'utf8');
+            if (!content.includes('server:')) {
+                content = content.replace('plugins:', \"server: { host: '0.0.0.0', hmr: { host: 'localhost' } },\n    plugins:\");
+                fs.writeFileSync('$vite_config', content);
+            }
+            " 2>/dev/null || sed -i "s/plugins: \[/server: { host: '0.0.0.0', hmr: { host: 'localhost' } },\n    plugins: [/" "$vite_config" 2>/dev/null || true
+
+            echo "  [ok] vite.config.js patched successfully"
+        fi
+    fi
+    # ----------------------------------------------------
 
     # Check if node_modules exists
     if [ -d "$project_dir/node_modules" ]; then
