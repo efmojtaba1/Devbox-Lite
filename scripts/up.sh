@@ -1,6 +1,10 @@
 #!/bin/bash
 # DevBox Lite - Start container
 
+# Auto-fix permissions for all scripts in the scripts directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
 source "$(dirname "$0")/common.sh"
 
 Show-Header "Starting DevBox Lite"
