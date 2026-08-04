@@ -308,8 +308,8 @@ EOF
     if [ -f "$vite_config" ]; then
         chmod 666 "$vite_config" 2>/dev/null || true
 
-        if ! grep -q "strictPort: true" "$vite_config" 2>/dev/null; then
-            echo "  [patch] Patching vite.config.js for strict port 5173..."
+        if ! grep -q "0.0.0.0" "$vite_config" 2>/dev/null; then
+            echo "  [patch] Patching vite.config.js for Docker host binding..."
             node -e "
             const fs = require('fs');
             let content = fs.readFileSync('$vite_config', 'utf8');
