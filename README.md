@@ -77,20 +77,29 @@ Then open VS Code and connect to the container via Remote Explorer → Dev Conta
 wsl --install
 # Restart your computer afterwards
 
-# 2. Install Native Docker in Ubuntu (Without Docker Desktop)
+# 2. Configure Fast Ubuntu Mirror & Install Native Docker (Execute in WSL Ubuntu Shell)
+# Switch APT sources to ArvanCloud mirror for maximum download speeds in Iran
+sudo sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirror.arvancloud.ir/ubuntu|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || sudo sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirror.arvancloud.ir/ubuntu|g' /etc/apt/sources.list 2>/dev/null || true
+sudo sed -i 's|http://security.ubuntu.com/ubuntu|http://mirror.arvancloud.ir/ubuntu|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || sudo sed -i 's|http://security.ubuntu.com/ubuntu|http://mirror.arvancloud.ir/ubuntu|g' /etc/apt/sources.list 2>/dev/null || true
+
+# Update package index and install Docker engine without Docker Desktop
 sudo apt update && sudo apt install -y docker.io docker-compose-v2 docker-buildx
 sudo usermod -aG docker $USER
 
 # Enable systemd support in WSL2
 sudo bash -c 'echo -e "[boot]\nsystemd=true" > /etc/wsl.conf'
 
-# Start Docker service (Works seamlessly with or without systemd active)
+# Start Docker service (compatible with or without active systemd)
 sudo service docker start || sudo systemctl enable --now docker
 
-# 3. Clone repository and set up Devbox-Lite
+# 3. Clone repository and build DevBox-Lite environment
 mkdir -p ~/projects && cd ~/projects
 git clone https://github.com/efmojtaba1/Devbox-Lite.git && cd Devbox-Lite
+
+# Set host workspace directory in .env
 echo "WORKSPACE_PATH=$PWD" > .env
+
+# Grant execution permissions and build the optimized container
 chmod +x scripts/*.sh
 ./scripts/build.sh && ./scripts/up.sh && ./scripts/shell.sh
 ```
