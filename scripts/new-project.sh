@@ -215,13 +215,44 @@ fi
 if [ "$TEMPLATE" = "laravel" ]; then
     echo ""
     echo "[configure] Applying Laravel options..."
+
+    # 1. Ensure .env exists
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
-    # 1. Generate App Key
+
+    # 2. Configure Database FIRST (So Artisan commands use correct host)
+    if [ -f "$project_dir/.env" ]; then
+        case "$DB_CHOICE" in
+            "MySQL")
+                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' "$project_dir/.env"
+                sed -i 's/^DB_HOST=.*/DB_HOST=devbox-mysql/' "$project_dir/.env"
+                sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
+                sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
+                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
+                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+                ;;
+            "PostgreSQL")
+                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/' "$project_dir/.env"
+                sed -i 's/^DB_HOST=.*/DB_HOST=devbox-postgres/' "$project_dir/.env"
+                sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
+                sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
+                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
+                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+                ;;
+            "SQLite")
+                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
+                sed -i 's/^# DB_DATABASE=.*/DB_DATABASE=/' "$project_dir/.env"
+                mkdir -p "$project_dir/database"
+                touch "$project_dir/database/database.sqlite" 2>/dev/null || true
+                ;;
+        esac
+    fi
+
+    # 3. Generate App Key
     if [ -f "$project_dir/.env" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction 2>/dev/null) || true
     fi
 
-    # 2. Apply Starter Kits
+    # 4. Apply Starter Kits
     case "$STARTER_KIT" in
         "Breeze + Blade")
             b_opts="blade --no-interaction"
@@ -266,13 +297,23 @@ if [ "$TEMPLATE" = "laravel" ]; then
             ;;
     esac
 
-    # 3. Post-Starter-Kit Cleanup for Tailwind v4 Compatibility
+    # 5. Ensure bootstrap.js exists (Fixes Vite Build Error)
+    if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
+        mkdir -p "$project_dir/resources/js"
+        cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
+import axios from 'axios';
+window.axios = axios;
+window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+EOF
+    fi
+
+    # 6. Post-Starter-Kit Cleanup for Tailwind v4 Compatibility
     rm -f "$project_dir/postcss.config.js" "$project_dir/postcss.config.cjs" 2>/dev/null || true
     if [ -f "$project_dir/resources/css/app.css" ]; then
         echo '@import "tailwindcss";' > "$project_dir/resources/css/app.css"
     fi
 
-    # 4. API & Sanctum Installation
+    # 7. API & Sanctum Installation
     if [ "$ENABLE_API" = "yes" ]; then
         echo "  [api] Installing API routes & Laravel Sanctum..."
         (
@@ -283,52 +324,25 @@ if [ "$TEMPLATE" = "laravel" ]; then
         ) || true
     fi
 
-    # 5. Database Connection Config (.env) & Migration Setup
-    if [ -f "$project_dir/.env" ]; then
-        case "$DB_CHOICE" in
-            "MySQL")
-                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' "$project_dir/.env"
-                sed -i 's/^DB_HOST=.*/DB_HOST=devbox-mysql/' "$project_dir/.env"
-                sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
-                sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
-                ;;
-            "PostgreSQL")
-                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/' "$project_dir/.env"
-                sed -i 's/^DB_HOST=.*/DB_HOST=devbox-postgres/' "$project_dir/.env"
-                sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
-                sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
-                ;;
-            "SQLite")
-                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
-                mkdir -p "$project_dir/database"
-                touch "$project_dir/database/database.sqlite" 2>/dev/null || true
-                ;;
-        esac
-
-        # Auto Run Initial Database Migrations
-        if [ "$DB_CHOICE" != "None" ]; then
-            echo "  [db] Running initial migrations..."
-            (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || true
-        fi
+    # 8. Auto Run Initial Database Migrations
+    if [ "$DB_CHOICE" != "None" ]; then
+        echo "  [db] Running initial migrations..."
+        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || true
     fi
 
-    # 6. Testing Framework Option Setup
+    # 9. Testing Framework Option Setup
     if [ "$TESTING" = "PHPUnit" ]; then
         (cd "$project_dir" && composer remove pestphp/pest --dev --no-interaction 2>/dev/null && composer require phpunit/phpunit --dev --no-interaction 2>/dev/null) || true
     fi
 
-    # 7. Patch vite.config.js for Docker HMR Connection
+    # 10. Patch vite.config.js for Docker HMR Connection
     if [ -f "$project_dir/vite.config.js" ]; then
         if ! grep -q "0.0.0.0" "$project_dir/vite.config.js" 2>/dev/null; then
             sed -i "s/plugins: \[/server: { host: '0.0.0.0', hmr: { host: 'localhost' } },\n    plugins: [/" "$project_dir/vite.config.js" 2>/dev/null || true
         fi
     fi
 
-    # 8. Re-sync Node packages and Compile Assets
+    # 11. Re-sync Node packages and Compile Assets
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
