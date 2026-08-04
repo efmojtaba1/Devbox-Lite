@@ -35,9 +35,10 @@ if is_online; then
     PIP_CMD="pip install"
 else
     echo "  [network] No internet connection (Offline Mode)."
-    PNPM_CMD="pnpm install --offline --frozen-lockfile"
+    # استفاده از --offline بدون frozen-lockfile برای جلوگیری از خطای ناهمخوانی lockfile
+    PNPM_CMD="pnpm install --offline"
     COMPOSER_CMD="composer install --no-interaction --prefer-offline"
-    PIP_CMD="pip install --no-index --find-links=/root/.cache/pip/wheels"
+    PIP_CMD="pip install --find-links=/root/.cache/pip/wheels"
 fi
 
 # Copy source files from host mount to Docker volume
