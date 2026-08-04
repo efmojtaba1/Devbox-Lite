@@ -38,13 +38,13 @@ echo ""
 read -r -p "Enter choice (1-4) [1]: " mirror_choice
 
 case "${mirror_choice:-1}" in
-    1) APT_MIRROR="https://mirror.arvancloud.ir/ubuntu" ;;
+    1) APT_MIRROR="http://mirror.arvancloud.ir/ubuntu" ;;
     2) APT_MIRROR="http://ir.archive.ubuntu.com/ubuntu" ;;
     3) APT_MIRROR="" ;;
     4)
         read -r -p "Enter mirror URL: " APT_MIRROR
         ;;
-    *) APT_MIRROR="https://mirror.arvancloud.ir/ubuntu" ;;
+    *) APT_MIRROR="http://mirror.arvancloud.ir/ubuntu" ;;
 esac
 
 if [ -n "$APT_MIRROR" ]; then
