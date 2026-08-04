@@ -77,7 +77,7 @@ RUN chmod +x /tmp/install/*.sh && \
     /tmp/install/xdebug.sh && \
     /tmp/install/pest.sh && \
     rm -rf /tmp/install /tmp/.env \
-           /root/.cache/pip /root/.npm/_cacache /root/.local/share/pip/cache \
+           /root/.npm/_cacache \
            /root/.cache/pipx /root/.pm2/logs /root/.pm2/pids \
            /usr/share/doc/* /usr/share/man/* /usr/share/info/*
 
@@ -147,6 +147,10 @@ COPY --from=tools /opt /opt
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Pre-download python wheels into local cache for offline use
+RUN mkdir -p /root/.cache/pip/wheels && \
+    pip wheel --wheel-dir=/root/.cache/pip/wheels flask uvicorn requests 2>/dev/null || true
+
 # Copy example templates and install dependencies (offline-first)
 COPY example/ /prebuilt/example/
 RUN cd /prebuilt/example/laravel && \
@@ -164,7 +168,7 @@ RUN cd /prebuilt/example/laravel && \
     cd /prebuilt/example/python && \
     python3 -m venv venv 2>/dev/null && \
     . venv/bin/activate && \
-    pip install -r requirements.txt 2>/dev/null; \
+    pip install --find-links=/root/.cache/pip/wheels -r requirements.txt 2>/dev/null; \
     echo "[build] Python done"
 
 # Database management short commands (like VS Code helper scripts)

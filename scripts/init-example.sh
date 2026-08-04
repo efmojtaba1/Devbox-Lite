@@ -63,13 +63,12 @@ fi
 # Python
 if [ -d "$DST/python" ] && [ ! -d "$DST/python/venv" ]; then
     echo "[python] venv + pip install..."
-    (cd "$DST/python" && python3 -m venv --without-pip venv 2>/dev/null && \
+    (cd "$DST/python" && python3 -m venv venv 2>/dev/null && \
         . venv/bin/activate && \
-        curl -sS https://bootstrap.pypa.io/get-pip.py | python3 2>/dev/null && \
-        [ -f requirements.txt ] && pip install -r requirements.txt 2>/dev/null || \
-        pip install flask 2>/dev/null) && \
-        echo "[python] [ok]" || echo "[python] [warn] failed"
-fi
+        ([ -f requirements.txt ] && pip install --find-links=/root/.cache/pip/wheels -r requirements.txt 2>/dev/null || \
+        pip install --find-links=/root/.cache/pip/wheels flask 2>/dev/null)) && \
+            echo "[python] [ok]" || echo "[python] [warn] failed"
+    fi
 
 # React
 if [ -d "$DST/react" ] && [ ! -d "$DST/react/node_modules" ] && [ -f "$DST/react/package.json" ]; then
