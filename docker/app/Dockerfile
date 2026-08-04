@@ -33,6 +33,8 @@ ENV PIP_MIRROR=${PIP_MIRROR}
 
 WORKDIR /workspace
 
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
 # Configure apt mirror (if APT_MIRROR build arg is provided)
 RUN if [ -n "$APT_MIRROR" ]; then \
       UBUNTU_CODENAME=$(. /etc/os-release && echo $VERSION_CODENAME) && \
