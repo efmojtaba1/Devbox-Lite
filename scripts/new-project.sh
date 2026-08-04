@@ -169,7 +169,7 @@ else
     esac
 fi
 
-# ── Fix Git Ownership (Dubious Ownership Error) ─────────────
+# ── Fix Git Ownership ────────────────────────────────────────
 git config --global --add safe.directory "$project_dir" 2>/dev/null || true
 git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 
@@ -177,10 +177,9 @@ git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 echo ""
 echo "Installing dependencies..."
 
-# PHP / Composer Base Install (تضمین ساخت اجباری پوشه vendor)
+# Composer Base Install
 if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
-    (cd "$project_dir" && composer install --prefer-offline --no-interaction) || \
     (cd "$project_dir" && composer install --no-interaction) || true
 fi
 
@@ -213,28 +212,38 @@ if [ "$TEMPLATE" = "laravel" ]; then
     # 1. Ensure .env exists
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    # 2. Configure Database FIRST
+    # 2. Database Environment Setup & Auto DB Creation
     if [ -f "$project_dir/.env" ]; then
         case "$DB_CHOICE" in
             "MySQL")
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' "$project_dir/.env"
                 sed -i 's/^DB_HOST=.*/DB_HOST=devbox-mysql/' "$project_dir/.env"
+                sed -i 's/^# DB_HOST=.*/DB_HOST=devbox-mysql/' "$project_dir/.env"
                 sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
+                sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
                 sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
                 sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+
+                # Create DB automatically in MySQL container if possible
+                mysql -h devbox-mysql -u devbox -pdevbox_pass -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
                 ;;
             "PostgreSQL")
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/' "$project_dir/.env"
                 sed -i 's/^DB_HOST=.*/DB_HOST=devbox-postgres/' "$project_dir/.env"
+                sed -i 's/^# DB_HOST=.*/DB_HOST=devbox-postgres/' "$project_dir/.env"
                 sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
+                sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
                 sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
                 sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+
+                # Create DB automatically in Postgres container if possible
+                PGPASSWORD=devbox_pass psql -h devbox-postgres -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
                 ;;
             "SQLite")
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
-                sed -i 's/^# DB_DATABASE=.*/DB_DATABASE=/' "$project_dir/.env"
+                sed -i 's/^DB_DATABASE=.*/# DB_DATABASE=/' "$project_dir/.env"
                 mkdir -p "$project_dir/database"
                 touch "$project_dir/database/database.sqlite" 2>/dev/null || true
                 ;;
@@ -246,99 +255,80 @@ if [ "$TEMPLATE" = "laravel" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction 2>/dev/null) || true
     fi
 
-    # 4. Ensure DB containers are initialized/created if missing
-    if [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; then
-        if command -v setup-deps &>/dev/null; then
-            setup-deps >/dev/null 2>&1 || true
-        fi
+    # 4. Apply Starter Kits Safely
+    if [ "$STARTER_KIT" != "None" ]; then
+        echo "  [starter] Installing $STARTER_KIT..."
+        case "$STARTER_KIT" in
+            "Breeze + Blade")
+                (
+                    cd "$project_dir"
+                    composer require laravel/breeze --dev --no-interaction 2>/dev/null
+                    b_args="blade --no-interaction"
+                    [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
+                    php artisan breeze:install $b_args 2>/dev/null || true
+                )
+                ;;
+            "Breeze + React")
+                (
+                    cd "$project_dir"
+                    composer require laravel/breeze --dev --no-interaction 2>/dev/null
+                    b_args="react --no-interaction"
+                    [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
+                    php artisan breeze:install $b_args 2>/dev/null || true
+                )
+                ;;
+            "Breeze + Vue")
+                (
+                    cd "$project_dir"
+                    composer require laravel/breeze --dev --no-interaction 2>/dev/null
+                    b_args="vue --no-interaction"
+                    [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
+                    php artisan breeze:install $b_args 2>/dev/null || true
+                )
+                ;;
+            "Jetstream + Livewire")
+                (
+                    cd "$project_dir"
+                    composer require laravel/jetstream --no-interaction 2>/dev/null
+                    php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
+                )
+                ;;
+            "Jetstream + Inertia")
+                (
+                    cd "$project_dir"
+                    composer require laravel/jetstream --no-interaction 2>/dev/null
+                    php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
+                )
+                ;;
+        esac
     fi
 
-    # 5. Apply Starter Kits (Prefer Offline Cache)
-    case "$STARTER_KIT" in
-        "Breeze + Blade")
-            b_opts="blade --no-interaction"
-            [ "$DARK_MODE" = "yes" ] && b_opts="$b_opts --dark"
-            (
-                cd "$project_dir"
-                composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                php artisan breeze:install $b_opts --no-interaction 2>/dev/null || true
-            )
-            ;;
-        "Breeze + React")
-            b_opts="react --no-interaction"
-            [ "$DARK_MODE" = "yes" ] && b_opts="$b_opts --dark"
-            (
-                cd "$project_dir"
-                composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                php artisan breeze:install $b_opts --no-interaction 2>/dev/null || true
-            )
-            ;;
-        "Breeze + Vue")
-            b_opts="vue --no-interaction"
-            [ "$DARK_MODE" = "yes" ] && b_opts="$b_opts --dark"
-            (
-                cd "$project_dir"
-                composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                php artisan breeze:install $b_opts --no-interaction 2>/dev/null || true
-            )
-            ;;
-        "Jetstream + Livewire")
-            (
-                cd "$project_dir"
-                composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
-                php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
-            )
-            ;;
-        "Jetstream + Inertia")
-            (
-                cd "$project_dir"
-                composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
-                php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
-            )
-            ;;
-    esac
-
-    # 6. Guarantee JS Bootstrap File Exists & Ensure Axios Registration
-    mkdir -p "$project_dir/resources/js"
-    if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
-        cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
-import axios from 'axios';
-window.axios = axios;
-window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-EOF
+    # 5. Testing Framework Selection
+    if [ "$TESTING" = "Pest" ]; then
+        (
+            cd "$project_dir"
+            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --no-interaction 2>/dev/null || true
+            php artisan pest:install --no-interaction 2>/dev/null || true
+        )
     fi
 
-    # 7. Tailwind v4 Check & Patch without wiping app.css
-    rm -f "$project_dir/postcss.config.js" "$project_dir/postcss.config.cjs" 2>/dev/null || true
-    if [ -f "$project_dir/resources/css/app.css" ]; then
-        if ! grep -q '@import "tailwindcss";' "$project_dir/resources/css/app.css" 2>/dev/null; then
-            sed -i '1i @import "tailwindcss";' "$project_dir/resources/css/app.css" 2>/dev/null || true
-        fi
-    fi
-
-    # 8. API & Sanctum Installation
+    # 6. API & Sanctum Installation
     if [ "$ENABLE_API" = "yes" ]; then
         echo "  [api] Installing API routes & Laravel Sanctum..."
         (
             cd "$project_dir"
-            composer require laravel/sanctum --prefer-offline --no-interaction 2>/dev/null || true
+            composer require laravel/sanctum --no-interaction 2>/dev/null || true
             php artisan install:api --no-interaction 2>/dev/null || true
-            php artisan vendor:publish --provider="Laravel\Sanctum\SanctumServiceProvider" 2>/dev/null || true
         ) || true
     fi
 
-    # 9. Auto Run Initial Database Migrations
+    # 7. Auto Run Initial Database Migrations
     if [ "$DB_CHOICE" != "None" ]; then
         echo "  [db] Running initial migrations..."
-        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || true
+        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Migration skipped. Ensure database service is running.${NC}"
     fi
 
-    # 10. Testing Framework Option Setup
-    if [ "$TESTING" = "PHPUnit" ]; then
-        (cd "$project_dir" && composer remove pestphp/pest --dev --no-interaction 2>/dev/null && composer require phpunit/phpunit --dev --prefer-offline --no-interaction 2>/dev/null) || true
-    fi
-
-    # 11. Patch vite.config.js for Docker HMR using Node (Safe parsing)
+    # 8. Patch vite.config.js for DevBox Docker Network HMR
     if [ -f "$project_dir/vite.config.js" ]; then
         node -e "
         const fs = require('fs');
@@ -355,7 +345,7 @@ EOF
         " 2>/dev/null || true
     fi
 
-    # 12. Re-sync Node packages and Compile Assets
+    # 9. Re-sync Node packages and Compile Assets
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
@@ -366,48 +356,21 @@ EOF
     echo "[ok] Laravel options applied successfully."
 fi
 
-# === NEXT-JS CONFIGURATION ===
-if [ "$TEMPLATE" = "next-js" ]; then
-    echo ""
-    echo "[configure] Applying Next.js options..."
+# === OTHER FRAMEWORKS (Next.js / React / Python) CONFIGURATION ===
+if [ "$TEMPLATE" != "laravel" ]; then
+    if [ -f "$project_dir/.env.example" ] && [ ! -f "$project_dir/.env" ]; then
+        cp "$project_dir/.env.example" "$project_dir/.env"
+    fi
     if [ -f "$project_dir/package.json" ]; then
-        echo "[ok] Next.js project initialized."
+        echo "  [build] Compiling frontend assets..."
+        (
+            cd "$project_dir"
+            pnpm install --prefer-offline 2>/dev/null || pnpm install 2>/dev/null || true
+        )
     fi
 fi
 
-# === REACT CONFIGURATION ===
-if [ "$TEMPLATE" = "react" ]; then
-    echo ""
-    echo "[configure] Applying React options..."
-    if [ -f "$project_dir/vite.config.ts" ]; then
-        if ! grep -q "0.0.0.0" "$project_dir/vite.config.ts" 2>/dev/null; then
-            sed -i "s/plugins: \[/server: { host: '0.0.0.0', port: 5173 },\n  plugins: [/" "$project_dir/vite.config.ts" 2>/dev/null || true
-        fi
-    elif [ -f "$project_dir/vite.config.js" ]; then
-        if ! grep -q "0.0.0.0" "$project_dir/vite.config.js" 2>/dev/null; then
-            sed -i "s/plugins: \[/server: { host: '0.0.0.0', port: 5173 },\n  plugins: [/" "$project_dir/vite.config.js" 2>/dev/null || true
-        fi
-    fi
-    echo "[ok] React project initialized."
-fi
-
-# === PYTHON CONFIGURATION ===
-if [ "$TEMPLATE" = "python" ]; then
-    echo ""
-    echo "[configure] Applying Python options..."
-    if [ ! -f "$project_dir/main.py" ]; then
-        cat << 'EOF' > "$project_dir/main.py"
-def main():
-    print("Hello from DevBox Lite Python environment!")
-
-if __name__ == "__main__":
-    main()
-EOF
-    fi
-    echo "[ok] Python project initialized."
-fi
-
-# ── Step 4: Final Message & Instructions ────────────────────
+# ── Step 4: Final Message ────────────────────────────────────
 echo ""
 echo "========================================="
 echo -e "${GREEN}  Project ready: $PROJECT_NAME${NC}"
