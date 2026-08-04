@@ -79,12 +79,17 @@ wsl --install
 
 # 2. Install Docker in Ubuntu
 sudo apt update && sudo apt install -y docker.io docker-compose-v2
-sudo usermod -aG docker $USER && newgrp docker
+sudo usermod -aG docker $USER
 
-# 3. Enable Docker Desktop
-# Docker Desktop → Settings → WSL Integration → Enable Ubuntu
+# حل مشکل شبکه WSL2 و دسترسی سوکت داکر
+sudo apt install -y iptables util-linux-extra
+sudo update-alternatives --set iptables /sbin/iptables-legacy
+sudo chown $USER /var/run/docker.sock 2>/dev/null || true
 
-# 4. Clone and setup
+# روشن کردن سرویس داکر
+sudo service docker start
+
+# 3. Clone and setup
 mkdir -p ~/projects && cd ~/projects
 git clone https://github.com/efmojtaba1/Devbox-Lite.git && cd Devbox-Lite
 echo "WORKSPACE_PATH=$PWD" > .env
