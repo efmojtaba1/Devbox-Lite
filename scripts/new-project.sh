@@ -180,7 +180,7 @@ echo "Installing dependencies..."
 # PHP / Composer Base Install
 if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
-    (cd "$project_dir" && composer install --no-interaction 2>/dev/null) || true
+    (cd "$project_dir" && composer install --prefer-offline --no-interaction 2>/dev/null) || true
 else
     if [ "$TEMPLATE" = "laravel" ]; then
         echo "[skip] composer vendor directory present."
@@ -190,7 +190,7 @@ fi
 # Node.js / pnpm Base Install
 if [ -f "$project_dir/package.json" ] && [ ! -d "$project_dir/node_modules" ]; then
     echo "[install] pnpm install..."
-    (cd "$project_dir" && pnpm install 2>/dev/null) || true
+    (cd "$project_dir" && pnpm install --prefer-offline 2>/dev/null) || true
 else
     if [ -f "$project_dir/package.json" ]; then
         echo "[skip] node_modules directory present."
@@ -205,7 +205,7 @@ if [ "$TEMPLATE" = "python" ]; then
     fi
     if [ -f "$project_dir/requirements.txt" ]; then
         echo "[install] pip install..."
-        "$project_dir/venv/bin/pip" install -r "$project_dir/requirements.txt" 2>/dev/null || true
+        "$project_dir/venv/bin/pip" install --no-index --find-links=/root/.cache/pip -r "$project_dir/requirements.txt" 2>/dev/null || "$project_dir/venv/bin/pip" install -r "$project_dir/requirements.txt" 2>/dev/null || true
     fi
 fi
 
@@ -219,7 +219,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
     # 1. Ensure .env exists
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    # 2. Configure Database FIRST (So Artisan commands use correct host)
+    # 2. Configure Database FIRST (Fixes SQL Connection Refused Error)
     if [ -f "$project_dir/.env" ]; then
         case "$DB_CHOICE" in
             "MySQL")
@@ -252,54 +252,61 @@ if [ "$TEMPLATE" = "laravel" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction 2>/dev/null) || true
     fi
 
-    # 4. Apply Starter Kits
+    # 4. Ensure DB containers are initialized/created if missing
+    if [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; then
+        if command -v setup-deps &>/dev/null; then
+            setup-deps >/dev/null 2>&1 || true
+        fi
+    fi
+
+    # 5. Apply Starter Kits (Prefer Offline Cache)
     case "$STARTER_KIT" in
         "Breeze + Blade")
             b_opts="blade --no-interaction"
             [ "$DARK_MODE" = "yes" ] && b_opts="$b_opts --dark"
             (
                 cd "$project_dir"
-                composer require laravel/breeze --dev --no-interaction 2>/dev/null
-                php artisan breeze:install $b_opts 2>/dev/null
-            ) || true
+                composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
+                php artisan breeze:install $b_opts 2>/dev/null || true
+            )
             ;;
         "Breeze + React")
             b_opts="react --no-interaction"
             [ "$DARK_MODE" = "yes" ] && b_opts="$b_opts --dark"
             (
                 cd "$project_dir"
-                composer require laravel/breeze --dev --no-interaction 2>/dev/null
-                php artisan breeze:install $b_opts 2>/dev/null
-            ) || true
+                composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
+                php artisan breeze:install $b_opts 2>/dev/null || true
+            )
             ;;
         "Breeze + Vue")
             b_opts="vue --no-interaction"
             [ "$DARK_MODE" = "yes" ] && b_opts="$b_opts --dark"
             (
                 cd "$project_dir"
-                composer require laravel/breeze --dev --no-interaction 2>/dev/null
-                php artisan breeze:install $b_opts 2>/dev/null
-            ) || true
+                composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
+                php artisan breeze:install $b_opts 2>/dev/null || true
+            )
             ;;
         "Jetstream + Livewire")
             (
                 cd "$project_dir"
-                composer require laravel/jetstream --no-interaction 2>/dev/null
-                php artisan jetstream:install livewire --no-interaction 2>/dev/null
-            ) || true
+                composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
+                php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
+            )
             ;;
         "Jetstream + Inertia")
             (
                 cd "$project_dir"
-                composer require laravel/jetstream --no-interaction 2>/dev/null
-                php artisan jetstream:install inertia --no-interaction 2>/dev/null
-            ) || true
+                composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
+                php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
+            )
             ;;
     esac
 
-    # 5. Ensure bootstrap.js exists (Fixes Vite Build Error)
+    # 6. Guarantee JS Bootstrap & Axios Files Exist
+    mkdir -p "$project_dir/resources/js"
     if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
-        mkdir -p "$project_dir/resources/js"
         cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
 import axios from 'axios';
 window.axios = axios;
@@ -307,46 +314,49 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
     fi
 
-    # 6. Post-Starter-Kit Cleanup for Tailwind v4 Compatibility
+    # Ensure axios dependency is in package.json
+    (cd "$project_dir" && pnpm add axios --prefer-offline 2>/dev/null) || true
+
+    # 7. Post-Starter-Kit Cleanup for Tailwind v4 Compatibility
     rm -f "$project_dir/postcss.config.js" "$project_dir/postcss.config.cjs" 2>/dev/null || true
     if [ -f "$project_dir/resources/css/app.css" ]; then
         echo '@import "tailwindcss";' > "$project_dir/resources/css/app.css"
     fi
 
-    # 7. API & Sanctum Installation
+    # 8. API & Sanctum Installation
     if [ "$ENABLE_API" = "yes" ]; then
         echo "  [api] Installing API routes & Laravel Sanctum..."
         (
             cd "$project_dir"
-            composer require laravel/sanctum --no-interaction 2>/dev/null || true
+            composer require laravel/sanctum --prefer-offline --no-interaction 2>/dev/null || true
             php artisan install:api --no-interaction 2>/dev/null || true
             php artisan vendor:publish --provider="Laravel\Sanctum\SanctumServiceProvider" 2>/dev/null || true
         ) || true
     fi
 
-    # 8. Auto Run Initial Database Migrations
+    # 9. Auto Run Initial Database Migrations
     if [ "$DB_CHOICE" != "None" ]; then
         echo "  [db] Running initial migrations..."
         (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || true
     fi
 
-    # 9. Testing Framework Option Setup
+    # 10. Testing Framework Option Setup
     if [ "$TESTING" = "PHPUnit" ]; then
-        (cd "$project_dir" && composer remove pestphp/pest --dev --no-interaction 2>/dev/null && composer require phpunit/phpunit --dev --no-interaction 2>/dev/null) || true
+        (cd "$project_dir" && composer remove pestphp/pest --dev --no-interaction 2>/dev/null && composer require phpunit/phpunit --dev --prefer-offline --no-interaction 2>/dev/null) || true
     fi
 
-    # 10. Patch vite.config.js for Docker HMR Connection
+    # 11. Patch vite.config.js for Docker HMR Connection
     if [ -f "$project_dir/vite.config.js" ]; then
         if ! grep -q "0.0.0.0" "$project_dir/vite.config.js" 2>/dev/null; then
             sed -i "s/plugins: \[/server: { host: '0.0.0.0', hmr: { host: 'localhost' } },\n    plugins: [/" "$project_dir/vite.config.js" 2>/dev/null || true
         fi
     fi
 
-    # 11. Re-sync Node packages and Compile Assets
+    # 12. Re-sync Node packages and Compile Assets
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
-        pnpm install 2>/dev/null || true
+        pnpm install --prefer-offline 2>/dev/null || true
         pnpm run build 2>/dev/null || true
     )
 
