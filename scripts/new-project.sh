@@ -180,7 +180,7 @@ echo "Installing dependencies..."
 # Composer Base Install
 if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
-    (cd "$project_dir" && composer install --no-interaction) || true
+    (cd "$project_dir" && composer install --no-interaction 2>/dev/null) || true
 fi
 
 # Node.js / pnpm Base Install
@@ -212,15 +212,12 @@ if [ "$TEMPLATE" = "laravel" ]; then
     # 1. Ensure .env exists
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    # 2. Database Environment Setup
+    # 2. Database Environment Setup with Fallbacks
     if [ -f "$project_dir/.env" ]; then
         case "$DB_CHOICE" in
             "MySQL")
-                # Host fallback check
                 MYSQL_HOST="devbox-mysql"
-                if ! getent hosts devbox-mysql >/dev/null 2>&1; then
-                    MYSQL_HOST="127.0.0.1"
-                fi
+                getent hosts devbox-mysql >/dev/null 2>&1 || MYSQL_HOST="127.0.0.1"
                 sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=mysql/" "$project_dir/.env"
                 sed -i "s/^DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
                 sed -i "s/^# DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
@@ -234,9 +231,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 ;;
             "PostgreSQL")
                 PG_HOST="devbox-postgres"
-                if ! getent hosts devbox-postgres >/dev/null 2>&1; then
-                    PG_HOST="127.0.0.1"
-                fi
+                getent hosts devbox-postgres >/dev/null 2>&1 || PG_HOST="127.0.0.1"
                 sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/" "$project_dir/.env"
                 sed -i "s/^DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
                 sed -i "s/^# DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
@@ -310,7 +305,26 @@ if [ "$TEMPLATE" = "laravel" ]; then
         esac
     fi
 
-    # 5. Guarantee Bootstrap JS File Exists (برطرف‌کننده اصلی ارور Vite)
+    # 5. Testing Framework Setup
+    if [ "$TESTING" = "Pest" ]; then
+        (
+            cd "$project_dir"
+            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --no-interaction 2>/dev/null || true
+            php artisan pest:install --no-interaction 2>/dev/null || true
+        )
+    fi
+
+    # 6. API Routes & Sanctum Setup (با جلوگیری از بلاک شدن روی دیتابیس)
+    if [ "$ENABLE_API" = "yes" ]; then
+        echo "  [api] Installing API routes & Sanctum..."
+        (
+            cd "$project_dir"
+            composer require laravel/sanctum --no-interaction 2>/dev/null || true
+            php artisan install:api --no-migration --no-interaction 2>/dev/null || php artisan install:api --no-interaction 2>/dev/null || true
+        )
+    fi
+
+    # 7. GUARANTEE bootstrap.js Creation (جهت برطرف شدن قطعی ارور Unresolved Import)
     mkdir -p "$project_dir/resources/js"
     if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
         cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
@@ -320,32 +334,13 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
     fi
 
-    # 6. Testing Framework Selection
-    if [ "$TESTING" = "Pest" ]; then
-        (
-            cd "$project_dir"
-            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --no-interaction 2>/dev/null || true
-            php artisan pest:install --no-interaction 2>/dev/null || true
-        )
-    fi
-
-    # 7. API & Sanctum Installation
-    if [ "$ENABLE_API" = "yes" ]; then
-        echo "  [api] Installing API routes & Laravel Sanctum..."
-        (
-            cd "$project_dir"
-            composer require laravel/sanctum --no-interaction 2>/dev/null || true
-            php artisan install:api --no-interaction 2>/dev/null || true
-        ) || true
-    fi
-
-    # 8. Auto Run Initial Database Migrations
+    # 8. Auto Run Initial Database Migrations (مقاوم در برابر خطای شبکه دیتابیس)
     if [ "$DB_CHOICE" != "None" ]; then
         echo "  [db] Running initial migrations..."
-        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Migration skipped. Check database host/container status.${NC}"
+        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Database connection failed. Migration skipped for now.${NC}"
     fi
 
-    # 9. Patch vite.config.js for DevBox Docker Network HMR
+    # 9. Patch vite.config.js for DevBox Network HMR
     if [ -f "$project_dir/vite.config.js" ]; then
         node -e "
         const fs = require('fs');
@@ -362,18 +357,18 @@ EOF
         " 2>/dev/null || true
     fi
 
-    # 10. Re-sync Node packages and Compile Assets
+    # 10. Re-sync Node packages & Compile Assets Safely
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
         pnpm install --prefer-offline 2>/dev/null || pnpm install 2>/dev/null || true
-        pnpm run build 2>/dev/null || true
+        pnpm run build || true
     )
 
-    echo "[ok] Laravel options applied successfully."
+    echo "[ok] Laravel project initialized successfully."
 fi
 
-# === OTHER FRAMEWORKS (Next.js / React / Python) CONFIGURATION ===
+# === OTHER FRAMEWORKS CONFIGURATION ===
 if [ "$TEMPLATE" != "laravel" ]; then
     if [ -f "$project_dir/.env.example" ] && [ ! -f "$project_dir/.env" ]; then
         cp "$project_dir/.env.example" "$project_dir/.env"
