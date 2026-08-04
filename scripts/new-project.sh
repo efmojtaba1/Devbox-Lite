@@ -212,34 +212,41 @@ if [ "$TEMPLATE" = "laravel" ]; then
     # 1. Ensure .env exists
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    # 2. Database Environment Setup & Auto DB Creation
+    # 2. Database Environment Setup
     if [ -f "$project_dir/.env" ]; then
         case "$DB_CHOICE" in
             "MySQL")
-                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' "$project_dir/.env"
-                sed -i 's/^DB_HOST=.*/DB_HOST=devbox-mysql/' "$project_dir/.env"
-                sed -i 's/^# DB_HOST=.*/DB_HOST=devbox-mysql/' "$project_dir/.env"
+                # Host fallback check
+                MYSQL_HOST="devbox-mysql"
+                if ! getent hosts devbox-mysql >/dev/null 2>&1; then
+                    MYSQL_HOST="127.0.0.1"
+                fi
+                sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=mysql/" "$project_dir/.env"
+                sed -i "s/^DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
+                sed -i "s/^# DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
                 sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
                 sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
                 sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
                 sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
 
-                # Create DB automatically in MySQL container if possible
-                mysql -h devbox-mysql -u devbox -pdevbox_pass -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
+                mysql -h "$MYSQL_HOST" -u devbox -pdevbox_pass -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
                 ;;
             "PostgreSQL")
-                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/' "$project_dir/.env"
-                sed -i 's/^DB_HOST=.*/DB_HOST=devbox-postgres/' "$project_dir/.env"
-                sed -i 's/^# DB_HOST=.*/DB_HOST=devbox-postgres/' "$project_dir/.env"
+                PG_HOST="devbox-postgres"
+                if ! getent hosts devbox-postgres >/dev/null 2>&1; then
+                    PG_HOST="127.0.0.1"
+                fi
+                sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/" "$project_dir/.env"
+                sed -i "s/^DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
+                sed -i "s/^# DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
                 sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
                 sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
                 sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
 
-                # Create DB automatically in Postgres container if possible
-                PGPASSWORD=devbox_pass psql -h devbox-postgres -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
+                PGPASSWORD=devbox_pass psql -h "$PG_HOST" -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
                 ;;
             "SQLite")
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
@@ -262,7 +269,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
             "Breeze + Blade")
                 (
                     cd "$project_dir"
-                    composer require laravel/breeze --dev --no-interaction 2>/dev/null
+                    composer require laravel/breeze --dev --no-interaction 2>/dev/null || true
                     b_args="blade --no-interaction"
                     [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
                     php artisan breeze:install $b_args 2>/dev/null || true
@@ -271,7 +278,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
             "Breeze + React")
                 (
                     cd "$project_dir"
-                    composer require laravel/breeze --dev --no-interaction 2>/dev/null
+                    composer require laravel/breeze --dev --no-interaction 2>/dev/null || true
                     b_args="react --no-interaction"
                     [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
                     php artisan breeze:install $b_args 2>/dev/null || true
@@ -280,7 +287,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
             "Breeze + Vue")
                 (
                     cd "$project_dir"
-                    composer require laravel/breeze --dev --no-interaction 2>/dev/null
+                    composer require laravel/breeze --dev --no-interaction 2>/dev/null || true
                     b_args="vue --no-interaction"
                     [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
                     php artisan breeze:install $b_args 2>/dev/null || true
@@ -289,21 +296,31 @@ if [ "$TEMPLATE" = "laravel" ]; then
             "Jetstream + Livewire")
                 (
                     cd "$project_dir"
-                    composer require laravel/jetstream --no-interaction 2>/dev/null
+                    composer require laravel/jetstream --no-interaction 2>/dev/null || true
                     php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
                 )
                 ;;
             "Jetstream + Inertia")
                 (
                     cd "$project_dir"
-                    composer require laravel/jetstream --no-interaction 2>/dev/null
+                    composer require laravel/jetstream --no-interaction 2>/dev/null || true
                     php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
                 )
                 ;;
         esac
     fi
 
-    # 5. Testing Framework Selection
+    # 5. Guarantee Bootstrap JS File Exists (برطرف‌کننده اصلی ارور Vite)
+    mkdir -p "$project_dir/resources/js"
+    if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
+        cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
+import axios from 'axios';
+window.axios = axios;
+window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+EOF
+    fi
+
+    # 6. Testing Framework Selection
     if [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
@@ -312,7 +329,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
         )
     fi
 
-    # 6. API & Sanctum Installation
+    # 7. API & Sanctum Installation
     if [ "$ENABLE_API" = "yes" ]; then
         echo "  [api] Installing API routes & Laravel Sanctum..."
         (
@@ -322,13 +339,13 @@ if [ "$TEMPLATE" = "laravel" ]; then
         ) || true
     fi
 
-    # 7. Auto Run Initial Database Migrations
+    # 8. Auto Run Initial Database Migrations
     if [ "$DB_CHOICE" != "None" ]; then
         echo "  [db] Running initial migrations..."
-        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Migration skipped. Ensure database service is running.${NC}"
+        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Migration skipped. Check database host/container status.${NC}"
     fi
 
-    # 8. Patch vite.config.js for DevBox Docker Network HMR
+    # 9. Patch vite.config.js for DevBox Docker Network HMR
     if [ -f "$project_dir/vite.config.js" ]; then
         node -e "
         const fs = require('fs');
@@ -345,7 +362,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
         " 2>/dev/null || true
     fi
 
-    # 9. Re-sync Node packages and Compile Assets
+    # 10. Re-sync Node packages and Compile Assets
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
