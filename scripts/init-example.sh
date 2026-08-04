@@ -35,7 +35,6 @@ if is_online; then
     PIP_CMD="pip install"
 else
     echo "  [network] No internet connection (Offline Mode)."
-    # استفاده از --offline بدون frozen-lockfile برای جلوگیری از خطای ناهمخوانی lockfile
     PNPM_CMD="pnpm install --offline"
     COMPOSER_CMD="composer install --no-interaction --prefer-offline"
     PIP_CMD="pip install --find-links=/root/.cache/pip/wheels"
