@@ -22,7 +22,7 @@ get_deps() {
         microservices)    echo "postgres redis" ;;
         multiuser)        echo "postgres redis" ;;
         fullstack-minio)  echo "mysql" ;;
-        nextjs|react)           echo "postgres" ;;
+        nextjs|react)     echo "postgres" ;;
         python)           echo "postgres" ;;
         *)                echo "" ;;
     esac
@@ -32,7 +32,7 @@ get_deps() {
 get_guis() {
     local template="$1"
     case "$template" in
-        laravel|symfony)          echo "phpmyadmin" ;;
+        laravel|symfony)           echo "phpmyadmin" ;;
         fullstack|fullstack-minio) echo "phpmyadmin" ;;
         django|fastapi|express)   echo "adminer" ;;
         rails|go|phoenix)         echo "adminer" ;;
@@ -222,19 +222,16 @@ configure_laravel_env() {
 
     # Configure Redis-based settings if Redis is available
     if [ "$has_redis" = "true" ]; then
-        # Set CACHE_STORE to redis
         if grep -q "^CACHE_STORE=.*" "$env_file"; then
             sed -i 's/^CACHE_STORE=.*/CACHE_STORE=redis/' "$env_file"
             echo "  [ok] CACHE_STORE set to redis"
         fi
 
-        # Set QUEUE_CONNECTION to redis
         if grep -q "^QUEUE_CONNECTION=.*" "$env_file"; then
             sed -i 's/^QUEUE_CONNECTION=.*/QUEUE_CONNECTION=redis/' "$env_file"
             echo "  [ok] QUEUE_CONNECTION set to redis"
         fi
 
-        # Set SESSION_DRIVER to redis
         if grep -q "^SESSION_DRIVER=.*" "$env_file"; then
             sed -i 's/^SESSION_DRIVER=.*/SESSION_DRIVER=redis/' "$env_file"
             echo "  [ok] SESSION_DRIVER set to redis"
@@ -305,23 +302,25 @@ EOF
     fi
 
     # ----------------------------------------------------
-    # ۳. اصلاح و تزریق تنظیمات Host در vite.config.js برای داکر
+    # ۳. اصلاح و تزریق دقیق تنظیمات Host و StrictPort در vite.config.js
     # ----------------------------------------------------
     local vite_config="$project_dir/vite.config.js"
     if [ -f "$vite_config" ]; then
         chmod 666 "$vite_config" 2>/dev/null || true
 
-        if ! grep -q "0.0.0.0" "$vite_config" 2>/dev/null; then
-            echo "  [patch] Patching vite.config.js for Docker compatibility..."
+        if ! grep -q "strictPort: true" "$vite_config" 2>/dev/null; then
+            echo "  [patch] Patching vite.config.js for strict port 5173..."
             node -e "
             const fs = require('fs');
             let content = fs.readFileSync('$vite_config', 'utf8');
-            if (!content.includes('server:')) {
-                content = content.replace('plugins:', \"server: { host: '0.0.0.0', hmr: { host: 'localhost' } },\n    plugins:\");
-                fs.writeFileSync('$vite_config', content);
+            const serverConfig = \"server: { host: '0.0.0.0', port: 5173, strictPort: true, hmr: { host: 'localhost' } },\n    \";
+            if (content.includes('server:')) {
+                content = content.replace(/server\s*:\s*\{[^}]*\}/, serverConfig.trim().slice(0, -1));
+            } else {
+                content = content.replace('plugins:', serverConfig + 'plugins:');
             }
-            " 2>/dev/null || sed -i "s/plugins: \[/server: { host: '0.0.0.0', hmr: { host: 'localhost' } },\n    plugins: [/" "$vite_config" 2>/dev/null || true
-
+            fs.writeFileSync('$vite_config', content);
+            " 2>/dev/null || true
             echo "  [ok] vite.config.js patched successfully"
         fi
     fi
@@ -352,15 +351,20 @@ EOF
     fi
 
     # ----------------------------------------------------
-    # ۶. اجرای سرور توسعه Vite در پس‌زمینه
+    # ۶. آزادسازی پورت ۵۱۷۳ و اجرای ساخت فایل‌های Asset (Build & Dev)
     # ----------------------------------------------------
-    echo "  [dev] Starting Vite dev server..."
-    (cd "$project_dir" && nohup pnpm dev > /dev/null 2>&1 &)
-    echo "  [ok] Vite dev server started (access via php artisan serve)"
+    echo "  [fix] Terminating zombie Vite processes on port 5173..."
+    fuser -k 5173/tcp >/dev/null 2>&1 || true
+
+    echo "  [build] Compiling assets with Vite..."
+    (cd "$project_dir" && pnpm build > /dev/null 2>&1 || npm run build > /dev/null 2>&1) || true
+
+    echo "  [dev] Starting clean Vite dev server..."
+    (cd "$project_dir" && nohup pnpm dev > /dev/null 2>&1 &) || true
+    echo "  [ok] Vite dev server initialized on port 5173"
 }
 
 # Offline-first dependency installation
-# Tries to copy from /example/ templates, falls back to online install
 install_deps_offline_first() {
     local project_dir="$1"
     local project_type="$2"
@@ -371,7 +375,6 @@ install_deps_offline_first() {
 
     case "$project_type" in
         laravel)
-            # vendor
             if [ -d "$project_dir/vendor" ]; then
                 echo "  [skip] vendor already present"
             elif [ -d "$example_dir/laravel/vendor" ]; then
@@ -380,13 +383,11 @@ install_deps_offline_first() {
                     echo "  [ok] vendor copied from example" || \
                     echo "  [warn] copy failed, falling back to online"
             fi
-            # composer install as fallback
             if [ ! -d "$project_dir/vendor" ] && [ -f "$project_dir/composer.json" ]; then
                 echo "  [online] Running composer install..."
                 (cd "$project_dir" && composer install --no-interaction 2>/dev/null) || \
                     echo "  [warn] composer install failed"
             fi
-            # node_modules
             if [ -d "$project_dir/node_modules" ]; then
                 echo "  [skip] node_modules already present"
             elif [ -d "$example_dir/laravel/node_modules" ]; then
@@ -467,7 +468,6 @@ setup_template() {
     echo "Setting up: $template"
     echo "========================================="
 
-    # Create .deps structure for this project if it doesn't exist
     local deps_dir="/workspace/.deps"
     mkdir -p "$deps_dir"
 
@@ -502,7 +502,6 @@ show_menu() {
     count=$(echo "$projects" | wc -l)
     local i=1
 
-    # Display menu to stderr so it's not captured by $()
     echo "" >&2
     echo "=========================================" >&2
     echo "Detected projects in workspace:" >&2
@@ -522,7 +521,6 @@ show_menu() {
     echo "  a) All projects" >&2
     echo "" >&2
 
-    # Selection goes to stdout (captured by caller) — returns "fullpath type" pairs
     while true; do
         read -r -p "Select project (1-$count or a): " choice
         if [ "$choice" = "a" ] || [ "$choice" = "A" ]; then
@@ -543,7 +541,6 @@ main() {
     local template="${2:-}"
     local auto_all="${3:-}"
 
-    # Default to /workspace/workspace if no dir specified
     if [ "$project_dir" = "." ] && [ -z "$template" ]; then
         if [ -d "/workspace/workspace" ]; then
             project_dir="/workspace/workspace"
@@ -551,7 +548,6 @@ main() {
     fi
 
     if [ -n "$template" ]; then
-        # Explicit template — single project mode
         setup_template "$template"
         install_deps_offline_first "$project_dir" "$template"
         if [ "$template" = "laravel" ]; then
@@ -560,7 +556,6 @@ main() {
         return
     fi
 
-    # Auto-detect all projects
     local projects
     projects=$(scan_directory "$project_dir")
 
@@ -576,19 +571,15 @@ main() {
     local selected
 
     if [ "$count" -eq 1 ]; then
-        # Only one project — use it directly (path + type)
         selected=$(echo "$projects" | awk '{print $1 " " $3}')
     elif [ "$auto_all" = "all" ] || [ ! -t 0 ]; then
-        # Non-interactive mode or "all" flag — select all projects
         selected=$(echo "$projects" | awk '{print $1 " " $3}')
         echo ""
         echo "Detected $count project(s), setting up all..."
     else
-        # Multiple projects — show selection menu (returns "fullpath type" pairs)
         selected=$(show_menu "$projects")
     fi
 
-    # Setup each selected project and cd to last one
     local last_dir=""
     while IFS= read -r line; do
         [ -z "$line" ] && continue
@@ -609,10 +600,8 @@ main() {
         last_dir="$dir_path"
     done <<< "$selected"
 
-    # Cd to the last selected project directory
     if [ -n "$last_dir" ] && [ -d "$last_dir" ]; then
         cd "$last_dir" || true
-        # Show relative path from /workspace for cleaner display
         local rel_path="${last_dir#/workspace/}"
         echo ""
         echo "========================================="
