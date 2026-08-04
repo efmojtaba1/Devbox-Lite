@@ -77,15 +77,15 @@ Then open VS Code and connect to the container via Remote Explorer → Dev Conta
 wsl --install
 # Restart your computer afterwards
 
-# 2. Install Native Docker in Ubuntu
+# 2. Install Native Docker in Ubuntu (Without Docker Desktop)
 sudo apt update && sudo apt install -y docker.io docker-compose-v2
 sudo usermod -aG docker $USER
 
-# Enable Systemd for automatic service management in WSL2
+# Enable systemd support in WSL2
 sudo bash -c 'echo -e "[boot]\nsystemd=true" > /etc/wsl.conf'
 
-# Start Docker daemon and enable it to launch automatically on boot
-sudo systemctl enable --now docker
+# Start Docker service (Works seamlessly with or without systemd active)
+sudo service docker start || sudo systemctl enable --now docker
 
 # 3. Clone repository and set up Devbox-Lite
 mkdir -p ~/projects && cd ~/projects
