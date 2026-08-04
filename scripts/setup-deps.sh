@@ -350,18 +350,15 @@ EOF
         (cd "$project_dir" && pnpm add axios --silent 2>/dev/null) || true
     fi
 
+# ----------------------------------------------------
+    # ۶. آزاد کردن پورت ۵۱۷۳ و ساخت فایل‌های استاتیک (Build)
     # ----------------------------------------------------
-    # ۶. آزادسازی پورت ۵۱۷۳ و اجرای ساخت فایل‌های Asset (Build & Dev)
-    # ----------------------------------------------------
-    echo "  [fix] Terminating zombie Vite processes on port 5173..."
+    echo "  [fix] Terminating any zombie Vite processes on port 5173..."
     fuser -k 5173/tcp >/dev/null 2>&1 || true
 
-    echo "  [build] Compiling assets with Vite..."
+    echo "  [build] Compiling production assets with Vite..."
     (cd "$project_dir" && pnpm build > /dev/null 2>&1 || npm run build > /dev/null 2>&1) || true
-
-    echo "  [dev] Starting clean Vite dev server..."
-    (cd "$project_dir" && nohup pnpm dev > /dev/null 2>&1 &) || true
-    echo "  [ok] Vite dev server initialized on port 5173"
+    echo "  [ok] Assets compiled successfully!"
 }
 
 # Offline-first dependency installation
