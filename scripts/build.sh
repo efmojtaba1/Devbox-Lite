@@ -1,22 +1,37 @@
 #!/bin/bash
 # DevBox Lite - Build image
 
-# بررسی و فعال‌سازی سرویس داکر در صورت خاموش بودن
+set -e
+
+# ==========================================
+# 🚀 Ensure Docker Daemon is Running
+# ==========================================
 if ! docker info >/dev/null 2>&1; then
-    echo "⚠️ Docker daemon is not running. Attempting to start service..."
+    echo "⚠️  Docker daemon is not running. Attempting to start Docker service..."
 
-    if command -v service >/dev/null 2>&1; then
-        sudo service docker start
-        echo "Waiting for Docker daemon to initialize..."
-        sleep 3
-    fi
+    # Try starting Docker using service command (WSL / native Linux)
+    sudo service docker start >/dev/null 2>&1 || sudo systemctl start docker >/dev/null 2>&1 || true
 
+    # Wait up to 10 seconds for Docker daemon to respond
+    COUNTER=0
+    until docker info >/dev/null 2>&1 || [ $COUNTER -eq 10 ]; do
+        echo "Waiting for Docker daemon to initialize... ($((10 - COUNTER))s)"
+        sleep 1
+        COUNTER=$((COUNTER + 1))
+    done
+
+    # Final verification check
     if ! docker info >/dev/null 2>&1; then
-        echo "❌ Error: Cannot connect to Docker daemon."
-        echo "Please make sure Docker Desktop is running OR run: 'sudo service docker start'"
+        echo "❌ Error: Could not connect to Docker daemon."
+        echo "Please ensure Docker is installed and running (or start Docker Desktop on Windows)."
         exit 1
     fi
+    echo "✅ Docker daemon started successfully!"
 fi
+
+# ==========================================
+# 🏗️ Rest of your build script operations...
+# ==========================================
 
 source "$(dirname "$0")/common.sh"
 
