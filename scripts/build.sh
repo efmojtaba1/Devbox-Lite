@@ -1,27 +1,29 @@
 #!/bin/bash
 # DevBox Lite - Build image
+
+# فعال‌سازی اجباری BuildKit برای تایمر مدرن، پروگرس‌بار گرافیکی و بیلد سریع
+export DOCKER_BUILDKIT=1
+
 # بررسی متصل بودن به سرویس داکر
 if ! docker info >/dev/null 2>&1; then
     echo "⚠️ Docker daemon is not running. Attempting to start service..."
 
     if command -v service >/dev/null 2>&1; then
         sudo service docker start
-
-        # ۳ ثانیه مهلت برای آماده شدن سوکت داکر
         echo "Waiting for Docker daemon to initialize..."
         sleep 3
     fi
 
-    # چک مجدد پس از چند ثانیه انتظار
     if ! docker info >/dev/null 2>&1; then
         echo "❌ Error: Cannot connect to Docker daemon."
         echo "Please make sure Docker Desktop is running OR run: 'sudo service docker start'"
         exit 1
     fi
 fi
+
 source "$(dirname "$0")/common.sh"
 
-Show-Header "Building DevBox"
+Show-Header "Building DevBox (using BuildKit)"
 
 DOCKER_FILE="$PROJECT_ROOT/docker/app/Dockerfile"
 BUILD_CONTEXT="$PROJECT_ROOT/docker/app"
@@ -59,9 +61,7 @@ case "${mirror_choice:-1}" in
     1) APT_MIRROR="http://mirror.arvancloud.ir/ubuntu" ;;
     2) APT_MIRROR="http://ir.archive.ubuntu.com/ubuntu" ;;
     3) APT_MIRROR="" ;;
-    4)
-        read -r -p "Enter mirror URL: " APT_MIRROR
-        ;;
+    4) read -r -p "Enter mirror URL: " APT_MIRROR ;;
     *) APT_MIRROR="http://mirror.arvancloud.ir/ubuntu" ;;
 esac
 
@@ -73,19 +73,15 @@ else
     echo "Using default Ubuntu mirrors"
 fi
 
-# Auto-select best pip mirror (PyPI default is fastest from Iran)
 PIP_MIRROR=""
 echo "Using pip mirror: Default PyPI (pypi.org) - fastest from Iran"
 echo ""
 
-# Build with mirror args
 BUILD_ARGS=""
 if [ -n "$APT_MIRROR" ]; then
     BUILD_ARGS="$BUILD_ARGS --build-arg APT_MIRROR=$APT_MIRROR"
 fi
 
-# Copy example templates into build context (Dockerfile needs them)
-# Exclude dependency dirs (symlinks to Docker volumes, can't be copied)
 echo "Copying example templates to build context..."
 mkdir -p "$BUILD_CONTEXT/example"
 shopt -s dotglob
@@ -103,14 +99,17 @@ for tmpl in laravel next-js python react; do
 done
 shopt -u dotglob
 
-docker build $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT"
+# استفاده از buildx یا اجبار BuildKit
+if docker buildx version >/dev/null 2>&1; then
+    docker buildx build --progress=plain $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT" --load
+else
+    DOCKER_BUILDKIT=1 docker build $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT"
+fi
 
 Test-Result "Build completed successfully." "Build failed."
 
-# Cleanup copied example from build context
 rm -rf "$BUILD_CONTEXT/example" 2>/dev/null
 
-# Start container and initialize example templates
 echo ""
 Show-Header "Initializing Example Templates"
 
