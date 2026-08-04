@@ -1,6 +1,21 @@
 #!/bin/bash
 # DevBox Lite - Build image
+# بررسی متصل بودن به سرویس داکر
+if ! docker info >/dev/null 2>&1; then
+    echo "⚠️ Docker daemon is not running. Attempting to start service..."
 
+    # اگر کاربر در اوبونتو بومی است و داکر دسکتاپ ندارد، سرویس را روشن کن
+    if command -v service >/dev/null 2>&1; then
+        sudo service docker start
+    fi
+
+    # چک مجدد پس از تلاش برای روشن کردن
+    if ! docker info >/dev/null 2>&1; then
+        echo "❌ Error: Cannot connect to Docker daemon."
+        echo "Please make sure Docker Desktop is running OR run: 'sudo service docker start'"
+        exit 1
+    fi
+fi
 source "$(dirname "$0")/common.sh"
 
 Show-Header "Building DevBox"
@@ -95,7 +110,13 @@ rm -rf "$BUILD_CONTEXT/example" 2>/dev/null
 # Start container and initialize example templates
 echo ""
 Show-Header "Initializing Example Templates"
-docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null
+
+if docker compose version >/dev/null 2>&1; then
+    docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null
+else
+    docker-compose -f "$COMPOSE_FILE" up -d 2>/dev/null
+fi
+
 sleep 5
 docker exec "$CONTAINER_NAME" bash -c "/scripts/init-example.sh" || \
     echo "[warn] init-example failed. Run 'devbox init-example' manually."

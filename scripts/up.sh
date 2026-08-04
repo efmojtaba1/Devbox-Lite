@@ -1,15 +1,40 @@
 #!/bin/bash
 # DevBox Lite - Start container
 
-# Auto-fix permissions for all scripts in the scripts directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
 source "$SCRIPT_DIR/common.sh"
 
+# ۱. ابتدا بررسی متصل بودن به سرویس داکر
+if ! docker info >/dev/null 2>&1; then
+    echo "⚠️ Docker daemon is not running. Attempting to start service..."
+
+    if command -v service >/dev/null 2>&1; then
+        sudo service docker start
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+        echo "❌ Error: Cannot connect to Docker daemon."
+        echo "Please make sure Docker Desktop is running OR run: 'sudo service docker start'"
+        exit 1
+    fi
+fi
+
+# ۲. تشخیص خودکار نسخه Compose
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    DOCKER_COMPOSE="docker-compose"
+else
+    echo "❌ Error: Neither 'docker compose' nor 'docker-compose' was found."
+    echo "Please install docker-compose-v2."
+    exit 1
+fi
+
 Show-Header "Starting DevBox Lite"
 
-docker compose -f "$COMPOSE_FILE" up -d
+# ۳. اجرای کانتینر با متغیر هوشمند Compose
+$DOCKER_COMPOSE -f "$COMPOSE_FILE" up -d
 
 if [ $? -eq 0 ]; then
     Show-Success "DevBox Lite container started."
@@ -35,8 +60,8 @@ if [ $? -eq 0 ]; then
     echo "DevBox Lite is ready!"
     echo "========================================="
     echo ""
-    echo "Use './scripts/shell' to enter the container."
-    echo "Use './scripts/setup-deps' to configure database services."
+    echo "Use './scripts/shell.sh' to enter the container."
+    echo "Use './scripts/setup-deps.sh' to configure database services."
 else
     Show-Error "Failed to start DevBox Lite container."
     exit 1
