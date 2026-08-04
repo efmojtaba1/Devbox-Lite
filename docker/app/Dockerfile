@@ -153,19 +153,28 @@ RUN chmod +x /entrypoint.sh
 RUN mkdir -p /root/.cache/pip/wheels && \
     pip wheel --wheel-dir=/root/.cache/pip/wheels flask uvicorn requests 2>/dev/null || true
 
-# Copy example templates and install dependencies (offline-first)
+# Copy example templates and install dependencies (offline-first with full asset compilation)
 COPY example/ /prebuilt/example/
 RUN cd /prebuilt/example/laravel && \
     composer install --no-interaction 2>/dev/null; \
-    [ -f package.json ] && pnpm install 2>/dev/null; \
+    if [ -f package.json ]; then \
+        pnpm install 2>/dev/null && \
+        pnpm build 2>/dev/null; \
+    fi; \
     cp .env.example .env 2>/dev/null; \
     php artisan key:generate --force 2>/dev/null; \
     echo "[build] Laravel done" && \
     cd /prebuilt/example/next-js && \
-    [ -f package.json ] && pnpm install 2>/dev/null; \
+    if [ -f package.json ]; then \
+        pnpm install 2>/dev/null && \
+        pnpm build 2>/dev/null; \
+    fi; \
     echo "[build] Next.js done" && \
     cd /prebuilt/example/react && \
-    [ -f package.json ] && pnpm install 2>/dev/null; \
+    if [ -f package.json ]; then \
+        pnpm install 2>/dev/null && \
+        pnpm build 2>/dev/null; \
+    fi; \
     echo "[build] React done" && \
     cd /prebuilt/example/python && \
     python3 -m venv venv 2>/dev/null && \
