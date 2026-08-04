@@ -30,14 +30,14 @@ is_online() {
 
 if is_online; then
     echo "  [network] Internet connection detected (Online Mode)."
-    PNPM_CMD="pnpm install"
-    COMPOSER_CMD="composer install --no-interaction"
-    PIP_CMD="pip install"
+    PNPM_ARGS="install"
+    COMPOSER_ARGS="install --no-interaction"
+    PIP_ARGS="install"
 else
     echo "  [network] No internet connection (Offline Mode)."
-    PNPM_CMD="pnpm install --offline"
-    COMPOSER_CMD="composer install --no-interaction --prefer-offline"
-    PIP_CMD="pip install --find-links=/root/.cache/pip/wheels"
+    PNPM_ARGS="install --offline --frozen-lockfile"
+    COMPOSER_ARGS="install --no-interaction --prefer-offline"
+    PIP_ARGS="install --find-links=/root/.cache/pip/wheels"
 fi
 
 # Copy source files from host mount to Docker volume
@@ -56,12 +56,12 @@ echo "Installing dependencies..."
 # Laravel
 if [ -d "$DST/laravel" ] && [ ! -d "$DST/laravel/vendor" ]; then
     echo "[laravel] composer install..."
-    (cd "$DST/laravel" && $COMPOSER_CMD 2>/dev/null) && \
+    (cd "$DST/laravel" && composer $COMPOSER_ARGS) && \
         echo "[laravel] [ok]" || echo "[laravel] [warn] failed"
 fi
 if [ -d "$DST/laravel" ] && [ ! -d "$DST/laravel/node_modules" ] && [ -f "$DST/laravel/package.json" ]; then
     echo "[laravel] pnpm install..."
-    (cd "$DST/laravel" && $PNPM_CMD 2>/dev/null) && \
+    (cd "$DST/laravel" && pnpm $PNPM_ARGS) && \
         echo "[laravel] [ok]" || echo "[laravel] [warn] failed"
 fi
 if [ -d "$DST/laravel" ] && [ -f "$DST/laravel/.env.example" ] && [ ! -f "$DST/laravel/.env" ]; then
@@ -72,24 +72,24 @@ fi
 # Next.js
 if [ -d "$DST/next-js" ] && [ ! -d "$DST/next-js/node_modules" ] && [ -f "$DST/next-js/package.json" ]; then
     echo "[next-js] pnpm install..."
-    (cd "$DST/next-js" && $PNPM_CMD 2>/dev/null) && \
+    (cd "$DST/next-js" && pnpm $PNPM_ARGS) && \
         echo "[next-js] [ok]" || echo "[next-js] [warn] failed"
 fi
 
 # Python
 if [ -d "$DST/python" ] && [ ! -d "$DST/python/venv" ]; then
     echo "[python] venv + pip install..."
-    (cd "$DST/python" && python3 -m venv venv 2>/dev/null && \
+    (cd "$DST/python" && python3 -m venv venv && \
         . venv/bin/activate && \
-        ([ -f requirements.txt ] && $PIP_CMD -r requirements.txt 2>/dev/null || \
-        $PIP_CMD flask 2>/dev/null)) && \
+        ([ -f requirements.txt ] && pip $PIP_ARGS -r requirements.txt || \
+        pip $PIP_ARGS flask)) && \
             echo "[python] [ok]" || echo "[python] [warn] failed"
 fi
 
 # React
 if [ -d "$DST/react" ] && [ ! -d "$DST/react/node_modules" ] && [ -f "$DST/react/package.json" ]; then
     echo "[react] pnpm install..."
-    (cd "$DST/react" && $PNPM_CMD 2>/dev/null) && \
+    (cd "$DST/react" && pnpm $PNPM_ARGS) && \
         echo "[react] [ok]" || echo "[react] [warn] failed"
 fi
 
