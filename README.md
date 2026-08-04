@@ -73,23 +73,21 @@ Then open VS Code and connect to the container via Remote Explorer → Dev Conta
 > **Why WSL2?** File operations in Docker Desktop are 10-20x slower than native WSL2 filesystem. For serious development, WSL2 is strongly recommended.
 
 ```bash
-# 1. Install WSL2 (PowerShell as Administrator)
+# 1. Install WSL2 (Execute in Windows PowerShell as Administrator)
 wsl --install
-# Restart computer
+# Restart your computer afterwards
 
-# 2. Install Docker in Ubuntu
+# 2. Install Native Docker in Ubuntu
 sudo apt update && sudo apt install -y docker.io docker-compose-v2
 sudo usermod -aG docker $USER
 
-# حل مشکل شبکه WSL2 و دسترسی سوکت داکر
-sudo apt install -y iptables util-linux-extra
-sudo update-alternatives --set iptables /sbin/iptables-legacy
-sudo chown $USER /var/run/docker.sock 2>/dev/null || true
+# Enable Systemd for automatic service management in WSL2
+sudo bash -c 'echo -e "[boot]\nsystemd=true" > /etc/wsl.conf'
 
-# روشن کردن سرویس داکر
-sudo service docker start
+# Start Docker daemon and enable it to launch automatically on boot
+sudo systemctl enable --now docker
 
-# 3. Clone and setup
+# 3. Clone repository and set up Devbox-Lite
 mkdir -p ~/projects && cd ~/projects
 git clone https://github.com/efmojtaba1/Devbox-Lite.git && cd Devbox-Lite
 echo "WORKSPACE_PATH=$PWD" > .env
