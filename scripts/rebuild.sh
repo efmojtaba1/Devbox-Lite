@@ -1,16 +1,32 @@
 #!/bin/bash
 # DevBox Lite - Rebuild image (no cache)
 
-export DOCKER_BUILDKIT=1
+# بررسی و فعال‌سازی سرویس داکر در صورت خاموش بودن
+if ! docker info >/dev/null 2>&1; then
+    echo "⚠️ Docker daemon is not running. Attempting to start service..."
+
+    if command -v service >/dev/null 2>&1; then
+        sudo service docker start
+        echo "Waiting for Docker daemon to initialize..."
+        sleep 3
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+        echo "❌ Error: Cannot connect to Docker daemon."
+        echo "Please make sure Docker Desktop is running OR run: 'sudo service docker start'"
+        exit 1
+    fi
+fi
 
 source "$(dirname "$0")/common.sh"
 
-Show-Header "Rebuilding DevBox (no cache - using BuildKit)"
+Show-Header "Rebuilding DevBox (no cache)"
 
 DOCKER_FILE="$PROJECT_ROOT/docker/app/Dockerfile"
 BUILD_CONTEXT="$PROJECT_ROOT/docker/app"
 PREBUILT_DIR="$PROJECT_ROOT/prebuilt/images"
 
+# Load prebuilt base images if available
 echo "Checking for prebuilt images..."
 if [ -f "$PREBUILT_DIR/ubuntu-24.04.tar.gz" ]; then
     echo "  Loading ubuntu:24.04 from prebuilt..."
@@ -27,6 +43,7 @@ else
 fi
 echo ""
 
+# Mirror selection
 echo "========================================="
 echo "Select APT Mirror:"
 echo "========================================="
@@ -57,11 +74,13 @@ PIP_MIRROR=""
 echo "Using pip mirror: Default PyPI (pypi.org) - fastest from Iran"
 echo ""
 
+# Build with mirror args
 BUILD_ARGS=""
 if [ -n "$APT_MIRROR" ]; then
     BUILD_ARGS="$BUILD_ARGS --build-arg APT_MIRROR=$APT_MIRROR"
 fi
 
+# Copy example templates into build context (Dockerfile needs them)
 echo "Copying example templates to build context..."
 rm -rf "$BUILD_CONTEXT/example" 2>/dev/null
 mkdir -p "$BUILD_CONTEXT/example"
@@ -80,20 +99,31 @@ for tmpl in laravel next-js python react; do
 done
 shopt -u dotglob
 
-# اجرای بیلد مدرن
+# تشخیص ریشه‌ای موتور بیلد (حالت --no-cache)
 if docker buildx version >/dev/null 2>&1; then
+    echo "🚀 Rebuilding with Docker BuildKit (no cache)..."
     docker buildx build --no-cache $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT" --load
 else
-    DOCKER_BUILDKIT=1 docker build --no-cache $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT"
+    echo "⚠️ Docker buildx not found. Falling back to legacy rebuild..."
+    echo "💡 Tip: For progress bar and faster builds, run: sudo apt install docker-buildx"
+    DOCKER_BUILDKIT=0 docker build --no-cache $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT"
 fi
 
 Test-Result "Rebuild completed successfully." "Rebuild failed."
 
+# Cleanup copied example from build context
 rm -rf "$BUILD_CONTEXT/example" 2>/dev/null
 
+# Start container and initialize example templates
 echo ""
 Show-Header "Initializing Example Templates"
-docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null
+
+if docker compose version >/dev/null 2>&1; then
+    docker compose -f "$COMPOSE_FILE" up -d 2>/dev/null
+else
+    docker-compose -f "$COMPOSE_FILE" up -d 2>/dev/null
+fi
+
 sleep 5
 docker exec "$CONTAINER_NAME" bash -c "/scripts/init-example.sh" || \
     echo "[warn] init-example failed. Run 'devbox init-example' manually."

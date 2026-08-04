@@ -1,10 +1,7 @@
 #!/bin/bash
 # DevBox Lite - Build image
 
-# فعال‌سازی اجباری BuildKit برای تایمر مدرن، پروگرس‌بار گرافیکی و بیلد سریع
-export DOCKER_BUILDKIT=1
-
-# بررسی متصل بودن به سرویس داکر
+# بررسی و فعال‌سازی سرویس داکر در صورت خاموش بودن
 if ! docker info >/dev/null 2>&1; then
     echo "⚠️ Docker daemon is not running. Attempting to start service..."
 
@@ -23,7 +20,7 @@ fi
 
 source "$(dirname "$0")/common.sh"
 
-Show-Header "Building DevBox (using BuildKit)"
+Show-Header "Building DevBox"
 
 DOCKER_FILE="$PROJECT_ROOT/docker/app/Dockerfile"
 BUILD_CONTEXT="$PROJECT_ROOT/docker/app"
@@ -77,11 +74,13 @@ PIP_MIRROR=""
 echo "Using pip mirror: Default PyPI (pypi.org) - fastest from Iran"
 echo ""
 
+# Build with mirror args
 BUILD_ARGS=""
 if [ -n "$APT_MIRROR" ]; then
     BUILD_ARGS="$BUILD_ARGS --build-arg APT_MIRROR=$APT_MIRROR"
 fi
 
+# Copy example templates into build context (Dockerfile needs them)
 echo "Copying example templates to build context..."
 mkdir -p "$BUILD_CONTEXT/example"
 shopt -s dotglob
@@ -99,17 +98,22 @@ for tmpl in laravel next-js python react; do
 done
 shopt -u dotglob
 
-# استفاده از buildx یا اجبار BuildKit
+# تشخیص ریشه‌ای موتور بیلد: Buildx (تایمر/پروگرس زنده) در برابر Legacy
 if docker buildx version >/dev/null 2>&1; then
-    docker buildx build --progress=plain $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT" --load
+    echo "🚀 Using Docker BuildKit with buildx..."
+    docker buildx build $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT" --load
 else
-    DOCKER_BUILDKIT=1 docker build $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT"
+    echo "⚠️ Docker buildx not found. Falling back to legacy build..."
+    echo "💡 Tip: For progress bar and faster builds, run: sudo apt install docker-buildx"
+    DOCKER_BUILDKIT=0 docker build $BUILD_ARGS -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$BUILD_CONTEXT"
 fi
 
 Test-Result "Build completed successfully." "Build failed."
 
+# Cleanup copied example from build context
 rm -rf "$BUILD_CONTEXT/example" 2>/dev/null
 
+# Start container and initialize example templates
 echo ""
 Show-Header "Initializing Example Templates"
 
