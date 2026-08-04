@@ -177,24 +177,18 @@ git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 echo ""
 echo "Installing dependencies..."
 
-# PHP / Composer Base Install
+# PHP / Composer Base Install (تضمین ساخت اجباری پوشه vendor)
 if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
-    (cd "$project_dir" && composer install --prefer-offline --no-interaction 2>/dev/null) || true
-else
-    if [ "$TEMPLATE" = "laravel" ]; then
-        echo "[skip] composer vendor directory present."
-    fi
+    (cd "$project_dir" && composer install --prefer-offline --no-interaction) || \
+    (cd "$project_dir" && composer install --no-interaction) || true
 fi
 
 # Node.js / pnpm Base Install
 if [ -f "$project_dir/package.json" ] && [ ! -d "$project_dir/node_modules" ]; then
     echo "[install] pnpm install..."
-    (cd "$project_dir" && pnpm install --prefer-offline 2>/dev/null) || true
-else
-    if [ -f "$project_dir/package.json" ]; then
-        echo "[skip] node_modules directory present."
-    fi
+    (cd "$project_dir" && pnpm install --prefer-offline 2>/dev/null) || \
+    (cd "$project_dir" && pnpm install 2>/dev/null) || true
 fi
 
 # Python Base Install
@@ -219,7 +213,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
     # 1. Ensure .env exists
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    # 2. Configure Database FIRST (Fixes SQL Connection Refused Error)
+    # 2. Configure Database FIRST
     if [ -f "$project_dir/.env" ]; then
         case "$DB_CHOICE" in
             "MySQL")
@@ -267,7 +261,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
             (
                 cd "$project_dir"
                 composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                php artisan breeze:install $b_opts 2>/dev/null || true
+                php artisan breeze:install $b_opts --no-interaction 2>/dev/null || true
             )
             ;;
         "Breeze + React")
@@ -276,7 +270,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
             (
                 cd "$project_dir"
                 composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                php artisan breeze:install $b_opts 2>/dev/null || true
+                php artisan breeze:install $b_opts --no-interaction 2>/dev/null || true
             )
             ;;
         "Breeze + Vue")
@@ -285,7 +279,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
             (
                 cd "$project_dir"
                 composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                php artisan breeze:install $b_opts 2>/dev/null || true
+                php artisan breeze:install $b_opts --no-interaction 2>/dev/null || true
             )
             ;;
         "Jetstream + Livewire")
@@ -304,7 +298,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
             ;;
     esac
 
-# 6. Guarantee JS Bootstrap File Exists & Ensure Axios Registration
+    # 6. Guarantee JS Bootstrap File Exists & Ensure Axios Registration
     mkdir -p "$project_dir/resources/js"
     if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
         cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
@@ -314,17 +308,12 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
     fi
 
-    # Check and inject axios into package.json safely without network calls
-    if [ -f "$project_dir/package.json" ]; then
-        if ! grep -q '"axios"' "$project_dir/package.json"; then
-            sed -i 's/"dependencies": {/"dependencies": {\n    "axios": "^1.7.9",/' "$project_dir/package.json" 2>/dev/null || true
-        fi
-    fi || true
-
-    # 7. Post-Starter-Kit Cleanup for Tailwind v4 Compatibility
+    # 7. Tailwind v4 Check & Patch without wiping app.css
     rm -f "$project_dir/postcss.config.js" "$project_dir/postcss.config.cjs" 2>/dev/null || true
     if [ -f "$project_dir/resources/css/app.css" ]; then
-        echo '@import "tailwindcss";' > "$project_dir/resources/css/app.css"
+        if ! grep -q '@import "tailwindcss";' "$project_dir/resources/css/app.css" 2>/dev/null; then
+            sed -i '1i @import "tailwindcss";' "$project_dir/resources/css/app.css" 2>/dev/null || true
+        fi
     fi
 
     # 8. API & Sanctum Installation
@@ -349,18 +338,28 @@ EOF
         (cd "$project_dir" && composer remove pestphp/pest --dev --no-interaction 2>/dev/null && composer require phpunit/phpunit --dev --prefer-offline --no-interaction 2>/dev/null) || true
     fi
 
-    # 11. Patch vite.config.js for Docker HMR Connection
+    # 11. Patch vite.config.js for Docker HMR using Node (Safe parsing)
     if [ -f "$project_dir/vite.config.js" ]; then
-        if ! grep -q "0.0.0.0" "$project_dir/vite.config.js" 2>/dev/null; then
-            sed -i "s/plugins: \[/server: { host: '0.0.0.0', hmr: { host: 'localhost' } },\n    plugins: [/" "$project_dir/vite.config.js" 2>/dev/null || true
-        fi
+        node -e "
+        const fs = require('fs');
+        let content = fs.readFileSync('$project_dir/vite.config.js', 'utf8');
+        if (!content.includes('0.0.0.0')) {
+            const serverConfig = \"server: { host: '0.0.0.0', port: 5173, strictPort: true, hmr: { host: 'localhost' } },\n    \";
+            if (content.includes('server:')) {
+                content = content.replace(/server\s*:\s*\{[^}]*\}/, serverConfig.trim().slice(0, -1));
+            } else {
+                content = content.replace('plugins:', serverConfig + 'plugins:');
+            }
+            fs.writeFileSync('$project_dir/vite.config.js', content);
+        }
+        " 2>/dev/null || true
     fi
 
     # 12. Re-sync Node packages and Compile Assets
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
-        pnpm install --prefer-offline 2>/dev/null || true
+        pnpm install --prefer-offline 2>/dev/null || pnpm install 2>/dev/null || true
         pnpm run build 2>/dev/null || true
     )
 
