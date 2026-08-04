@@ -155,6 +155,23 @@ create_project() {
         shopt -u dotglob
         echo "[ok] Source copied."
 
+        # ── Patch Laravel for Tailwind v4 & Vite ──
+        if [ "$TEMPLATE" = "laravel" ]; then
+            if [ -f "$project_dir/resources/css/app.css" ]; then
+                echo '@import "tailwindcss";' > "$project_dir/resources/css/app.css"
+            fi
+
+            if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
+                mkdir -p "$project_dir/resources/js"
+                cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
+import axios from 'axios';
+window.axios = axios;
+
+window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+EOF
+            fi
+        fi
+
         # Apply framework-specific changes for Python
         if [ "$TEMPLATE" = "python" ]; then
             case "${FRAMEWORK:-}" in
@@ -316,23 +333,19 @@ EOF
             fi
             ;;
         python)
-            # Check if venv exists and is usable (has python binary)
             if [ -d "$project_dir/venv" ] && [ ! -f "$project_dir/venv/bin/python" ]; then
                 echo "[fix] venv broken, recreating..."
                 rm -rf "$project_dir/venv"
             fi
-            # Create requirements.txt if missing (for Flask default)
             if [ ! -f "$project_dir/requirements.txt" ]; then
                 echo "flask>=3.0" > "$project_dir/requirements.txt"
             fi
             if [ ! -d "$project_dir/venv" ]; then
-                # Offline-first: copy pre-built venv from example-data
                 if [ -d "/example-data/python/venv" ] && [ -f "/example-data/python/venv/bin/python" ]; then
                     echo "[offline] Copying venv from template..."
                     cp -a /example-data/python/venv "$project_dir/venv" 2>/dev/null && \
                         echo "[ok] venv copied." || echo "[warn] venv copy failed"
                 fi
-                # Online fallback: create fresh venv
                 if [ ! -d "$project_dir/venv" ]; then
                     echo "[install] venv + pip install..."
                     (cd "$project_dir" && python3 -m venv --without-pip venv 2>/dev/null && . venv/bin/activate && curl -sS https://bootstrap.pypa.io/get-pip.py | python3 2>/dev/null && pip install -r requirements.txt 2>/dev/null) || echo "[warn] python failed"
@@ -384,6 +397,13 @@ EOF
         # Testing
         if [ "${TESTING:-}" = "PHPUnit" ]; then
             (cd "$project_dir" && composer remove pestphp/pest --dev --no-interaction 2>/dev/null && composer require phpunit/phpunit --dev --no-interaction 2>/dev/null) || true
+        fi
+
+        # ── Patch vite.config.js for Docker host binding ──
+        if [ -f "$project_dir/vite.config.js" ]; then
+            if ! grep -q "0.0.0.0" "$project_dir/vite.config.js" 2>/dev/null; then
+                sed -i "s/plugins: \[/server: { host: '0.0.0.0', hmr: { host: 'localhost' } },\n    plugins: [/" "$project_dir/vite.config.js" 2>/dev/null || true
+            fi
         fi
 
         echo "[ok] Laravel options applied."

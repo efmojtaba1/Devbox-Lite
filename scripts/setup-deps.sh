@@ -261,11 +261,7 @@ configure_laravel_env() {
 setup_laravel_frontend() {
     local project_dir="$1"
 
-    if [ ! -f "$project_dir/artisan" ]; then
-        return 0
-    fi
-
-    if [ ! -f "$project_dir/package.json" ]; then
+    if [ ! -f "$project_dir/artisan" ] || [ ! -f "$project_dir/package.json" ]; then
         return 0
     fi
 
@@ -274,10 +270,10 @@ setup_laravel_frontend() {
     fi
 
     echo ""
-    echo "Setting up Laravel frontend (Vite)..."
+    echo "Setting up Laravel frontend (Vite & Tailwind)..."
 
     # ----------------------------------------------------
-    # ۱. تضمین وجود فایل resources/js/bootstrap.js برای جلوگیری از خطای Vite
+    # ۱. ساخت خودکار bootstrap.js در صورت عدم وجود
     # ----------------------------------------------------
     local js_dir="$project_dir/resources/js"
     if [ -d "$js_dir" ]; then
@@ -294,7 +290,22 @@ EOF
     fi
 
     # ----------------------------------------------------
-    # ۲. اصلاح خودکار مجوز دسترسی فایل کانفیگ Vite
+    # ۲. تبدیل خودکار سینتکس app.css از Tailwind v3 به v4
+    # ----------------------------------------------------
+    local css_file="$project_dir/resources/css/app.css"
+    if [ -f "$css_file" ]; then
+        if grep -q "@tailwind base;" "$css_file" 2>/dev/null; then
+            echo "  [patch] Migrating app.css from Tailwind v3 to v4..."
+            chmod 666 "$css_file" 2>/dev/null || true
+            sed -i '/@tailwind base;/d' "$css_file"
+            sed -i '/@tailwind components;/d' "$css_file"
+            sed -i 's/@tailwind utilities;/@import "tailwindcss";/' "$css_file"
+            echo "  [ok] app.css patched for Tailwind v4"
+        fi
+    fi
+
+    # ----------------------------------------------------
+    # ۳. اصلاح و تزریق تنظیمات Host در vite.config.js برای داکر
     # ----------------------------------------------------
     local vite_config="$project_dir/vite.config.js"
     if [ -f "$vite_config" ]; then
@@ -302,7 +313,6 @@ EOF
 
         if ! grep -q "0.0.0.0" "$vite_config" 2>/dev/null; then
             echo "  [patch] Patching vite.config.js for Docker compatibility..."
-
             node -e "
             const fs = require('fs');
             let content = fs.readFileSync('$vite_config', 'utf8');
@@ -315,9 +325,10 @@ EOF
             echo "  [ok] vite.config.js patched successfully"
         fi
     fi
-    # ----------------------------------------------------
 
-    # Check if node_modules exists
+    # ----------------------------------------------------
+    # ۴. بررسی وجود node_modules و نصب دپندنسی‌ها
+    # ----------------------------------------------------
     if [ -d "$project_dir/node_modules" ]; then
         echo "  [skip] node_modules already exists"
     else
@@ -332,7 +343,17 @@ EOF
         fi
     fi
 
-    # Start Vite dev server in background
+    # ----------------------------------------------------
+    # ۵. اطمینان از وجود axios در package.json
+    # ----------------------------------------------------
+    if ! grep -q '"axios"' "$project_dir/package.json" 2>/dev/null; then
+        echo "  [fix] Adding missing axios dependency..."
+        (cd "$project_dir" && pnpm add axios --silent 2>/dev/null) || true
+    fi
+
+    # ----------------------------------------------------
+    # ۶. اجرای سرور توسعه Vite در پس‌زمینه
+    # ----------------------------------------------------
     echo "  [dev] Starting Vite dev server..."
     (cd "$project_dir" && nohup pnpm dev > /dev/null 2>&1 &)
     echo "  [ok] Vite dev server started (access via php artisan serve)"
