@@ -304,7 +304,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
             ;;
     esac
 
-    # 6. Guarantee JS Bootstrap & Axios Files Exist
+# 6. Guarantee JS Bootstrap File Exists & Ensure Axios Registration
     mkdir -p "$project_dir/resources/js"
     if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
         cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
@@ -314,8 +314,12 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
     fi
 
-    # Ensure axios dependency is in package.json
-    (cd "$project_dir" && pnpm add axios --prefer-offline 2>/dev/null) || true
+    # Check and inject axios into package.json safely without network calls
+    if [ -f "$project_dir/package.json" ]; then
+        if ! grep -q '"axios"' "$project_dir/package.json"; then
+            sed -i 's/"dependencies": {/"dependencies": {\n    "axios": "^1.7.9",/' "$project_dir/package.json" 2>/dev/null || true
+        fi
+    fi || true
 
     # 7. Post-Starter-Kit Cleanup for Tailwind v4 Compatibility
     rm -f "$project_dir/postcss.config.js" "$project_dir/postcss.config.cjs" 2>/dev/null || true
