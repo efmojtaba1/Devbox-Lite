@@ -78,7 +78,7 @@ wsl --install
 # Restart your computer afterwards
 
 # 2. Install Native Docker in Ubuntu (Without Docker Desktop)
-sudo apt update && sudo apt install -y docker.io docker-compose-v2
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 docker-buildx
 sudo usermod -aG docker $USER
 
 # Enable systemd support in WSL2
