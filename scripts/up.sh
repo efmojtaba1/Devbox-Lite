@@ -11,8 +11,13 @@ if ! docker info >/dev/null 2>&1; then
 
     if command -v service >/dev/null 2>&1; then
         sudo service docker start
+
+        # ۳ ثانیه مهلت برای آماده شدن سوکت داکر
+        echo "Waiting for Docker daemon to initialize..."
+        sleep 3
     fi
 
+    # چک مجدد پس از چند ثانیه انتظار
     if ! docker info >/dev/null 2>&1; then
         echo "❌ Error: Cannot connect to Docker daemon."
         echo "Please make sure Docker Desktop is running OR run: 'sudo service docker start'"
