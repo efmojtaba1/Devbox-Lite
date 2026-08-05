@@ -257,7 +257,15 @@ if [ "$TEMPLATE" = "laravel" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction 2>/dev/null) || true
     fi
 
-    # 4. Apply Starter Kits Safely
+    # 4. Create bootstrap.js in advance
+    mkdir -p "$project_dir/resources/js"
+    cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
+import axios from 'axios';
+window.axios = axios;
+window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+EOF
+
+    # 5. Apply Starter Kits Safely
     if [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Installing $STARTER_KIT..."
         case "$STARTER_KIT" in
@@ -305,27 +313,26 @@ if [ "$TEMPLATE" = "laravel" ]; then
         esac
     fi
 
-    # 5. Testing Framework Setup
+    # 6. Testing Framework Setup (Pest Fix)
     if [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
             composer require pestphp/pest pestphp/pest-plugin-laravel --dev --no-interaction 2>/dev/null || true
-            php artisan pest:install --no-interaction 2>/dev/null || true
+            ./vendor/bin/pest --init 2>/dev/null || php artisan pest:install --no-interaction 2>/dev/null || true
         )
     fi
 
-    # 6. API Routes & Sanctum Setup (با جلوگیری از بلاک شدن روی دیتابیس)
+    # 7. API Routes Setup (Fixed syntax)
     if [ "$ENABLE_API" = "yes" ]; then
-        echo "  [api] Installing API routes & Sanctum..."
+        echo "  [api] Installing API routes..."
         (
             cd "$project_dir"
             composer require laravel/sanctum --no-interaction 2>/dev/null || true
-            php artisan install:api --no-migration --no-interaction 2>/dev/null || php artisan install:api --no-interaction 2>/dev/null || true
+            php artisan install:api --no-interaction 2>/dev/null || true
         )
     fi
 
-    # 7. GUARANTEE bootstrap.js Creation (جهت برطرف شدن قطعی ارور Unresolved Import)
-    mkdir -p "$project_dir/resources/js"
+    # 8. Re-enforce bootstrap.js existence after Breeze
     if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
         cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
 import axios from 'axios';
@@ -334,13 +341,28 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
     fi
 
-    # 8. Auto Run Initial Database Migrations (مقاوم در برابر خطای شبکه دیتابیس)
+    # 9. Auto Run Initial Database Migrations Safely
     if [ "$DB_CHOICE" != "None" ]; then
         echo "  [db] Running initial migrations..."
-        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Database connection failed. Migration skipped for now.${NC}"
+        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Database connection skipped or failed.${NC}"
     fi
 
-    # 9. Patch vite.config.js for DevBox Network HMR
+    # 10. Fix PostCSS / Tailwind CSS v4 Conflicts
+    echo "  [fix] Patching Tailwind v4 and PostCSS dependencies..."
+    (
+        cd "$project_dir"
+        pnpm add -D @tailwindcss/postcss 2>/dev/null || true
+        cat << 'EOF' > postcss.config.js
+export default {
+  plugins: {
+    '@tailwindcss/postcss': {},
+    autoprefixer: {},
+  },
+};
+EOF
+    )
+
+    # 11. Patch vite.config.js for DevBox Network HMR
     if [ -f "$project_dir/vite.config.js" ]; then
         node -e "
         const fs = require('fs');
@@ -357,7 +379,7 @@ EOF
         " 2>/dev/null || true
     fi
 
-    # 10. Re-sync Node packages & Compile Assets Safely
+    # 12. Re-sync Node packages & Compile Assets Safely
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
