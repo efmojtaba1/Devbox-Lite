@@ -93,6 +93,7 @@ ensure_db() {
         echo "  [start] $db exists, starting..."
         if docker start "$name" 2>/dev/null; then
             echo "  [ok] $db is running"
+            sleep 3 # تاخیر برای لود کامل انجین دیتابیس
             return 0
         else
             echo "  [fix] $db failed to start, recreating..."
@@ -102,6 +103,7 @@ ensure_db() {
 
     echo "  [create] $db not found, creating..."
     "$SCRIPT_DIR/db-manager.sh" create "$db"
+    sleep 4 # تاخیر پس از ساخت برای آماده شدن پورت
 }
 
 # Start a GUI tool

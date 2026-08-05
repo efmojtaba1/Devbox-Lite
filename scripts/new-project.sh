@@ -16,6 +16,13 @@ echo -e "${CYAN}║       DevBox Lite — New Project       ║${NC}"
 echo -e "${CYAN}╚═══════════════════════════════════════╝${NC}"
 echo ""
 
+# ── Check Real Network Status ────────────────────────────────
+HAS_INTERNET=true
+if ! ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
+    HAS_INTERNET=false
+    echo -e "${YELLOW}[network] Offline mode detected. External downloads will be skipped.${NC}"
+fi
+
 # ── 1. Input Project Name ───────────────────────────────────
 read -rp "Project name: " PROJECT_NAME
 if [ -z "$PROJECT_NAME" ]; then
@@ -183,7 +190,11 @@ echo "Installing dependencies..."
 # Composer Base Install (تنها در صورتی که vendor موجود نباشد)
 if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
-    (cd "$project_dir" && composer install --prefer-offline --no-audit --no-interaction 2>/dev/null) || true
+    if [ "$HAS_INTERNET" = "true" ]; then
+        (cd "$project_dir" && composer install --prefer-offline --no-audit --no-interaction 2>/dev/null) || true
+    else
+        echo -e "${YELLOW}[offline] Skipping composer install. Network unavailable.${NC}"
+    fi
 fi
 
 # Node.js / pnpm Base Install (تنها در صورتی که node_modules موجود نباشد)
@@ -214,6 +225,18 @@ if [ "$TEMPLATE" = "laravel" ]; then
 
     # 1. Ensure .env exists
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
+
+    # Auto-start Databases if offline/stopped
+    if [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; then
+        echo "  [db] Ensuring database service is running..."
+        if [ "$DB_CHOICE" = "MySQL" ] && ! docker ps --format '{{.Names}}' | grep -q "^devbox-mysql$"; then
+            /workspace/scripts/db-manager.sh start mysql 2>/dev/null || docker start devbox-mysql 2>/dev/null || true
+            sleep 4
+        elif [ "$DB_CHOICE" = "PostgreSQL" ] && ! docker ps --format '{{.Names}}' | grep -q "^devbox-postgres$"; then
+            /workspace/scripts/db-manager.sh start postgres 2>/dev/null || docker start devbox-postgres 2>/dev/null || true
+            sleep 4
+        fi
+    fi
 
     # 2. Database Environment Setup
     if [ -f "$project_dir/.env" ]; then
@@ -271,8 +294,8 @@ EOF
     # 5. Apply Starter Kits Safely (Offline Aware)
     if [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Configuring $STARTER_KIT..."
-        if [ "$IS_OFFLINE" = "true" ]; then
-            echo -e "  ${GREEN}[offline] Using pre-packaged template files for Starter Kit.${NC}"
+        if [ "$HAS_INTERNET" = "false" ]; then
+            echo -e "  ${YELLOW}[offline] Skipping $STARTER_KIT setup (No Internet).${NC}"
         else
             case "$STARTER_KIT" in
                 "Breeze + Blade")
@@ -324,8 +347,10 @@ EOF
     if [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
-            if [ "$IS_OFFLINE" = "false" ]; then
+            if [ "$HAS_INTERNET" = "true" ]; then
                 composer require pestphp/pest pestphp/pest-plugin-laravel --dev --prefer-offline --no-interaction 2>/dev/null || true
+            else
+                echo -e "  ${YELLOW}[offline] Skipping Pest package download.${NC}"
             fi
             ./vendor/bin/pest --init 2>/dev/null || php artisan pest:install --no-interaction 2>/dev/null || true
         )
@@ -336,8 +361,10 @@ EOF
         echo "  [api] Setting up API routes..."
         (
             cd "$project_dir"
-            if [ "$IS_OFFLINE" = "false" ]; then
+            if [ "$HAS_INTERNET" = "true" ]; then
                 composer require laravel/sanctum --prefer-offline --no-interaction 2>/dev/null || true
+            else
+                echo -e "  ${YELLOW}[offline] Skipping Sanctum package download.${NC}"
             fi
             php artisan install:api --no-interaction 2>/dev/null || true
         )
@@ -362,7 +389,7 @@ EOF
     echo "  [fix] Patching Tailwind v4 and PostCSS dependencies..."
     (
         cd "$project_dir"
-        if [ "$IS_OFFLINE" = "false" ]; then
+        if [ "$HAS_INTERNET" = "true" ]; then
             pnpm add -D @tailwindcss/postcss --offline 2>/dev/null || true
         fi
         cat << 'EOF' > postcss.config.js
@@ -396,7 +423,7 @@ EOF
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
-        if [ "$IS_OFFLINE" = "false" ]; then
+        if [ "$HAS_INTERNET" = "true" ]; then
             pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
         fi
         pnpm run build || true
@@ -414,7 +441,7 @@ if [ "$TEMPLATE" != "laravel" ]; then
         echo "  [build] Compiling frontend assets..."
         (
             cd "$project_dir"
-            if [ "$IS_OFFLINE" = "false" ]; then
+            if [ "$HAS_INTERNET" = "true" ]; then
                 pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
             fi
         )
