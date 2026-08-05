@@ -34,9 +34,10 @@ echo -e "${CYAN}║       DevBox Lite — New Project       ║${NC}"
 echo -e "${CYAN}╚═══════════════════════════════════════╝${NC}"
 echo ""
 
-# ── Check Real Network Status ────────────────────────────────
+# ── Check Real Network Status (Fix for WSL2/Docker) ──────────
 HAS_INTERNET=true
-if ! ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
+# Use curl instead of ping for reliable network check in isolated environments
+if ! curl -Is --connect-timeout 3 https://repo.packagist.org >/dev/null; then
     HAS_INTERNET=false
     echo -e "${YELLOW}[network] Offline mode detected. External downloads will be skipped.${NC}"
 fi
@@ -179,7 +180,7 @@ if [ -d "$example_dir" ]; then
     for item in "$example_dir"/*; do
         name=$(basename "$item")
         case "$name" in
-            .next|__pycache__) continue ;; # 👈 vendor و node_modules کپی می‌شوند
+            .next|__pycache__) continue ;;
         esac
         cp -a "$item" "$project_dir/" 2>/dev/null
     done
@@ -205,7 +206,6 @@ git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 echo ""
 echo "Installing dependencies..."
 
-# Composer Base Install (تنها در صورتی که vendor موجود نباشد)
 if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
     if [ "$HAS_INTERNET" = "true" ]; then
@@ -215,14 +215,12 @@ if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     fi
 fi
 
-# Node.js / pnpm Base Install (تنها در صورتی که node_modules موجود نباشد)
 if [ -f "$project_dir/package.json" ] && [ ! -d "$project_dir/node_modules" ]; then
     echo "[install] pnpm install..."
     (cd "$project_dir" && pnpm install --offline 2>/dev/null) || \
     (cd "$project_dir" && pnpm install --prefer-offline 2>/dev/null) || true
 fi
 
-# Python Base Install
 if [ "$TEMPLATE" = "python" ]; then
     if [ ! -d "$project_dir/venv" ]; then
         echo "[install] creating python venv..."
@@ -236,27 +234,37 @@ fi
 
 # ── Step 3: Framework Specific Configuration ────────────────
 
-# === LARAVEL CONFIGURATION ===
 if [ "$TEMPLATE" = "laravel" ]; then
     echo ""
     echo "[configure] Applying Laravel options..."
 
-    # 1. Ensure .env exists
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    # Auto-start Databases if offline/stopped
+    # Auto-start/Create Databases
     if [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; then
         echo "  [db] Ensuring database service is running..."
-        if [ "$DB_CHOICE" = "MySQL" ] && ! docker ps --format '{{.Names}}' | grep -q "^devbox-mysql$"; then
-            "$SCRIPT_DIR/db-manager.sh" start mysql 2>/dev/null || docker start devbox-mysql 2>/dev/null || true
-            sleep 4
-        elif [ "$DB_CHOICE" = "PostgreSQL" ] && ! docker ps --format '{{.Names}}' | grep -q "^devbox-postgres$"; then
-            "$SCRIPT_DIR/db-manager.sh" start postgres 2>/dev/null || docker start devbox-postgres 2>/dev/null || true
-            sleep 4
+
+        if [ "$DB_CHOICE" = "MySQL" ]; then
+            if ! docker ps -a --format '{{.Names}}' | grep -q "^devbox-mysql$"; then
+                echo "  [db] Container devbox-mysql not found. Creating it now..."
+                "$SCRIPT_DIR/db-manager.sh" create mysql 2>/dev/null || true
+                sleep 5
+            elif ! docker ps --format '{{.Names}}' | grep -q "^devbox-mysql$"; then
+                "$SCRIPT_DIR/db-manager.sh" start mysql 2>/dev/null || true
+                sleep 4
+            fi
+        elif [ "$DB_CHOICE" = "PostgreSQL" ]; then
+            if ! docker ps -a --format '{{.Names}}' | grep -q "^devbox-postgres$"; then
+                echo "  [db] Container devbox-postgres not found. Creating it now..."
+                "$SCRIPT_DIR/db-manager.sh" create postgres 2>/dev/null || true
+                sleep 5
+            elif ! docker ps --format '{{.Names}}' | grep -q "^devbox-postgres$"; then
+                "$SCRIPT_DIR/db-manager.sh" start postgres 2>/dev/null || true
+                sleep 4
+            fi
         fi
     fi
 
-    # 2. Database Environment Setup
     if [ -f "$project_dir/.env" ]; then
         case "$DB_CHOICE" in
             "MySQL")
@@ -296,12 +304,10 @@ if [ "$TEMPLATE" = "laravel" ]; then
         esac
     fi
 
-    # 3. Generate App Key
     if [ -f "$project_dir/.env" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction 2>/dev/null) || true
     fi
 
-    # 4. Create bootstrap.js
     mkdir -p "$project_dir/resources/js"
     cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
 import axios from 'axios';
@@ -309,7 +315,6 @@ window.axios = axios;
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
 
-    # 5. Apply Starter Kits Safely (Offline Aware)
     if [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Configuring $STARTER_KIT..."
         if [ "$HAS_INTERNET" = "false" ]; then
@@ -322,7 +327,7 @@ EOF
                         composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
                         b_args="blade --no-interaction"
                         [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
-                        timeout 10s php artisan breeze:install $b_args 2>/dev/null || true
+                        php artisan breeze:install $b_args 2>/dev/null || true
                     )
                     ;;
                 "Breeze + React")
@@ -331,7 +336,7 @@ EOF
                         composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
                         b_args="react --no-interaction"
                         [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
-                        timeout 10s php artisan breeze:install $b_args 2>/dev/null || true
+                        php artisan breeze:install $b_args 2>/dev/null || true
                     )
                     ;;
                 "Breeze + Vue")
@@ -340,28 +345,27 @@ EOF
                         composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
                         b_args="vue --no-interaction"
                         [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
-                        timeout 10s php artisan breeze:install $b_args 2>/dev/null || true
+                        php artisan breeze:install $b_args 2>/dev/null || true
                     )
                     ;;
                 "Jetstream + Livewire")
                     (
                         cd "$project_dir"
                         composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
-                        timeout 10s php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
+                        php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
                     )
                     ;;
                 "Jetstream + Inertia")
                     (
                         cd "$project_dir"
                         composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
-                        timeout 10s php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
+                        php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
                     )
                     ;;
             esac
         fi
     fi
 
-    # 6. Testing Framework Setup
     if [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
@@ -374,7 +378,6 @@ EOF
         )
     fi
 
-    # 7. API Routes Setup
     if [ "$ENABLE_API" = "yes" ]; then
         echo "  [api] Setting up API routes..."
         (
@@ -388,7 +391,6 @@ EOF
         )
     fi
 
-    # 8. Re-enforce bootstrap.js existence
     if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
         cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
 import axios from 'axios';
@@ -397,13 +399,11 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
     fi
 
-    # 9. Auto Run Initial Database Migrations
     if [ "$DB_CHOICE" != "None" ]; then
         echo "  [db] Running initial migrations..."
         (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Database migration skipped or failed.${NC}"
     fi
 
-    # 10. Fix PostCSS / Tailwind CSS v4 Conflicts
     echo "  [fix] Patching Tailwind v4 and PostCSS dependencies..."
     (
         cd "$project_dir"
@@ -420,7 +420,6 @@ export default {
 EOF
     )
 
-    # 11. Patch vite.config.js for DevBox Network HMR
     if [ -f "$project_dir/vite.config.js" ]; then
         node -e "
         const fs = require('fs');
@@ -437,7 +436,6 @@ EOF
         " 2>/dev/null || true
     fi
 
-    # 12. Re-sync Node packages & Compile Assets (Offline First)
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
@@ -450,7 +448,6 @@ EOF
     echo "[ok] Laravel project initialized successfully."
 fi
 
-# === OTHER FRAMEWORKS CONFIGURATION ===
 if [ "$TEMPLATE" != "laravel" ]; then
     if [ -f "$project_dir/.env.example" ] && [ ! -f "$project_dir/.env" ]; then
         cp "$project_dir/.env.example" "$project_dir/.env"
