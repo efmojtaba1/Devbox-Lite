@@ -31,12 +31,12 @@ is_online() {
 if is_online; then
     echo "  [network] Internet connection detected (Online Mode)."
     PNPM_ARGS="install"
-    COMPOSER_ARGS="install --no-interaction"
+    COMPOSER_ARGS="install --no-interaction --no-scripts"
     PIP_ARGS="install"
 else
     echo "  [network] No internet connection (Offline Mode)."
     PNPM_ARGS="install --offline --frozen-lockfile"
-    COMPOSER_ARGS="install --no-interaction --prefer-offline"
+    COMPOSER_ARGS="install --no-interaction --prefer-offline --no-scripts"
     PIP_ARGS="install --find-links=/root/.cache/pip/wheels"
 fi
 

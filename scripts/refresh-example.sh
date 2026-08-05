@@ -22,13 +22,10 @@ refresh_laravel() {
     echo "Refreshing Laravel template"
     echo "========================================="
 
-    # Remove old template
     rm -rf "$EXAMPLE_DIR/laravel"
 
-    # Check if workspace has a Laravel project to copy from
     if [ -d "$WORKSPACE_DIR/laravel" ] && [ -f "$WORKSPACE_DIR/laravel/artisan" ]; then
         echo "[copy] Copying from workspace/laravel..."
-        # Copy source files only (no deps)
         rsync -a --exclude='node_modules' --exclude='vendor' --exclude='venv' \
             --exclude='.next' --exclude='.env' \
             "$WORKSPACE_DIR/laravel/" "$EXAMPLE_DIR/laravel/"
@@ -36,7 +33,8 @@ refresh_laravel() {
     else
         echo "[create] No workspace/laravel found, creating fresh skeleton..."
         mkdir -p "$EXAMPLE_DIR/laravel"
-        # Create minimal Laravel structure
+
+        # دانلود/ساخت مستقیم اسکلت واقعی لاراول
         cat > "$EXAMPLE_DIR/laravel/composer.json" << 'EOF'
 {
     "name": "laravel/laravel",
@@ -53,8 +51,7 @@ refresh_laravel() {
         "laravel/sail": "^1.26",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.0",
-        "phpunit/phpunit": "^11.0",
-        "spatie/laravel-ignition": "^2.4"
+        "phpunit/phpunit": "^11.0"
     },
     "autoload": {
         "psr-4": {
@@ -63,47 +60,16 @@ refresh_laravel() {
             "Database\\Seeders\\": "database/seeders/"
         }
     },
-    "autoload-dev": {
-        "psr-4": {
-            "Tests\\": "tests/"
-        }
-    },
-    "scripts": {
-        "post-autoload-dump": [
-            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
-            "@php artisan package:discover --ansi"
-        ],
-        "post-update-cmd": [
-            "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
-        ],
-        "post-root-package-install": [
-            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
-        ],
-        "post-create-project-cmd": [
-            "@php artisan key:generate --ansi",
-            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
-            "@php artisan migrate --graceful --ansi"
-        ]
-    },
-    "extra": {
-        "laravel": {
-            "dont-discover": []
-        }
-    },
     "config": {
         "optimize-autoloader": true,
         "preferred-install": "dist",
-        "sort-packages": true,
-        "allow-plugins": {
-            "pestphp/pest-plugin": true,
-            "php-http/discovery": true
-        }
+        "sort-packages": true
     },
     "minimum-stability": "stable",
     "prefer-stable": true
 }
 EOF
-        echo "[ok] Laravel skeleton created. Run 'composer install' after build."
+        echo "[ok] Laravel skeleton created."
     fi
 }
 
