@@ -42,7 +42,7 @@ services:
       - bruno-config:/root/.config/bruno
       - bruno-collections:/root/bruno
       - pnpm-store:/root/.local/share/pnpm/store
-      # Shared dependencies volume (node_modules/vendor/venv stored here)
+      - composer-cache:/root/.cache/composer
       - devbox-deps:/workspace/.deps
 
     environment:
