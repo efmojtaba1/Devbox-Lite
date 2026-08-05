@@ -57,6 +57,7 @@ networks:
 
 volumes:
   pnpm-store:
+  composer-cache:
   devbox-deps:
   bruno-config:
   bruno-collections:
