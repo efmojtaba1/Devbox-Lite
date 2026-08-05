@@ -30,8 +30,16 @@ usage() {
     exit 1
 }
 
-# Prebuilt images directory (mounted from host)
-PREBUILT_DIR="${PREBUILT_DIR:-/prebuilt/images}"
+# Prebuilt images directory (Compatible with both WSL2 and Windows/Docker Desktop)
+if [ -d "/workspace/prebuilt/images" ]; then
+    PREBUILT_DIR="${PREBUILT_DIR:-/workspace/prebuilt/images}"
+elif [ -d "$(pwd)/prebuilt/images" ]; then
+    PREBUILT_DIR="${PREBUILT_DIR:-$(pwd)/prebuilt/images}"
+else
+    # Fallback to absolute relative path from script location
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PREBUILT_DIR="${PREBUILT_DIR:-$SCRIPT_DIR/../prebuilt/images}"
+fi
 
 # Map image name to prebuilt tar filename
 image_to_tar() {
