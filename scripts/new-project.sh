@@ -8,8 +8,26 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
 
-WORKSPACE="/workspace"
-EXAMPLE_DATA="/example-data"
+# ── Dynamic Path Resolution (WSL2 & Windows Compatible) ──────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ -d "/workspace" ]; then
+    WORKSPACE="/workspace"
+elif [ -d "$(pwd)/workspace" ]; then
+    WORKSPACE="$(pwd)/workspace"
+else
+    WORKSPACE="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
+
+if [ -d "/example-data" ]; then
+    EXAMPLE_DATA="/example-data"
+elif [ -d "$WORKSPACE/example-data" ]; then
+    EXAMPLE_DATA="$WORKSPACE/example-data"
+elif [ -d "$(pwd)/example-data" ]; then
+    EXAMPLE_DATA="$(pwd)/example-data"
+else
+    EXAMPLE_DATA="$SCRIPT_DIR/../example-data"
+fi
 
 echo -e "${CYAN}╔═══════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║       DevBox Lite — New Project       ║${NC}"
@@ -230,10 +248,10 @@ if [ "$TEMPLATE" = "laravel" ]; then
     if [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; then
         echo "  [db] Ensuring database service is running..."
         if [ "$DB_CHOICE" = "MySQL" ] && ! docker ps --format '{{.Names}}' | grep -q "^devbox-mysql$"; then
-            /workspace/scripts/db-manager.sh start mysql 2>/dev/null || docker start devbox-mysql 2>/dev/null || true
+            "$SCRIPT_DIR/db-manager.sh" start mysql 2>/dev/null || docker start devbox-mysql 2>/dev/null || true
             sleep 4
         elif [ "$DB_CHOICE" = "PostgreSQL" ] && ! docker ps --format '{{.Names}}' | grep -q "^devbox-postgres$"; then
-            /workspace/scripts/db-manager.sh start postgres 2>/dev/null || docker start devbox-postgres 2>/dev/null || true
+            "$SCRIPT_DIR/db-manager.sh" start postgres 2>/dev/null || docker start devbox-postgres 2>/dev/null || true
             sleep 4
         fi
     fi
@@ -454,7 +472,7 @@ echo "========================================="
 echo -e "${GREEN}  Project ready: $PROJECT_NAME${NC}"
 echo "========================================="
 echo ""
-echo "  cd /workspace/$PROJECT_NAME"
+echo "  cd $project_dir"
 echo ""
 case "$TEMPLATE" in
     laravel)       echo "  serve" ;;
