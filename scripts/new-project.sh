@@ -154,7 +154,7 @@ if [ -d "$example_dir" ]; then
     for item in "$example_dir"/*; do
         name=$(basename "$item")
         case "$name" in
-            node_modules|vendor|venv|.next|__pycache__) continue ;;
+            .next|__pycache__) continue ;; # 👈 vendor و node_modules کپی می‌شوند
         esac
         cp -a "$item" "$project_dir/" 2>/dev/null
     done
@@ -180,13 +180,13 @@ git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 echo ""
 echo "Installing dependencies..."
 
-# Composer Base Install
+# Composer Base Install (تنها در صورتی که vendor موجود نباشد)
 if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
     (cd "$project_dir" && composer install --prefer-offline --no-audit --no-interaction 2>/dev/null) || true
 fi
 
-# Node.js / pnpm Base Install
+# Node.js / pnpm Base Install (تنها در صورتی که node_modules موجود نباشد)
 if [ -f "$project_dir/package.json" ] && [ ! -d "$project_dir/node_modules" ]; then
     echo "[install] pnpm install..."
     (cd "$project_dir" && pnpm install --offline 2>/dev/null) || \
@@ -362,7 +362,9 @@ EOF
     echo "  [fix] Patching Tailwind v4 and PostCSS dependencies..."
     (
         cd "$project_dir"
-        pnpm add -D @tailwindcss/postcss --offline 2>/dev/null || true
+        if [ "$IS_OFFLINE" = "false" ]; then
+            pnpm add -D @tailwindcss/postcss --offline 2>/dev/null || true
+        fi
         cat << 'EOF' > postcss.config.js
 export default {
   plugins: {
@@ -394,7 +396,9 @@ EOF
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
-        pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
+        if [ "$IS_OFFLINE" = "false" ]; then
+            pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
+        fi
         pnpm run build || true
     )
 
@@ -410,7 +414,9 @@ if [ "$TEMPLATE" != "laravel" ]; then
         echo "  [build] Compiling frontend assets..."
         (
             cd "$project_dir"
-            pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
+            if [ "$IS_OFFLINE" = "false" ]; then
+                pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
+            fi
         )
     fi
 fi
