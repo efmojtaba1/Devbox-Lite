@@ -276,7 +276,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
                 sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
+                .*/DB_USERNAME=devbox/' "$project_dir/.env"
                 sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
 
                 mysql -h "$MYSQL_HOST" -u devbox -pdevbox_pass -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
@@ -290,12 +290,13 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=root/' "$project_dir/.env"
+                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=/' "$project_dir/.env"
 
+                mysql -h "$MYSQL_HOST" -u root -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
                 PGPASSWORD=devbox_pass psql -h "$PG_HOST" -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
                 ;;
-            "SQLite")
+            "SQLite")sed -i 's/^DB_USERNAME=
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
                 sed -i 's/^DB_DATABASE=.*/# DB_DATABASE=/' "$project_dir/.env"
                 mkdir -p "$project_dir/database"
