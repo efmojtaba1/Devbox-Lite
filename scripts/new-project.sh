@@ -145,8 +145,10 @@ echo "========================================="
 
 # ── Step 1: Copy Source (Offline-First System) ──────────────
 example_dir="$EXAMPLE_DATA/$TEMPLATE"
+IS_OFFLINE=false
+
 if [ -d "$example_dir" ]; then
-    echo "[offline] Copying from template ($example_dir)..."
+    echo "[offline] Copying baseline from template ($example_dir)..."
     mkdir -p "$project_dir"
     shopt -s dotglob
     for item in "$example_dir"/*; do
@@ -157,7 +159,8 @@ if [ -d "$example_dir" ]; then
         cp -a "$item" "$project_dir/" 2>/dev/null
     done
     shopt -u dotglob
-    echo "[ok] Source copied."
+    IS_OFFLINE=true
+    echo "[ok] Offline source copied."
 else
     echo -e "${YELLOW}[online] Template volume not found. Downloading via online fallback...${NC}"
     mkdir -p "$project_dir"
@@ -173,21 +176,21 @@ fi
 git config --global --add safe.directory "$project_dir" 2>/dev/null || true
 git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 
-# ── Step 2: Install Base Dependencies ───────────────────────
+# ── Step 2: Install Base Dependencies (Offline First) ───────
 echo ""
 echo "Installing dependencies..."
 
 # Composer Base Install
 if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
-    (cd "$project_dir" && composer install --no-interaction 2>/dev/null) || true
+    (cd "$project_dir" && composer install --prefer-offline --no-audit --no-interaction 2>/dev/null) || true
 fi
 
 # Node.js / pnpm Base Install
 if [ -f "$project_dir/package.json" ] && [ ! -d "$project_dir/node_modules" ]; then
     echo "[install] pnpm install..."
-    (cd "$project_dir" && pnpm install --prefer-offline 2>/dev/null) || \
-    (cd "$project_dir" && pnpm install 2>/dev/null) || true
+    (cd "$project_dir" && pnpm install --offline 2>/dev/null) || \
+    (cd "$project_dir" && pnpm install --prefer-offline 2>/dev/null) || true
 fi
 
 # Python Base Install
@@ -212,7 +215,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
     # 1. Ensure .env exists
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    # 2. Database Environment Setup with Fallbacks
+    # 2. Database Environment Setup
     if [ -f "$project_dir/.env" ]; then
         case "$DB_CHOICE" in
             "MySQL")
@@ -257,7 +260,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction 2>/dev/null) || true
     fi
 
-    # 4. Create bootstrap.js in advance
+    # 4. Create bootstrap.js
     mkdir -p "$project_dir/resources/js"
     cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
 import axios from 'axios';
@@ -265,74 +268,82 @@ window.axios = axios;
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
 
-    # 5. Apply Starter Kits Safely
+    # 5. Apply Starter Kits Safely (Offline Aware)
     if [ "$STARTER_KIT" != "None" ]; then
-        echo "  [starter] Installing $STARTER_KIT..."
-        case "$STARTER_KIT" in
-            "Breeze + Blade")
-                (
-                    cd "$project_dir"
-                    composer require laravel/breeze --dev --no-interaction 2>/dev/null || true
-                    b_args="blade --no-interaction"
-                    [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
-                    php artisan breeze:install $b_args 2>/dev/null || true
-                )
-                ;;
-            "Breeze + React")
-                (
-                    cd "$project_dir"
-                    composer require laravel/breeze --dev --no-interaction 2>/dev/null || true
-                    b_args="react --no-interaction"
-                    [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
-                    php artisan breeze:install $b_args 2>/dev/null || true
-                )
-                ;;
-            "Breeze + Vue")
-                (
-                    cd "$project_dir"
-                    composer require laravel/breeze --dev --no-interaction 2>/dev/null || true
-                    b_args="vue --no-interaction"
-                    [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
-                    php artisan breeze:install $b_args 2>/dev/null || true
-                )
-                ;;
-            "Jetstream + Livewire")
-                (
-                    cd "$project_dir"
-                    composer require laravel/jetstream --no-interaction 2>/dev/null || true
-                    php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
-                )
-                ;;
-            "Jetstream + Inertia")
-                (
-                    cd "$project_dir"
-                    composer require laravel/jetstream --no-interaction 2>/dev/null || true
-                    php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
-                )
-                ;;
-        esac
+        echo "  [starter] Configuring $STARTER_KIT..."
+        if [ "$IS_OFFLINE" = "true" ]; then
+            echo -e "  ${GREEN}[offline] Using pre-packaged template files for Starter Kit.${NC}"
+        else
+            case "$STARTER_KIT" in
+                "Breeze + Blade")
+                    (
+                        cd "$project_dir"
+                        composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
+                        b_args="blade --no-interaction"
+                        [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
+                        timeout 10s php artisan breeze:install $b_args 2>/dev/null || true
+                    )
+                    ;;
+                "Breeze + React")
+                    (
+                        cd "$project_dir"
+                        composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
+                        b_args="react --no-interaction"
+                        [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
+                        timeout 10s php artisan breeze:install $b_args 2>/dev/null || true
+                    )
+                    ;;
+                "Breeze + Vue")
+                    (
+                        cd "$project_dir"
+                        composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
+                        b_args="vue --no-interaction"
+                        [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
+                        timeout 10s php artisan breeze:install $b_args 2>/dev/null || true
+                    )
+                    ;;
+                "Jetstream + Livewire")
+                    (
+                        cd "$project_dir"
+                        composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
+                        timeout 10s php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
+                    )
+                    ;;
+                "Jetstream + Inertia")
+                    (
+                        cd "$project_dir"
+                        composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
+                        timeout 10s php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
+                    )
+                    ;;
+            esac
+        fi
     fi
 
-    # 6. Testing Framework Setup (Pest Fix)
+    # 6. Testing Framework Setup
     if [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
-            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --no-interaction 2>/dev/null || true
+            if [ "$IS_OFFLINE" = "false" ]; then
+                composer require pestphp/pest pestphp/pest-plugin-laravel --dev --prefer-offline --no-interaction 2>/dev/null || true
+            fi
             ./vendor/bin/pest --init 2>/dev/null || php artisan pest:install --no-interaction 2>/dev/null || true
         )
     fi
 
-    # 7. API Routes Setup (Fixed syntax)
+    # 7. API Routes Setup
     if [ "$ENABLE_API" = "yes" ]; then
-        echo "  [api] Installing API routes..."
+        echo "  [api] Setting up API routes..."
         (
             cd "$project_dir"
-            composer require laravel/sanctum --no-interaction 2>/dev/null || true
+            if [ "$IS_OFFLINE" = "false" ]; then
+                composer require laravel/sanctum --prefer-offline --no-interaction 2>/dev/null || true
+            fi
             php artisan install:api --no-interaction 2>/dev/null || true
         )
     fi
 
-    # 8. Re-enforce bootstrap.js existence after Breeze
+    # 8. Re-enforce bootstrap.js existence
     if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
         cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
 import axios from 'axios';
@@ -341,17 +352,17 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
     fi
 
-    # 9. Auto Run Initial Database Migrations Safely
+    # 9. Auto Run Initial Database Migrations
     if [ "$DB_CHOICE" != "None" ]; then
         echo "  [db] Running initial migrations..."
-        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Database connection skipped or failed.${NC}"
+        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Database migration skipped or failed.${NC}"
     fi
 
     # 10. Fix PostCSS / Tailwind CSS v4 Conflicts
     echo "  [fix] Patching Tailwind v4 and PostCSS dependencies..."
     (
         cd "$project_dir"
-        pnpm add -D @tailwindcss/postcss 2>/dev/null || true
+        pnpm add -D @tailwindcss/postcss --offline 2>/dev/null || true
         cat << 'EOF' > postcss.config.js
 export default {
   plugins: {
@@ -379,11 +390,11 @@ EOF
         " 2>/dev/null || true
     fi
 
-    # 12. Re-sync Node packages & Compile Assets Safely
+    # 12. Re-sync Node packages & Compile Assets (Offline First)
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
-        pnpm install --prefer-offline 2>/dev/null || pnpm install 2>/dev/null || true
+        pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
         pnpm run build || true
     )
 
@@ -399,7 +410,7 @@ if [ "$TEMPLATE" != "laravel" ]; then
         echo "  [build] Compiling frontend assets..."
         (
             cd "$project_dir"
-            pnpm install --prefer-offline 2>/dev/null || pnpm install 2>/dev/null || true
+            pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
         )
     fi
 fi
