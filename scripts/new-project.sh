@@ -439,11 +439,16 @@ echo "  [build] Compiling frontend assets..."
             find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + 2>/dev/null || true
             find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
 
-            # همگام‌سازی و نصب آفلاین پکیج‌ها پیش از بیلد (با افزودن --no-interactive)
-            pnpm install --offline --no-interactive 2>/dev/null || pnpm install --prefer-offline --no-interactive 2>/dev/null || true
+            # اجبار کامل pnpm به عدم اتصال به شبکه با متغیر محیطی و پرچم‌های آفلاین
+            export PNPM_HOME="/root/.local/share/pnpm"
 
-            # اجرای بیلد به صورت کاملاً آفلاین با پکیج منیجر pnpm
-            pnpm --offline build 2>/dev/null || pnpm --offline run build 2>/dev/null || pnpm run build --offline 2>/dev/null || true
+            # نصب و بیلد کاملاً آفلاین بدون بررسی آپدیت و بدون پرامپت
+            pnpm_config_offline=true pnpm install --offline --no-interactive --frozen-lockfile 2>/dev/null || \
+            pnpm install --offline --no-interactive --prefer-offline 2>/dev/null || true
+
+            pnpm_config_offline=true pnpm --offline build 2>/dev/null || \
+            pnpm --offline run build 2>/dev/null || \
+            pnpm run build --offline 2>/dev/null || true
         else
             # در حالت آنلاین
             pnpm install --prefer-offline --no-interactive 2>/dev/null || true
