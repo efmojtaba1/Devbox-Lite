@@ -443,12 +443,12 @@ EOF
         if [ "$HAS_INTERNET" = "false" ]; then
             echo "  [offline] Disabling remote fonts to prevent Vite build timeout..."
             find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + 2>/dev/null || true
-            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '/fonts\.bunny'.net/d' {} + 2>/dev/null || true
+            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
 
-            # اجرای بیلد به صورت کاملاً آفلاین و ایزوله
-            pnpm --offline run build 2>/dev/null || pnpm run build --offline 2>/dev/null || true
+            # اجرای بیلد به صورت کاملاً آفلاین با پکیج منیجر pnpm
+            pnpm --offline build 2>/dev/null || pnpm --offline run build 2>/dev/null || pnpm run build --offline 2>/dev/null || true
         else
-            # در حالت آنلاین، استفاده از پکیج‌های کش‌شده یا آپدیت در صورت نیاز
+            # در حالت آنلاین
             pnpm install --prefer-offline 2>/dev/null || true
             pnpm run build || true
         fi
