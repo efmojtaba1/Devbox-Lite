@@ -431,28 +431,25 @@ EOF
     fi
 
     echo "  [build] Compiling frontend assets..."
-    (
-        cd "$project_dir"
+        (
+            cd "$project_dir"
 
-        if [ "$HAS_INTERNET" = "false" ]; then
-            echo "  [offline] Disabling remote fonts to prevent Vite build timeout..."
-            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + 2>/dev/null || true
-            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
+            if [ "$HAS_INTERNET" = "false" ]; then
+                echo "  [offline] Skipping pnpm install to prevent offline registry errors..."
 
-            # جلوگیری از پاک شدن node_modules و استفاده مطلق از کش موجود بدون اتصال به شبکه
-            export PNPM_HOME="/root/.local/share/pnpm"
+                # غیرفعال کردن فونت‌های آنلاین برای جلوگیری از تایم‌اوت
+                find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + 2>/dev/null || true
+                find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
 
-            # استفاده از --offline واقعی بدون اجازه ریست کردن دایرکتوری ماژول‌ها
-            pnpm_config_offline=true pnpm install --offline --prefer-offline --frozen-lockfile --silent 2>/dev/null || true
-
-            # بیلد نهایی بدون خطا
-            pnpm_config_offline=true pnpm --offline build 2>/dev/null || pnpm run build 2>/dev/null || true
-        else
-            # در حالت آنلاین
-            pnpm install --prefer-offline 2>/dev/null || true
-            pnpm run build || true
-        fi
-    )
+                # در حالت آفلاین دستور install را به کل حذف می‌کنیم تا node_modules دست‌نخورده بماند
+                # و فقط بیلد نهایی اجرا می‌شود
+                pnpm --offline build 2>/dev/null || pnpm run build 2>/dev/null || true
+            else
+                # در حالت آنلاین
+                pnpm install --prefer-offline --no-interactive 2>/dev/null || true
+                pnpm run build || true
+            fi
+        )
 
     echo "[ok] Laravel project initialized successfully."
 fi
