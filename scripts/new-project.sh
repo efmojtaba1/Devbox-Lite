@@ -430,7 +430,7 @@ EOF
         " 2>/dev/null || true
     fi
 
-    echo "  [build] Compiling frontend assets..."
+echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
 
@@ -438,6 +438,9 @@ EOF
             echo "  [offline] Disabling remote fonts to prevent Vite build timeout..."
             find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + 2>/dev/null || true
             find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
+
+            # همگام‌سازی و نصب آفلاین پکیج‌ها پیش از بیلد
+            pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
 
             # اجرای بیلد به صورت کاملاً آفلاین با پکیج منیجر pnpm
             pnpm --offline build 2>/dev/null || pnpm --offline run build 2>/dev/null || pnpm run build --offline 2>/dev/null || true
