@@ -315,7 +315,7 @@ window.axios = axios;
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
 
-    if [ "$STARTER_KIT" != "None" ]; then
+if [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Configuring $STARTER_KIT..."
         if [ "$HAS_INTERNET" = "false" ]; then
             echo -e "  ${YELLOW}[offline] Skipping $STARTER_KIT setup (No Internet).${NC}"
@@ -325,27 +325,21 @@ EOF
                     (
                         cd "$project_dir"
                         composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                        b_args="blade --no-interaction"
-                        [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
-                        php artisan breeze:install $b_args 2>/dev/null || true
+                        php artisan breeze:install blade --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
                     )
                     ;;
                 "Breeze + React")
                     (
                         cd "$project_dir"
                         composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                        b_args="react --no-interaction"
-                        [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
-                        php artisan breeze:install $b_args 2>/dev/null || true
+                        php artisan breeze:install react --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
                     )
                     ;;
                 "Breeze + Vue")
                     (
                         cd "$project_dir"
                         composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                        b_args="vue --no-interaction"
-                        [ "$DARK_MODE" = "yes" ] && b_args="$b_args --dark"
-                        php artisan breeze:install $b_args 2>/dev/null || true
+                        php artisan breeze:install vue --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
                     )
                     ;;
                 "Jetstream + Livewire")
@@ -373,7 +367,7 @@ EOF
                 composer require pestphp/pest pestphp/pest-plugin-laravel --dev --prefer-offline --no-interaction 2>/dev/null || true
                 ./vendor/bin/pest --init 2>/dev/null || php artisan pest:install --no-interaction 2>/dev/null || true
             else
-                echo -e "  ${YELLOW}[offline] Skipping Pest setup (requires internet).${NC}"
+                echo -e "  ${YELLOW}[offline] Skipping Pest setup (No Internet).${NC}"
             fi
         )
     fi
@@ -386,7 +380,7 @@ EOF
                 composer require laravel/sanctum --prefer-offline --no-interaction 2>/dev/null || true
                 php artisan install:api --no-interaction 2>/dev/null || true
             else
-                echo -e "  ${YELLOW}[offline] Skipping API setup (requires internet).${NC}"
+                echo -e "  ${YELLOW}[offline] Skipping API setup (No Internet).${NC}"
             fi
         )
     fi
