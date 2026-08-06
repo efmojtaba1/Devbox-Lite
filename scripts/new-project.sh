@@ -296,13 +296,13 @@ if [ "$TEMPLATE" = "laravel" ]; then
             PGPASSWORD=devbox_pass psql -h "$PG_HOST" -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
             ;;
         "SQLite")
-            sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
-            sed -i 's/^DB_DATABASE=.*/# DB_DATABASE=/' "$project_dir/.env"
-            mkdir -p "$project_dir/database"
-            touch "$project_dir/database/database.sqlite" 2>/dev/null || true
-            ;;
-    es>
-fi
+                    sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
+                    sed -i 's/^DB_DATABASE=.*/# DB_DATABASE=/' "$project_dir/.env"
+                    mkdir -p "$project_dir/database"
+                    touch "$project_dir/database/database.sqlite" 2>/dev/null || true
+                    ;;
+            esac
+        fi
 
     if [ -f "$project_dir/.env" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction 2>/dev/null) || true
