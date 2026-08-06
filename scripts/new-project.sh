@@ -266,44 +266,43 @@ if [ "$TEMPLATE" = "laravel" ]; then
     fi
 
     if [ -f "$project_dir/.env" ]; then
-        case "$DB_CHOICE" in
-            "MySQL")
-                MYSQL_HOST="devbox-mysql"
-                getent hosts devbox-mysql >/dev/null 2>&1 || MYSQL_HOST="127.0.0.1"
-                sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=mysql/" "$project_dir/.env"
-                sed -i "s/^DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
-                sed -i "s/^# DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
-                sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
-                sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
-                sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                .*/DB_USERNAME=devbox/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+    case "$DB_CHOICE" in
+        "MySQL")
+            MYSQL_HOST="devbox-mysql"
+            getent hosts devbox-mysql >/dev/null 2>&1 || MYSQL_HOST="127.0.0.1"
+            sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=mysql/" "$project_dir/.env"
+            sed -i "s/^DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
+            sed -i "s/^# DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
+            sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
+            sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
+            sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
+            sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
+            sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
 
-                mysql -h "$MYSQL_HOST" -u devbox -pdevbox_pass -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
-                ;;
-            "PostgreSQL")
-                PG_HOST="devbox-postgres"
-                getent hosts devbox-postgres >/dev/null 2>&1 || PG_HOST="127.0.0.1"
-                sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/" "$project_dir/.env"
-                sed -i "s/^DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
-                sed -i "s/^# DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
-                sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
-                sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
-                sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=root/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=/' "$project_dir/.env"
+            mysql -h "$MYSQL_HOST" -u devbox -pdevbox_pass -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
+            ;;
+        "PostgreSQL")
+            PG_HOST="devbox-postgres"
+            getent hosts devbox-postgres >/dev/null 2>&1 || PG_HOST="127.0.0.1"
+            sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/" "$project_dir/.env"
+            sed -i "s/^DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
+            sed -i "s/^# DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
+            sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
+            sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
+            sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
+            sed -i 's/^DB_USERNAME=.*/DB_USERNAME=root/' "$project_dir/.env"
+            sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=/' "$project_dir/.env"
 
-                mysql -h "$MYSQL_HOST" -u root -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
-                PGPASSWORD=devbox_pass psql -h "$PG_HOST" -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
-                ;;
-            "SQLite")sed -i 's/^DB_USERNAME=
-                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
-                sed -i 's/^DB_DATABASE=.*/# DB_DATABASE=/' "$project_dir/.env"
-                mkdir -p "$project_dir/database"
-                touch "$project_dir/database/database.sqlite" 2>/dev/null || true
-                ;;
-        esac
-    fi
+            PGPASSWORD=devbox_pass psql -h "$PG_HOST" -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
+            ;;
+        "SQLite")
+            sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
+            sed -i 's/^DB_DATABASE=.*/# DB_DATABASE=/' "$project_dir/.env"
+            mkdir -p "$project_dir/database"
+            touch "$project_dir/database/database.sqlite" 2>/dev/null || true
+            ;;
+    es>
+fi
 
     if [ -f "$project_dir/.env" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction 2>/dev/null) || true
