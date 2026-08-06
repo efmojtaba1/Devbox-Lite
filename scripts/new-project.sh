@@ -367,28 +367,28 @@ EOF
         fi
     fi
 
-    if [ "$TESTING" = "Pest" ]; then
+if [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
             if [ "$HAS_INTERNET" = "true" ]; then
                 composer require pestphp/pest pestphp/pest-plugin-laravel --dev --prefer-offline --no-interaction 2>/dev/null || true
+                ./vendor/bin/pest --init 2>/dev/null || php artisan pest:install --no-interaction 2>/dev/null || true
             else
-                echo -e "  ${YELLOW}[offline] Skipping Pest package download.${NC}"
+                echo -e "  ${YELLOW}[offline] Skipping Pest setup (requires internet).${NC}"
             fi
-            ./vendor/bin/pest --init 2>/dev/null || php artisan pest:install --no-interaction 2>/dev/null || true
         )
     fi
 
-    if [ "$ENABLE_API" = "yes" ]; then
+if [ "$ENABLE_API" = "yes" ]; then
         echo "  [api] Setting up API routes..."
         (
             cd "$project_dir"
             if [ "$HAS_INTERNET" = "true" ]; then
                 composer require laravel/sanctum --prefer-offline --no-interaction 2>/dev/null || true
+                php artisan install:api --no-interaction 2>/dev/null || true
             else
-                echo -e "  ${YELLOW}[offline] Skipping Sanctum package download.${NC}"
+                echo -e "  ${YELLOW}[offline] Skipping API setup (requires internet).${NC}"
             fi
-            php artisan install:api --no-interaction 2>/dev/null || true
         )
     fi
 
@@ -440,6 +440,14 @@ EOF
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
+
+        if [ "$HAS_INTERNET" = "false" ]; then
+            # حذف لینک‌های فونت برای جلوگیری از خطای تایم‌اوت Vite در بیلد آفلاین
+            echo "  [offline] Disabling remote fonts to prevent Vite build timeout..."
+            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + 2>/dev/null || true
+            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
+        fi
+
         if [ "$HAS_INTERNET" = "true" ]; then
             pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
         fi
