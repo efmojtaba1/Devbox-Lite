@@ -475,7 +475,7 @@ EOF
             find resources \
                 -type f \
                 \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
-                -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + \
+                -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g; s|@import '\''@fontsource-variable/figtree'\'';||g; s|@import "@fontsource-variable/figtree";||g' {} + \
                 2>/dev/null || true
 
 

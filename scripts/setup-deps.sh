@@ -368,7 +368,7 @@ EOF
         find "$project_dir/resources" \
             -type f \
             \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
-            -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + \
+            -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g; s|@import '\''@fontsource-variable/figtree'\'';||g; s|@import "@fontsource-variable/figtree";||g' {} + \
             2>/dev/null || true
         find "$project_dir/resources" \
             -type f \
@@ -376,8 +376,12 @@ EOF
             -exec sed -i '/fonts\.bunny\.net/d' {} + \
             2>/dev/null || true
     fi
-    (cd "$project_dir" && pnpm build > /dev/null 2>&1 || npm run build > /dev/null 2>&1) || true
-    echo "  [ok] Assets compiled successfully!"
+    if (cd "$project_dir" && pnpm build) || (cd "$project_dir" && npm run build); then
+        echo "  [ok] Assets compiled successfully!"
+    else
+        echo "  [error] Asset compilation failed."
+        return 1
+    fi
 }
 
 # Offline-first dependency installation
