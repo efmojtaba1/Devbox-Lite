@@ -426,25 +426,44 @@ EOF
     fi
 
     echo "  [build] Compiling frontend assets..."
-        (
-            cd "$project_dir"
+    (
+        cd "$project_dir"
 
-            if [ "$HAS_INTERNET" = "false" ]; then
-                echo "  [offline] Skipping pnpm install to prevent offline registry errors..."
+        if [ "$HAS_INTERNET" = "false" ]; then
+            echo "  [offline] Skipping pnpm install to prevent offline registry errors..."
 
-                # غیرفعال کردن فونت‌های آنلاین برای جلوگیری از تایم‌اوت
-                find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + 2>/dev/null || true
-                find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
+            # Disable online fonts to prevent timeout
+            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
+                -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + 2>/dev/null || true
 
-                # در حالت آفلاین دستور install را به کل حذف می‌کنیم تا node_modules دست‌نخورده بماند
-                # و فقط بیلد نهایی اجرا می‌شود
-                pnpm --offline build 2>/dev/null || pnpm run build 2>/dev/null || true
+            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
+                -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
+
+            if pnpm --offline run build; then
+                echo "  [ok] Frontend assets built successfully."
             else
-                # در حالت آنلاین
-                pnpm install --prefer-offline --no-interactive 2>/dev/null || true
-                pnpm run build || true
+                echo -e "  ${RED}[error] Offline frontend build failed.${NC}"
+                exit 1
             fi
-        )
+
+        else
+            echo "  [online] Installing frontend dependencies..."
+
+            if pnpm install --prefer-offline --no-interactive; then
+                echo "  [ok] Dependencies installed."
+            else
+                echo -e "  ${RED}[error] Dependency installation failed.${NC}"
+                exit 1
+            fi
+
+            if pnpm run build; then
+                echo "  [ok] Frontend assets built successfully."
+            else
+                echo -e "  ${RED}[error] Frontend build failed.${NC}"
+                exit 1
+            fi
+        fi
+    )
 
     echo "[ok] Laravel project initialized successfully."
 fi
