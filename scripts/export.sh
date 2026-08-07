@@ -60,21 +60,26 @@ done
 OFFLINE_DEPS_DIR="$ABS_OUT/offline-deps"
 mkdir -p "$OFFLINE_DEPS_DIR"
 
-echo "[export] Downloading offline packages for Docker..."
-if [ "$EUID" -ne 0 ]; then
-  SUDO="sudo"
-else
-  SUDO=""
-fi
+echo "[export] Downloading offline DEB packages for Docker via direct links..."
+DOCKER_DEB_URLS=(
+  "http://archive.ubuntu.com/ubuntu/pool/universe/d/docker.io/docker.io_24.0.5-0ubuntu1~22.04.1_amd64.deb"
+  "http://archive.ubuntu.com/ubuntu/pool/main/c/containerd/containerd_1.7.2-0ubuntu1~22.04.1_amd64.deb"
+)
 
-$SUDO apt-get update -y >/dev/null 2>&1 || true
-$SUDO apt-get download docker.io docker-compose containerd runc 2>/dev/null || true
+for url in "${DOCKER_DEB_URLS[@]}"; do
+  filename=$(basename "$url")
+  echo "  Downloading $filename..."
+  if command -v wget >/dev/null 2>&1; then
+    wget -q -O "$OFFLINE_DEPS_DIR/$filename" "$url" || true
+  elif command -v curl >/dev/null 2>&1; then
+    curl -s -L -o "$OFFLINE_DEPS_DIR/$filename" "$url" || true
+  fi
+done
 
-if compgen -G "*.deb" > /dev/null; then
-  mv *.deb "$OFFLINE_DEPS_DIR/"
-  echo "  [ok] Offline DEB packages saved successfully."
+if compgen -G "$OFFLINE_DEPS_DIR/*.deb" > /dev/null; then
+  echo "  [ok] Offline DEB packages downloaded successfully."
 else
-  echo "  [warn] Skipping DEB download (Docker Desktop can be used on target)."
+  echo "  [warn] Direct DEB download skipped or failed."
 fi
 
 echo "[export] Downloading WSL2 Linux Kernel update (.msi) from Microsoft..."
@@ -183,3 +188,4 @@ generated_at:$(date --utc +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
 echo "[done] Full self-contained package exported successfully to: $ABS_OUT"
+```[cite: 1]
