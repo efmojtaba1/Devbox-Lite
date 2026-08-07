@@ -35,11 +35,11 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 
 # ── Check Real Network Status (Fix for WSL2/Docker) ──────────
-HAS_INTERNET=true
-# Use curl instead of ping for reliable network check in isolated environments
-if ! curl -Is --connect-timeout 3 https://repo.packagist.org >/dev/null; then
-    HAS_INTERNET=false
-    echo -e "${YELLOW}[network] Offline mode detected. External downloads will be skipped.${NC}"
+HAS_INTERNET=false
+
+if curl -fsI --connect-timeout 3 https://repo.packagist.org >/dev/null 2>&1 \
+ || curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1; then
+    HAS_INTERNET=true
 fi
 
 # ── 1. Input Project Name ───────────────────────────────────
