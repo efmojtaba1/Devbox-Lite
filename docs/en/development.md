@@ -32,7 +32,8 @@
 
 ---
 
-## Project Architecture [🔝](#table-of-contents)
+## Project Architecture
+[🔝](#table-of-contents)
 
 ```text
 DevBox Lite/
@@ -62,7 +63,8 @@ DevBox Lite/
 
 ---
 
-## Dockerfile Structure [🔝](#table-of-contents)
+## Dockerfile Structure
+[🔝](#table-of-contents)
 
 ```text
 base → languages → frameworks → tools → extensions → cleanup → runtime
@@ -78,7 +80,8 @@ base → languages → frameworks → tools → extensions → cleanup → runti
 
 ---
 
-## Adding New Software [🔝](#table-of-contents)
+## Adding New Software
+[🔝](#table-of-contents)
 
 ### 1. Create Install Script
 
@@ -102,7 +105,8 @@ RUN chmod +x /tmp/install/mytool.sh && /tmp/install/mytool.sh
 
 ---
 
-## Changing Tool Versions [🔝](#table-of-contents)
+## Changing Tool Versions
+[🔝](#table-of-contents)
 
 Edit `docker/app/.env`:
 
@@ -120,7 +124,8 @@ Then rebuild the image:
 
 ---
 
-## Testing & Validation [🔝](#table-of-contents)
+## Testing & Validation
+[🔝](#table-of-contents)
 
 ### Test Tools
 
@@ -146,7 +151,8 @@ docker run --rm devbox-lite:test bash -c "
 
 ---
 
-## Coding Style [🔝](#table-of-contents)
+## Coding Style
+[🔝](#table-of-contents)
 
 ### Shell Scripts
 
@@ -167,7 +173,8 @@ The pnpm store is configured to use a Docker volume (`pnpm-store`) instead of th
 
 ---
 
-## Offline Support [🔝](#table-of-contents)
+## Offline Support
+[🔝](#table-of-contents)
 
 ### Prebuilt Packages
 
@@ -188,7 +195,8 @@ Place exported images in `prebuilt/images/`:
 
 ---
 
-## WSL2 Performance [🔝](#table-of-contents)
+## WSL2 Performance
+[🔝](#table-of-contents)
 
 For better development performance, run DevBox inside WSL2 instead of using Docker Desktop's bind mount.
 
@@ -249,7 +257,8 @@ Then restart WSL: `wsl --shutdown`
 
 ---
 
-## Documentation [🔝](#table-of-contents)
+## Documentation
+[🔝](#table-of-contents)
 
 | Document | Description |
 |----------|-------------|

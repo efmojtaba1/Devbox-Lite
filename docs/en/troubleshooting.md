@@ -51,7 +51,8 @@
 
 ---
 
-## Quick Fix [🔝](#table-of-contents)
+## Quick Fix
+[🔝](#table-of-contents)
 
 Most issues can be resolved with these steps:
 
@@ -66,7 +67,8 @@ If nothing works, restart Docker Desktop.
 
 ---
 
-## Docker Issues [🔝](#table-of-contents)
+## Docker Issues
+[🔝](#table-of-contents)
 
 ### Container Won't Start
 
@@ -122,7 +124,8 @@ docker system prune -a --volumes
 
 ---
 
-## Workspace Issues [🔝](#table-of-contents)
+## Workspace Issues
+[🔝](#table-of-contents)
 
 ### Projects Not Visible in Container
 
@@ -161,7 +164,8 @@ npm install
 
 ---
 
-## VS Code Issues [🔝](#table-of-contents)
+## VS Code Issues
+[🔝](#table-of-contents)
 
 ### VS Code Won't Connect to Container
 
@@ -178,7 +182,8 @@ Then restart VS Code.
 
 ---
 
-## Tool Issues [🔝](#table-of-contents)
+## Tool Issues
+[🔝](#table-of-contents)
 
 ### Tools Not Installed
 
@@ -210,7 +215,8 @@ mv composer.phar /usr/local/bin/composer
 
 ---
 
-## Network Issues [🔝](#table-of-contents)
+## Network Issues
+[🔝](#table-of-contents)
 
 ### Container Communication
 
@@ -239,7 +245,8 @@ services:
 
 ---
 
-## Database Issues [🔝](#table-of-contents)
+## Database Issues
+[🔝](#table-of-contents)
 
 ### Database Container Won't Start
 
@@ -288,7 +295,8 @@ DB_HOST=devbox-mysql    # NOT 127.0.0.1
 
 ---
 
-## Volume Issues [🔝](#table-of-contents)
+## Volume Issues
+[🔝](#table-of-contents)
 
 ### Changes Not Saving
 
@@ -342,7 +350,8 @@ docker volume rm devbox_vendor-laravel devbox_node-modules-laravel
 
 ---
 
-## Docker Desktop Won't Start [🔝](#table-of-contents)
+## Docker Desktop Won't Start
+[🔝](#table-of-contents)
 
 ```powershell
 Restart-Service com.docker.service
@@ -352,7 +361,8 @@ Or restart Docker Desktop from the Start menu.
 
 ---
 
-## WSL2 Issues [🔝](#table-of-contents)
+## WSL2 Issues
+[🔝](#table-of-contents)
 
 ### WSL2 Not Installed
 
@@ -430,7 +440,8 @@ For best performance, keep project files inside WSL2 filesystem (`~/projects/`),
 
 ---
 
-## GitHub Authentication [🔝](#table-of-contents)
+## GitHub Authentication
+[🔝](#table-of-contents)
 
 GitHub no longer supports password authentication for Git. You must use SSH keys or Personal Access Token.
 
@@ -491,7 +502,8 @@ git config --global credential.helper store
 
 ---
 
-## Useful Resources [🔝](#table-of-contents)
+## Useful Resources
+[🔝](#table-of-contents)
 
 - [Docker Documentation](https://docs.docker.com/)
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
@@ -499,7 +511,8 @@ git config --global credential.helper store
 
 ---
 
-## Related Documentation [🔝](#table-of-contents)
+## Related Documentation
+[🔝](#table-of-contents)
 
 | Document | Description |
 |----------|-------------|

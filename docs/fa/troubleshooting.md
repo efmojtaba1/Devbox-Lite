@@ -45,7 +45,8 @@
 
 ---
 
-## عیب‌یابی سریع [🔝](#فهرست-مطالب)
+## عیب‌یابی سریع
+[🔝](#فهرست-مطالب)
 
 - لاگ‌ها را ببینید:
 
@@ -69,7 +70,8 @@
 
 ---
 
-## مشکلات Docker [🔝](#فهرست-مطالب)
+## مشکلات Docker
+[🔝](#فهرست-مطالب)
 
 ### کانتینر بالا نمی‌آید
 
@@ -132,7 +134,8 @@ docker system prune -a --volumes
 
 ---
 
-## مشکلات VS Code [🔝](#فهرست-مطالب)
+## مشکلات VS Code
+[🔝](#فهرست-مطالب)
 
 ## ادیتور (VS Code) به کانتینر وصل نمی‌شود
 
@@ -154,7 +157,8 @@ docker compose exec devbox-lite rm -rf /root/.vscode-server
 
 ---
 
-## مشکلات ابزارها [🔝](#فهرست-مطالب)
+## مشکلات ابزارها
+[🔝](#فهرست-مطالب)
 
 ### ابزارها نصب نشده‌اند
 
@@ -186,7 +190,8 @@ mv composer.phar /usr/local/bin/composer
 
 ---
 
-## مشکلات دیتابیس [🔝](#فهرست-مطالب)
+## مشکلات دیتابیس
+[🔝](#فهرست-مطالب)
 
 ### خطای Connection Refused هنگام اجرای Laravel Migration
 
@@ -202,7 +207,8 @@ DB_HOST=devbox-mysql    # نه 127.0.0.1
 
 ---
 
-## مشکلات شبکه [🔝](#فهرست-مطالب)
+## مشکلات شبکه
+[🔝](#فهرست-مطالب)
 
 ### ارتباط بین کانتینرها
 
@@ -231,7 +237,8 @@ services:
 
 ---
 
-## مشکلات Volume [🔝](#فهرست-مطالب)
+## مشکلات Volume
+[🔝](#فهرست-مطالب)
 
 ### تغییرات ذخیره نمی‌شود
 
@@ -300,7 +307,8 @@ docker volume rm devbox_vendor-laravel devbox_node-modules-laravel
 
 ---
 
-## Docker Desktop اجرا نمی‌شود [🔝](#فهرست-مطالب)
+## Docker Desktop اجرا نمی‌شود
+[🔝](#فهرست-مطالب)
 
 ```powershell
 Restart-Service com.docker.service
@@ -310,7 +318,8 @@ Restart-Service com.docker.service
 
 ---
 
-## مشکلات WSL2 [🔝](#فهرست-مطالب)
+## مشکلات WSL2
+[🔝](#فهرست-مطالب)
 
 ### ‏WSL2 نصب نیست
 
@@ -388,7 +397,8 @@ processors=4
 
 ---
 
-## احراز هویت GitHub [🔝](#فهرست-مطالب)
+## احراز هویت GitHub
+[🔝](#فهرست-مطالب)
 
 ‏GitHub دیگر از پسورد برای عملیات Git پشتیبانی نمی‌کند. باید از SSH key یا Personal ‏Access Token استفاده کنید.
 
@@ -455,7 +465,8 @@ git config --global credential.helper store
 
 ---
 
-## منابع مفید [🔝](#فهرست-مطالب)
+## منابع مفید
+[🔝](#فهرست-مطالب)
 
 - [مستندات Docker](https://docs.docker.com/)
 - [مستندات Docker Compose](https://docs.docker.com/compose/)
@@ -463,7 +474,8 @@ git config --global credential.helper store
 
 ---
 
-## مستندات مرتبط [🔝](#فهرست-مطالب)
+## مستندات مرتبط
+[🔝](#فهرست-مطالب)
 
 | مستند | توضیحات |
 |-------|---------|

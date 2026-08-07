@@ -38,7 +38,8 @@
 
 ---
 
-## First Time Setup [🔝](#table-of-contents)
+## First Time Setup
+[🔝](#table-of-contents)
 
 ### Windows
 
@@ -61,7 +62,8 @@ echo "WORKSPACE_PATH=$PWD" > .env
 
 ---
 
-## Daily Workflow [🔝](#table-of-contents)
+## Daily Workflow
+[🔝](#table-of-contents)
 
 1. Open Docker Desktop
 2. Start the container: `.\scripts\up`
@@ -70,7 +72,8 @@ echo "WORKSPACE_PATH=$PWD" > .env
 
 ---
 
-## Management Scripts [🔝](#table-of-contents)
+## Management Scripts
+[🔝](#table-of-contents)
 
 Use these commands directly in VS Code terminal:
 
@@ -96,7 +99,8 @@ Use these commands directly in VS Code terminal:
 
 ---
 
-## Creating Projects [🔝](#table-of-contents)
+## Creating Projects
+[🔝](#table-of-contents)
 
 > **Important:** All development commands run **inside the container**, not on your host machine.
 
@@ -225,7 +229,8 @@ After creating a project, start the dev server:
 
 ---
 
-## Stop and Remove Volumes [🔝](#table-of-contents)
+## Stop and Remove Volumes
+[🔝](#table-of-contents)
 
 If you need to completely reset (remove all named volumes like `node_modules`, `vendor`, `bruno`):
 
@@ -241,7 +246,8 @@ If you need to completely reset (remove all named volumes like `node_modules`, `
 
 ---
 
-## Auto-Setup Databases [🔝](#table-of-contents)
+## Auto-Setup Databases
+[🔝](#table-of-contents)
 
 The `setup-deps` script automatically detects your project type and starts the required databases and GUI tools:
 
@@ -315,7 +321,8 @@ The dev server enables Hot Module Replacement - changes are reflected instantly 
 
 ---
 
-## Database Management [🔝](#table-of-contents)
+## Database Management
+[🔝](#table-of-contents)
 
 ### Creating Databases
 
@@ -346,7 +353,8 @@ The dev server enables Hot Module Replacement - changes are reflected instantly 
 
 ---
 
-## Default Ports [🔝](#table-of-contents)
+## Default Ports
+[🔝](#table-of-contents)
 
 | Service | Port | Container Name |
 |---------|------|----------------|
@@ -361,7 +369,8 @@ The dev server enables Hot Module Replacement - changes are reflected instantly 
 
 ---
 
-## Connecting VS Code to Container [🔝](#table-of-contents)
+## Connecting VS Code to Container
+[🔝](#table-of-contents)
 
 1. Open VS Code
 2. Select Remote Explorer → Dev Containers
@@ -370,7 +379,8 @@ The dev server enables Hot Module Replacement - changes are reflected instantly 
 
 ---
 
-## API Testing [🔝](#table-of-contents)
+## API Testing
+[🔝](#table-of-contents)
 
 ### Bruno
 
@@ -392,7 +402,8 @@ Bruno opens at http://localhost:6080
 
 ---
 
-## Tool Versions [🔝](#table-of-contents)
+## Tool Versions
+[🔝](#table-of-contents)
 
 Tool versions are controlled by `docker/app/.env`:
 
@@ -410,7 +421,8 @@ To change versions, edit the values and rebuild:
 
 ---
 
-## Important Notes [🔝](#table-of-contents)
+## Important Notes
+[🔝](#table-of-contents)
 
 1. Projects go in the `workspace/` folder
 2. Use VS Code Dev Containers for best experience
@@ -419,7 +431,8 @@ To change versions, edit the values and rebuild:
 
 ---
 
-## Related Documentation [🔝](#table-of-contents)
+## Related Documentation
+[🔝](#table-of-contents)
 
 | Document | Description |
 |----------|-------------|

@@ -38,7 +38,8 @@
 
 ---
 
-## Basic Concepts [🔝](#table-of-contents)
+## Basic Concepts
+[🔝](#table-of-contents)
 
 - **Image:** Template with OS and installed tools
 - **Container:** Running instance of an Image
@@ -47,7 +48,8 @@
 
 ---
 
-## Container Management [🔝](#table-of-contents)
+## Container Management
+[🔝](#table-of-contents)
 
 ### Start Container
 
@@ -177,7 +179,8 @@ scan
 
 ---
 
-## Image Commands [🔝](#table-of-contents)
+## Image Commands
+[🔝](#table-of-contents)
 
 ### Build Image
 
@@ -221,7 +224,8 @@ docker rmi devbox-lite
 
 ---
 
-## Cleanup Commands [🔝](#table-of-contents)
+## Cleanup Commands
+[🔝](#table-of-contents)
 
 ### Full Cleanup
 
@@ -246,7 +250,8 @@ docker system prune -a
 
 ---
 
-## API Testing [🔝](#table-of-contents)
+## API Testing
+[🔝](#table-of-contents)
 
 ### Bruno
 
@@ -277,7 +282,8 @@ docker run --rm -v devbox_bruno-collections:/data:ro alpine tar czf /backup/brun
 
 ---
 
-## Troubleshooting [🔝](#table-of-contents)
+## Troubleshooting
+[🔝](#table-of-contents)
 
 ### Container Won't Start
 
@@ -307,7 +313,8 @@ docker compose exec devbox-lite chmod -R 777 /workspace
 
 ---
 
-## Important Notes [🔝](#table-of-contents)
+## Important Notes
+[🔝](#table-of-contents)
 
 1. Always use the management scripts
 2. Stop the container before removing the image
@@ -316,7 +323,8 @@ docker compose exec devbox-lite chmod -R 777 /workspace
 
 ---
 
-## Related Documentation [🔝](#table-of-contents)
+## Related Documentation
+[🔝](#table-of-contents)
 
 | Document | Description |
 |----------|-------------|
