@@ -48,6 +48,6 @@ Write-Host "  up, down, down-v, shell, logs, restart, status" -ForegroundColor W
 Write-Host "  build, rebuild, clean" -ForegroundColor White
 Write-Host "  new-project, setup-deps, setup-example, init-example" -ForegroundColor White
 Write-Host "  refresh-example, scan, test-api, run" -ForegroundColor White
-Write-Host "  backup, restore, export-image, import-image" -ForegroundColor White
+Write-Host "  backup, restore, export, import" -ForegroundColor White
 Write-Host ""
 Write-Host "Start with: up" -ForegroundColor Yellow
