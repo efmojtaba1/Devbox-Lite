@@ -289,21 +289,6 @@ EOF
     fi
 
     # ----------------------------------------------------
-    # ۲. تبدیل خودکار سینتکس app.css از Tailwind v3 به v4
-    # ----------------------------------------------------
-    local css_file="$project_dir/resources/css/app.css"
-    if [ -f "$css_file" ]; then
-        if grep -q "@tailwind base;" "$css_file" 2>/dev/null; then
-            echo "  [patch] Migrating app.css from Tailwind v3 to v4..."
-            chmod 666 "$css_file" 2>/dev/null || true
-            sed -i '/@tailwind base;/d' "$css_file"
-            sed -i '/@tailwind components;/d' "$css_file"
-            sed -i 's/@tailwind utilities;/@import "tailwindcss";/' "$css_file"
-            echo "  [ok] app.css patched for Tailwind v4"
-        fi
-    fi
-
-    # ----------------------------------------------------
     # ۳. اصلاح و تزریق دقیق تنظیمات Host و StrictPort در vite.config.js
     # ----------------------------------------------------
     local vite_config="$project_dir/vite.config.js"
@@ -330,17 +315,37 @@ EOF
     # ----------------------------------------------------
     # ۴. بررسی وجود node_modules و نصب دپندنسی‌ها
     # ----------------------------------------------------
+    local has_internet="false"
+    if curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1; then
+        has_internet="true"
+    fi
+
     if [ -d "$project_dir/node_modules" ]; then
         echo "  [skip] node_modules already exists"
     else
         echo "  [install] Installing frontend dependencies..."
-        if (cd "$project_dir" && pnpm install 2>/dev/null); then
-            echo "  [ok] Frontend dependencies installed"
-        elif (cd "$project_dir" && npm install 2>/dev/null); then
-            echo "  [ok] Frontend dependencies installed (npm)"
+        if [ "$has_internet" = "false" ]; then
+            if (cd "$project_dir" && pnpm install --offline --frozen-lockfile 2>/dev/null); then
+                echo "  [ok] Frontend dependencies installed offline"
+            elif (cd "$project_dir" && pnpm install 2>/dev/null); then
+                echo "  [ok] Frontend dependencies installed"
+            elif (cd "$project_dir" && npm install 2>/dev/null); then
+                echo "  [ok] Frontend dependencies installed (npm)"
+            else
+                echo "  [warn] Could not install frontend dependencies offline or online, run 'pnpm install' manually"
+                return 0
+            fi
         else
-            echo "  [warn] Could not install frontend dependencies, run 'pnpm install' manually"
-            return 0
+            if (cd "$project_dir" && pnpm install --prefer-offline --no-interactive 2>/dev/null); then
+                echo "  [ok] Frontend dependencies installed"
+            elif (cd "$project_dir" && pnpm install 2>/dev/null); then
+                echo "  [ok] Frontend dependencies installed"
+            elif (cd "$project_dir" && npm install 2>/dev/null); then
+                echo "  [ok] Frontend dependencies installed (npm)"
+            else
+                echo "  [warn] Could not install frontend dependencies, run 'pnpm install' manually"
+                return 0
+            fi
         fi
     fi
 
@@ -396,9 +401,15 @@ install_deps_offline_first() {
                     echo "  [warn] copy failed, falling back to online"
             fi
             if [ ! -d "$project_dir/node_modules" ] && [ -f "$project_dir/package.json" ]; then
-                echo "  [online] Running pnpm install..."
-                (cd "$project_dir" && pnpm install 2>/dev/null) || \
-                    echo "  [warn] pnpm install failed"
+                if curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1; then
+                    echo "  [online] Running pnpm install..."
+                    (cd "$project_dir" && pnpm install 2>/dev/null) || \
+                        echo "  [warn] pnpm install failed"
+                else
+                    echo "  [offline] Running pnpm install from cache..."
+                    (cd "$project_dir" && pnpm install --offline --frozen-lockfile 2>/dev/null) || \
+                        echo "  [warn] offline pnpm install failed"
+                fi
             fi
             ;;
         next-js)

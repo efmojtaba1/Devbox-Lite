@@ -41,6 +41,36 @@ if curl -fsI --connect-timeout 3 https://repo.packagist.org >/dev/null 2>&1 \
     HAS_INTERNET=true
 fi
 
+ensure_container_running() {
+    local name="$1"
+    local kind="$2"
+
+    if docker ps --format '{{.Names}}' | grep -q "^$name$"; then
+        echo "  [skip] $kind is already running"
+        return 0
+    fi
+
+    if docker ps -a --format '{{.Names}}' | grep -q "^$name$"; then
+        echo "  [start] $kind exists, starting..."
+        if docker start "$name" >/dev/null 2>&1; then
+            echo "  [ok] $kind is running"
+            sleep 3
+            return 0
+        fi
+        echo "  [fix] $kind failed to start, recreating..."
+        docker rm -f "$name" >/dev/null 2>&1 || true
+    fi
+
+    echo "  [create] $kind not found, creating..."
+    if [ -x "$SCRIPT_DIR/db-manager.sh" ]; then
+        "$SCRIPT_DIR/db-manager.sh" create "$kind"
+        sleep 4
+    else
+        echo "  [warn] db-manager.sh not available; cannot create $kind"
+        return 1
+    fi
+}
+
 # ── 1. Input Project Name ───────────────────────────────────
 read -rp "Project name: " PROJECT_NAME
 if [ -z "$PROJECT_NAME" ]; then
@@ -260,31 +290,14 @@ if [ "$TEMPLATE" = "laravel" ]; then
         echo "  [db] Ensuring database service is running..."
 
         if [ "$DB_CHOICE" = "MySQL" ]; then
-            if ! docker ps -a --format '{{.Names}}' | grep -q "^devbox-mysql$"; then
-                echo "  [db] Container devbox-mysql not found. Creating it now..."
-                if [ -x "$SCRIPT_DIR/db-manager.sh" ]; then
-    "$SCRIPT_DIR/db-manager.sh" create mysql
-else
-    echo "[warn] db-manager.sh not found"
-fi
-                sleep 5
-            elif ! docker ps --format '{{.Names}}' | grep -q "^devbox-mysql$"; then
-                "$SCRIPT_DIR/db-manager.sh" start mysql 2>/dev/null || true
-                sleep 4
-            fi
+            ensure_container_running devbox-mysql mysql
         elif [ "$DB_CHOICE" = "PostgreSQL" ]; then
-            if ! docker ps -a --format '{{.Names}}' | grep -q "^devbox-postgres$"; then
-                echo "  [db] Container devbox-postgres not found. Creating it now..."
-                if [ -x "$SCRIPT_DIR/db-manager.sh" ]; then
-    "$SCRIPT_DIR/db-manager.sh" create postgres
-else
-    echo "[warn] db-manager.sh not found"
-fi
-                sleep 5
-            elif ! docker ps --format '{{.Names}}' | grep -q "^devbox-postgres$"; then
-                "$SCRIPT_DIR/db-manager.sh" start postgres 2>/dev/null || true
-                sleep 4
-            fi
+            ensure_container_running devbox-postgres postgres
+        fi
+
+        if [ -f "$project_dir/.env" ] && grep -q '^REDIS_HOST=' "$project_dir/.env" 2>/dev/null; then
+            echo "  [db] Ensuring Redis service is available..."
+            ensure_container_running devbox-redis redis
         fi
     fi
 
@@ -539,9 +552,12 @@ if [ -f "$project_dir/package.json" ]; then
 
 
         if grep -q "\"build\"" package.json; then
-
-            pnpm run build || true
-
+            if pnpm run build; then
+                echo "  [ok] Frontend assets built successfully."
+            else
+                echo -e "${RED}[error] Frontend build failed.${NC}"
+                exit 1
+            fi
         fi
 
     )
