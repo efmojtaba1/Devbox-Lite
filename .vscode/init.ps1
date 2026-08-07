@@ -19,6 +19,8 @@ function backup { & "$DevBoxRoot\scripts\backup.ps1" }
 function restore { & "$DevBoxRoot\scripts\restore.ps1" }
 function test-api { & "$DevBoxRoot\scripts\test-api.ps1" }
 function run { & "$DevBoxRoot\scripts\run.ps1" $args }
+function export-image { & "$DevBoxRoot\scripts\export-image.ps1" @args }
+function import-image { & "$DevBoxRoot\scripts\import-image.ps1" @args }
 function setup-deps {
     . "$DevBoxRoot\scripts\common.ps1"
     Show-Header "Setting up Dependencies"
@@ -46,6 +48,6 @@ Write-Host "  up, down, down-v, shell, logs, restart, status" -ForegroundColor W
 Write-Host "  build, rebuild, clean" -ForegroundColor White
 Write-Host "  new-project, setup-deps, setup-example, init-example" -ForegroundColor White
 Write-Host "  refresh-example, scan, test-api, run" -ForegroundColor White
-Write-Host "  backup, restore" -ForegroundColor White
+Write-Host "  backup, restore, export-image, import-image" -ForegroundColor White
 Write-Host ""
 Write-Host "Start with: up" -ForegroundColor Yellow
