@@ -565,7 +565,16 @@ if [ -f "$project_dir/package.json" ]; then
 fi
 fi
 
-# ── Step 4: Final Message ────────────────────────────────────
+# ── Step 4: Start runtime dependencies for the created project ─────────────
+if [ -f "$SCRIPT_DIR/setup-deps.sh" ]; then
+    echo ""
+    echo "[setup] Ensuring runtime dependencies for $TEMPLATE are started..."
+    if ! bash "$SCRIPT_DIR/setup-deps.sh" "$project_dir" "$TEMPLATE"; then
+        echo -e "${YELLOW}[warn] setup-deps did not complete successfully for $TEMPLATE. Run './scripts/setup-deps.sh \"$project_dir\" \"$TEMPLATE\"' manually if needed.${NC}"
+    fi
+fi
+
+# ── Step 5: Final Message ────────────────────────────────────
 echo ""
 echo "========================================="
 echo -e "${GREEN}  Project ready: $PROJECT_NAME${NC}"
