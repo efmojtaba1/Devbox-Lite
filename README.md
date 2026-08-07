@@ -26,7 +26,8 @@ Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development env
 
 ---
 
-## Why DevBox Lite? [🔝](#table-of-contents)
+## Why DevBox Lite?
+[🔝](#table-of-contents)
 
 - **Lightweight & Fast:** Image size ~1 GB
 - **Offline Support:** Databases and tools work without internet
@@ -36,7 +37,8 @@ Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development env
 
 ---
 
-## Available Tools [🔝](#table-of-contents)
+## Available Tools
+[🔝](#table-of-contents)
 
 | Category | Tools |
 |----------|-------|
@@ -50,7 +52,8 @@ Lightweight, isolated, ready-to-work — a Docker + Ubuntu 24.04 development env
 
 ---
 
-## Quick Start [🔝](#table-of-contents)
+## Quick Start
+[🔝](#table-of-contents)
 
 ### Prerequisites
 
@@ -130,7 +133,8 @@ Now you can use these commands:
 
 ---
 
-## Folder Structure [🔝](#table-of-contents)
+## Folder Structure
+[🔝](#table-of-contents)
 
 ```text
 DevBox_Lite/
@@ -155,7 +159,8 @@ DevBox_Lite/
 
 ---
 
-## Creating New Projects [🔝](#table-of-contents)
+## Creating New Projects
+[🔝](#table-of-contents)
 
 > **Important:** All development commands run **inside the container**.
 
@@ -191,7 +196,8 @@ laravel new my-app    # or: pnpm create next-app, etc.
 
 ---
 
-## Auto-Setup Databases [🔝](#table-of-contents)
+## Auto-Setup Databases
+[🔝](#table-of-contents)
 
 The `setup-deps` script automatically detects project types and starts required databases and GUI tools:
 
@@ -208,7 +214,8 @@ setup-deps /workspace
 
 ---
 
-## Documentation [🔝](#table-of-contents)
+## Documentation
+[🔝](#table-of-contents)
 
 | Document | Description |
 |----------|-------------|
@@ -219,7 +226,8 @@ setup-deps /workspace
 
 ---
 
-## License [🔝](#table-of-contents)
+## License
+[🔝](#table-of-contents)
 
 This project is under [LICENSE](../../LICENSE).
 
