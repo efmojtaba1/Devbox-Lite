@@ -15,9 +15,9 @@ echo "Initializing example templates"
 echo "========================================="
 echo ""
 
-# Helper function to check internet connectivity
 is_online() {
-    ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1
+    curl -fsI --connect-timeout 3 https://repo.packagist.org >/dev/null 2>&1 \
+    || curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1
 }
 
 if is_online; then
