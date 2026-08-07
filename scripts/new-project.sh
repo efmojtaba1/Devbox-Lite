@@ -398,20 +398,15 @@ EOF
         (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Database migration skipped or failed.${NC}"
     fi
 
-    echo "  [fix] Patching Tailwind v4 and PostCSS dependencies..."
+    echo "  [fix] Checking Tailwind v4 configuration..."
     (
         cd "$project_dir"
-        if [ "$HAS_INTERNET" = "true" ]; then
-            pnpm add -D @tailwindcss/postcss --offline 2>/dev/null || true
+
+        if grep -q "@tailwindcss/vite" vite.config.ts 2>/dev/null; then
+            echo "  [ok] Tailwind v4 Vite plugin detected."
+        else
+            echo "  [warn] Tailwind Vite plugin not detected."
         fi
-        cat << 'EOF' > postcss.config.js
-export default {
-  plugins: {
-    '@tailwindcss/postcss': {},
-    autoprefixer: {},
-  },
-};
-EOF
     )
 
     if [ -f "$project_dir/vite.config.js" ]; then
