@@ -19,8 +19,8 @@ function backup { & "$DevBoxRoot\scripts\backup.ps1" }
 function restore { & "$DevBoxRoot\scripts\restore.ps1" }
 function test-api { & "$DevBoxRoot\scripts\test-api.ps1" }
 function run { & "$DevBoxRoot\scripts\run.ps1" $args }
-function export-image { & "$DevBoxRoot\scripts\export-image.ps1" @args }
-function import-image { & "$DevBoxRoot\scripts\import-image.ps1" @args }
+function export-box { & "$DevBoxRoot\scripts\export.ps1" @args }
+function import-box { & "$DevBoxRoot\scripts\import.ps1" @args }
 function setup-deps {
     . "$DevBoxRoot\scripts\common.ps1"
     Show-Header "Setting up Dependencies"

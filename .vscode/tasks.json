@@ -156,28 +156,27 @@
             },
             "group": "none",
             "presentation": { "reveal": "always", "panel": "new" }
-        }
-        ,
+        },
         {
-            "label": "DevBox: Export Image",
+            "label": "DevBox: Export",
             "type": "shell",
             "command": "bash",
-            "args": ["-lc", "./scripts/export-image"],
+            "args": ["-lc", "./scripts/export.sh"],
             "windows": {
                 "command": "pwsh",
-                "args": ["-NoProfile", "-Command", "./scripts/export-image"]
+                "args": ["-NoProfile", "-Command", "./scripts/export.ps1"]
             },
             "group": "none",
             "presentation": { "reveal": "always", "panel": "shared" }
         },
         {
-            "label": "DevBox: Import Image",
+            "label": "DevBox: Import",
             "type": "shell",
             "command": "bash",
-            "args": ["-lc", "./scripts/import-image"],
+            "args": ["-lc", "./scripts/import.sh"],
             "windows": {
                 "command": "pwsh",
-                "args": ["-NoProfile", "-Command", "./scripts/import-image"]
+                "args": ["-NoProfile", "-Command", "./scripts/import.ps1"]
             },
             "group": "none",
             "presentation": { "reveal": "always", "panel": "shared" }

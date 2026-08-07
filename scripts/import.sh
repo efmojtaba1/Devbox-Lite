@@ -2,10 +2,9 @@
 set -euo pipefail
 
 DEFAULT_INPUT="/mnt/d/devbox-image"
-DEFAULT_COMPOSE="docker/compose/docker-compose.yml"
 
 echo "========================================="
-echo " Import Configuration"
+echo " Full Self-Contained Import"
 echo "========================================="
 echo "1) Use default path/directory ($DEFAULT_INPUT)"
 echo "2) Enter custom path or archive (.tar.gz)"
@@ -20,11 +19,20 @@ else
   INPUT="$DEFAULT_INPUT"
 fi
 
-COMPOSE_FILE="$DEFAULT_COMPOSE"
+CURRENT_DIR="$(pwd)"
+DEFAULT_PROJ_DEST="$CURRENT_DIR"
+if [[ "$(basename "$CURRENT_DIR")" == "scripts" ]]; then
+  DEFAULT_PROJ_DEST="$(dirname "$CURRENT_DIR")"
+fi
+
+echo ""
+read -e -p "Enter destination path for project setup [Default: $DEFAULT_PROJ_DEST]: " target_proj
+PROJECT_ROOT="${target_proj:-$DEFAULT_PROJ_DEST}"
+mkdir -p "$PROJECT_ROOT"
 
 if [ -f "$INPUT" ] && ([[ "$INPUT" == *.tar.gz ]] || [[ "$INPUT" == *.tgz ]]); then
   TMPDIR="$(mktemp -d)"
-  echo "[import] Extracting archive $INPUT -> $TMPDIR"
+  echo "[import] Extracting package archive $INPUT -> $TMPDIR"
   tar xzf "$INPUT" -C "$TMPDIR"
   WORKDIR="$TMPDIR"
 elif [ -d "$INPUT" ]; then
@@ -34,8 +42,24 @@ else
   exit 1
 fi
 
+if [ -f "$WORKDIR/project-src.tar.gz" ]; then
+  echo "[import] Restoring project source code to $PROJECT_ROOT..."
+  tar xzf "$WORKDIR/project-src.tar.gz" -C "$PROJECT_ROOT"
+  echo "  [ok] Project source code restored."
+else
+  echo "  [warn] project-src.tar.gz not found; skipping project files restoration."
+fi
+
+if [ -f "$WORKDIR/prebuilt.tar.gz" ]; then
+  echo "[import] Restoring prebuilt directory..."
+  tar xzf "$WORKDIR/prebuilt.tar.gz" -C "$PROJECT_ROOT"
+  echo "  [ok] prebuilt folder restored."
+else
+  echo "  [warn] prebuilt.tar.gz not found in package; skipping"
+fi
+
 if [ -f "$WORKDIR/image.tar" ]; then
-  echo "[import] Loading image from $WORKDIR/image.tar"
+  echo "[import] Loading Docker image from $WORKDIR/image.tar"
   docker load -i "$WORKDIR/image.tar"
 else
   echo "[warn] image.tar not found in package; skipping docker load"
@@ -53,12 +77,13 @@ for f in "$WORKDIR"/vol-*.tar.gz; do
   docker run --rm -i -v "$volname":/volume -v "$WORKDIR":/backup alpine sh -c "cd /volume || mkdir -p /volume; tar xzf /backup/$fname -C /volume || true"
 done
 
+COMPOSE_FILE="$PROJECT_ROOT/docker/compose/docker-compose.yml"
 if [ -f "$COMPOSE_FILE" ]; then
-  echo "[ok] Volumes restored. Starting compose: $COMPOSE_FILE"
+  echo "[ok] All assets restored. Starting compose: $COMPOSE_FILE"
   docker compose -f "$COMPOSE_FILE" up -d
-  echo "[ok] docker compose up started"
+  echo "[ok] docker compose up started successfully."
 else
-  echo "[warn] Compose file $COMPOSE_FILE not found. Start containers manually." >&2
+  echo "[warn] Compose file not found at $COMPOSE_FILE. Start containers manually." >&2
 fi
 
-echo "[done] Import finished."
+echo "[done] Full import finished successfully!"
