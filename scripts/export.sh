@@ -57,18 +57,25 @@ for v in "${VOLUMES[@]}"; do
   fi
 done
 
-# جمع‌آوری خودکار پکیج‌های آفلاین داکر و هسته WSL بدون نیاز به پیش‌نیاز
+# جمع‌آوری خودکار پکیج‌های آفلاین داکر با بررسی دسترسی روت و آپدیت مخازن
 OFFLINE_DEPS_DIR="$ABS_OUT/offline-deps"
 mkdir -p "$OFFLINE_DEPS_DIR"
 
-echo "[export] Downloading offline DEB packages for Docker..."
-apt-get update -y >/dev/null 2>&1 || true
-apt-get download docker.io docker-compose-v2 containerd.io docker-buildx 2>/dev/null || true
+echo "[export] Updating package lists and downloading offline DEB packages for Docker..."
+if [ "$EUID" -ne 0 ]; then
+  SUDO="sudo"
+else
+  SUDO=""
+fi
+
+$SUDO apt-get update -y >/dev/null 2>&1 || true
+$SUDO apt-get download docker.io docker-compose-v2 containerd.io docker-buildx 2>/dev/null || true
+
 if compgen -G "*.deb" > /dev/null; then
   mv *.deb "$OFFLINE_DEPS_DIR/"
-  echo "  [ok] Offline DEB packages saved."
+  echo "  [ok] Offline DEB packages saved successfully."
 else
-  echo "  [warn] Could not download offline debs automatically."
+  echo "  [warn] Could not download offline debs automatically. (Check internet or repository access)."
 fi
 
 echo "[export] Downloading WSL2 Linux Kernel update (.msi) from Microsoft..."
@@ -107,8 +114,8 @@ echo "  [ok] project source code -> project-src.tar.gz"
 mkdir -p "$ABS_OUT/scripts"
 cp -r "$PROJECT_ROOT/scripts/"* "$ABS_OUT/scripts/"
 
-# ساخت خودکار فایل setup-offline.bat با قابلیت پرسش مسیر از کاربر
-echo "[export] Generating setup-offline.bat with custom destination prompt..."
+# ساخت خودکار فایل setup-offline.bat با پیش‌فرض درایو D
+echo "[export] Generating setup-offline.bat with D: drive default path..."
 cat << 'EOF' > "$ABS_OUT/setup-offline.bat"
 @echo off
 TITLE DevBox Lite - Offline Setup & Restore
@@ -127,15 +134,15 @@ if %errorLevel% neq 0 (
     exit /b
 )
 
-:: 2. Ask user for project destination path
+:: 2. Ask user for project destination path (Default: D:\devbox-project)
 echo.
-set /p DEST_PATH="Enter destination path for project setup [Default: C:\devbox-project]: "
-if "%DEST_PATH%"=="" set DEST_PATH=C:\devbox-project
+set /p DEST_PATH="Enter destination path for project setup [Default: D:\devbox-project]: "
+if "%DEST_PATH%"=="" set DEST_PATH=D:\devbox-project
 
 echo.
 echo [1/5] Enabling Windows Subsystem for Linux and Virtual Machine Platform...
 dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart >nul 2>&1
-dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart >nol 2>&1
+dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart >nul 2>&1
 
 echo [2/5] Installing WSL2 Linux Kernel update (if package exists)...
 if exist "%~dp0offline-deps\wsl_update_x64.msi" (
@@ -180,3 +187,4 @@ generated_at:$(date --utc +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
 echo "[done] Full self-contained package exported successfully to: $ABS_OUT"
+```[cite: 1]
