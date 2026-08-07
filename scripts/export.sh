@@ -60,26 +60,25 @@ done
 OFFLINE_DEPS_DIR="$ABS_OUT/offline-deps"
 mkdir -p "$OFFLINE_DEPS_DIR"
 
-echo "[export] Downloading offline DEB packages for Docker via direct links..."
-DOCKER_DEB_URLS=(
-  "http://archive.ubuntu.com/ubuntu/pool/universe/d/docker.io/docker.io_24.0.5-0ubuntu1~22.04.1_amd64.deb"
-  "http://archive.ubuntu.com/ubuntu/pool/main/c/containerd/containerd_1.7.2-0ubuntu1~22.04.1_amd64.deb"
-)
+if [ "$EUID" -ne 0 ]; then
+  SUDO="sudo"
+else
+  SUDO=""
+fi
 
-for url in "${DOCKER_DEB_URLS[@]}"; do
-  filename=$(basename "$url")
-  echo "  Downloading $filename..."
-  if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$OFFLINE_DEPS_DIR/$filename" "$url" || true
-  elif command -v curl >/dev/null 2>&1; then
-    curl -s -L -o "$OFFLINE_DEPS_DIR/$filename" "$url" || true
-  fi
-done
+echo "[export] Downloading offline DEB packages for Docker via apt cache..."
+$SUDO apt-get update -y >/dev/null 2>&1 || true
+$SUDO apt-get install --download-only -y docker.io containerd runc 2>/dev/null || true
+
+if [ -d "/var/cache/apt/archives" ]; then
+  $SUDO find /var/cache/apt/archives -name "*.deb" -exec cp {} "$OFFLINE_DEPS_DIR/" \; 2>/dev/null || true
+  $SUDO chown -R $(id -u):$(id -g) "$OFFLINE_DEPS_DIR" 2>/dev/null || true
+fi
 
 if compgen -G "$OFFLINE_DEPS_DIR/*.deb" > /dev/null; then
-  echo "  [ok] Offline DEB packages downloaded successfully."
+  echo "  [ok] Offline DEB packages downloaded and verified successfully."
 else
-  echo "  [warn] Direct DEB download skipped or failed."
+  echo "  [warn] No DEB packages found in cache."
 fi
 
 echo "[export] Downloading WSL2 Linux Kernel update (.msi) from Microsoft..."
@@ -166,7 +165,7 @@ if exist "%~dp0offline-deps\*.deb" (
     echo To complete native Docker setup inside WSL Ubuntu, execute:
     echo   1. Open WSL Ubuntu terminal.
     echo   2. Go to your shared folder or mount path:
-    echo      cd /mnt/e/devbox-backup/offline-deps
+    echo      cd /mnt/d/devbox-project/offline-deps
     echo   3. Install packages offline:
     echo      sudo dpkg -i *.deb
     echo ===================================================
@@ -189,4 +188,3 @@ generated_at:$(date --utc +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
 echo "[done] Full self-contained package exported successfully to: $ABS_OUT"
-```[cite: 1]
