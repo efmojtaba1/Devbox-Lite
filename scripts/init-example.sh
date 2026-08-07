@@ -37,7 +37,18 @@ for tmpl in laravel next-js python react; do
     if [ -d "$SRC/$tmpl" ]; then
         echo "[$tmpl] Copying source files..."
         mkdir -p "$DST/$tmpl"
-        tar -C "$SRC" -cf - "$tmpl" | tar -C "$DST" -xf - 2>/dev/null
+        rm -rf "$DST/$tmpl"
+mkdir -p "$DST/$tmpl"
+
+tar \
+  --exclude="$tmpl/node_modules" \
+  --exclude="$tmpl/vendor" \
+  --exclude="$tmpl/venv" \
+  --exclude="$tmpl/.next" \
+  --exclude="$tmpl/dist" \
+  --exclude="$tmpl/build" \
+  -C "$SRC" -cf - "$tmpl" \
+| tar -C "$DST" -xf -
         echo "[$tmpl] Source copied."
     fi
 done
@@ -47,26 +58,48 @@ echo "Installing dependencies into baseline volume..."
 
 # 2. Laravel Setup & Vendor Initialization
 if [ -d "$DST/laravel" ]; then
+
+    # ---------- Composer ----------
     if [ ! -d "$DST/laravel/vendor" ] && [ -f "$DST/laravel/composer.json" ]; then
         echo "[laravel] Building vendor directory (composer install)..."
-        (cd "$DST/laravel" && composer $COMPOSER_ARGS) && \
-            echo "[laravel] [ok] vendor created successfully." || echo "[laravel] [warn] composer install failed."
+        (
+            cd "$DST/laravel"
+            composer $COMPOSER_ARGS
+        ) && \
+        echo "[laravel] [ok] vendor created successfully." || \
+        echo "[laravel] [warn] composer install failed."
     else
         echo "[laravel] [skip] vendor already present."
     fi
 
-    if [ ! -d "$DST/laravel/node_modules" ] && [ -f "$DST/laravel/package.json" ]; then
-        echo "[laravel] Building node_modules directory (pnpm install)..."
-        (cd "$DST/laravel" && pnpm $PNPM_ARGS) && \
-            echo "[laravel] [ok] node_modules created successfully." || echo "[laravel] [warn] pnpm install failed."
-    else
-        echo "[laravel] [skip] node_modules already present."
+    # ---------- PNPM ----------
+    if [ -f "$DST/laravel/package.json" ]; then
+
+        # Baseline نباید node_modules آماده را از سورس نگه دارد
+        if [ -d "$DST/laravel/node_modules" ]; then
+            echo "[laravel] Removing copied node_modules..."
+            rm -rf "$DST/laravel/node_modules"
+        fi
+
+        echo "[laravel] Building fresh node_modules (pnpm install)..."
+
+        (
+            cd "$DST/laravel"
+            pnpm $PNPM_ARGS
+        ) && \
+        echo "[laravel] [ok] node_modules created successfully." || \
+        echo "[laravel] [warn] pnpm install failed."
     fi
 
+    # ---------- Laravel .env ----------
     if [ -f "$DST/laravel/.env.example" ] && [ ! -f "$DST/laravel/.env" ]; then
         cp "$DST/laravel/.env.example" "$DST/laravel/.env"
-        (cd "$DST/laravel" && php artisan key:generate --force 2>/dev/null) || true
+        (
+            cd "$DST/laravel"
+            php artisan key:generate --force >/dev/null 2>&1
+        ) || true
     fi
+
 fi
 
 # 3. Next.js Setup
