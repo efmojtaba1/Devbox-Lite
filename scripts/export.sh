@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_OUT_DIR="/mnt/d/devbox-image"
+DEFAULT_OUT_DIR="/mnt/d/devbox-project"
 DEFAULT_IMAGE="devbox-lite:latest"
 
 echo "========================================="
@@ -13,7 +13,7 @@ read -e -p "Choose an option [1/2] (default: 1): " choice
 choice="${choice:-1}"
 
 if [ "$choice" == "2" ]; then
-  echo "  [Tip] Example format: /mnt/d/devbox-image or /home/user/my-backup"
+  echo "  [Tip] Example format: /mnt/d/devbox-project or /home/user/my-backup"
   read -e -p "  Enter custom path: " custom_dir
   OUT_DIR="${custom_dir:-$DEFAULT_OUT_DIR}"
 else
@@ -137,9 +137,9 @@ if %errorLevel% neq 0 (
 )
 
 echo.
-echo   [Tip] Example format: D:\devbox-image or C:\my-project
-set /p DEST_PATH="Enter destination path for project setup [Default: D:\devbox-image]: "
-if "%DEST_PATH%"=="" set DEST_PATH=D:\devbox-image
+echo   [Tip] Example format: D:\devbox-project or C:\my-project
+set /p DEST_PATH="Enter destination path for project setup [Default: D:\devbox-project]: "
+if "%DEST_PATH%"=="" set DEST_PATH=D:\devbox-project
 
 echo.
 echo [1/5] Enabling Windows Subsystem for Linux and Virtual Machine Platform...
