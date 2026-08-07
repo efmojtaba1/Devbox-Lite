@@ -137,8 +137,9 @@ if %errorLevel% neq 0 (
 )
 
 echo.
-set /p DEST_PATH="Enter destination path for project setup [Default: D:\devbox-project]: "
-if "%DEST_PATH%"=="" set DEST_PATH=D:\devbox-project
+echo   [Tip] Example format: D:\devbox-image or C:\my-project
+set /p DEST_PATH="Enter destination path for project setup [Default: D:\devbox-image]: "
+if "%DEST_PATH%"=="" set DEST_PATH=D:\devbox-image
 
 echo.
 echo [1/5] Enabling Windows Subsystem for Linux and Virtual Machine Platform...
