@@ -1,9 +1,39 @@
 param(
-    [string]$OutDir = "./devbox-offline",
-    [string]$ImageName = "devbox-lite:latest"
+    [string]$OutDir,
+    [string]$ImageName
 )
 
 $ErrorActionPreference = "Stop"
+$DefaultOutDir = "D:\devbox-image"
+$DefaultImage = "devbox-lite:latest"
+
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host " Export Configuration" -ForegroundColor Cyan
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host "1) Use default location ($DefaultOutDir)" -ForegroundColor White
+Write-Host "2) Enter custom location" -ForegroundColor White
+$choice = Read-Host "Choose an option [1/2] (default: 1)"
+
+if ($choice -eq "2") {
+    Write-Host "  [Tip] Example format: D:\MyBackup or C:\Backup" -ForegroundColor Yellow
+    $customDir = Read-Host "  Enter custom path"
+    $OutDir = if ($customDir) { $customDir } else { $DefaultOutDir }
+} else {
+    $OutDir = $DefaultOutDir
+}
+
+Write-Host ""
+Write-Host "1) Use default image ($DefaultImage)" -ForegroundColor White
+Write-Host "2) Enter custom image name" -ForegroundColor White
+$imgChoice = Read-Host "Choose an option [1/2] (default: 1)"
+
+if ($imgChoice -eq "2") {
+    $customImage = Read-Host "  Enter image name to save"
+    $ImageName = if ($customImage) { $customImage } else { $DefaultImage }
+} else {
+    $ImageName = $DefaultImage
+}
+
 $Volumes = @("example-templates", "pnpm-store", "composer-cache", "devbox-deps", "bruno-config", "bruno-collections")
 
 if (!(Test-Path $OutDir)) {

@@ -1,24 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Interactive export: save Docker image and named volumes
-# If arguments provided, use them; otherwise prompt the user.
+# Interactive export: save Docker image and named volumes with menu support
 
-DEFAULT_OUT_DIR="./devbox-offline"
+DEFAULT_OUT_DIR="/mnt/d/devbox-image"
 DEFAULT_IMAGE="devbox-lite:latest"
 
-if [ -n "${1:-}" ]; then
-  OUT_DIR="$1"
+echo "========================================="
+echo " Export Configuration"
+echo "========================================="
+echo "1) Use default location ($DEFAULT_OUT_DIR)"
+echo "2) Enter custom location"
+read -e -p "Choose an option [1/2] (default: 1): " choice
+choice="${choice:-1}"
+
+if [ "$choice" == "2" ]; then
+  echo "  [Tip] Example format: /mnt/d/MyBackup or /home/user/backup"
+  read -e -p "  Enter custom path: " custom_dir
+  OUT_DIR="${custom_dir:-$DEFAULT_OUT_DIR}"
 else
-  read -e -p "Output directory [${DEFAULT_OUT_DIR}]: " OUT_DIR
-  OUT_DIR="${OUT_DIR:-$DEFAULT_OUT_DIR}"
+  OUT_DIR="$DEFAULT_OUT_DIR"
 fi
 
-if [ -n "${2:-}" ]; then
-  IMAGE_NAME="$2"
+echo ""
+echo "1) Use default image ($DEFAULT_IMAGE)"
+echo "2) Enter custom image name"
+read -e -p "Choose an option [1/2] (default: 1): " img_choice
+img_choice="${img_choice:-1}"
+
+if [ "$img_choice" == "2" ]; then
+  read -e -p "  Enter image name to save: " custom_image
+  IMAGE_NAME="${custom_image:-$DEFAULT_IMAGE}"
 else
-  read -e -p "Image name to save [${DEFAULT_IMAGE}]: " IMAGE_NAME
-  IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE}"
+  IMAGE_NAME="$DEFAULT_IMAGE"
 fi
 
 VOLUMES=(example-templates pnpm-store composer-cache devbox-deps bruno-config bruno-collections)
@@ -52,4 +66,3 @@ generated_at:$(date --utc +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
 echo "[done] Exported offline package to: $ABS_OUT"
-echo "Compress for transport: tar czf devbox-offline.tar.gz -C $(dirname "$ABS_OUT") $(basename "$ABS_OUT")"
