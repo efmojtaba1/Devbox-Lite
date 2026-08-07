@@ -36,9 +36,8 @@ echo ""
 
 # ── Check Real Network Status (Fix for WSL2/Docker) ──────────
 HAS_INTERNET=false
-
 if curl -fsI --connect-timeout 3 https://repo.packagist.org >/dev/null 2>&1 \
- || curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1; then
+|| curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1; then
     HAS_INTERNET=true
 fi
 
@@ -176,15 +175,14 @@ IS_OFFLINE=false
 if [ -d "$example_dir" ]; then
     echo "[offline] Copying baseline from template ($example_dir)..."
     mkdir -p "$project_dir"
-    shopt -s dotglob
-    for item in "$example_dir"/*; do
-        name=$(basename "$item")
-        case "$name" in
-            .next|__pycache__) continue ;;
-        esac
-        cp -a "$item" "$project_dir/" 2>/dev/null
-    done
-    shopt -u dotglob
+
+    # Use tar copy to preserve hidden files and avoid silent cp failures.
+    # Exclude generated build artifacts that should not be copied.
+    (
+        cd "$example_dir"
+        tar --exclude='./.next' --exclude='./__pycache__' -cf - .
+    ) | tar -C "$project_dir" -xf -
+
     IS_OFFLINE=true
     echo "[ok] Offline source copied."
 else
@@ -217,8 +215,25 @@ fi
 
 if [ -f "$project_dir/package.json" ] && [ ! -d "$project_dir/node_modules" ]; then
     echo "[install] pnpm install..."
-    (cd "$project_dir" && pnpm install --offline 2>/dev/null) || \
-    (cd "$project_dir" && pnpm install --prefer-offline 2>/dev/null) || true
+
+    if [ "$HAS_INTERNET" = "false" ]; then
+        echo "[offline] Installing from pnpm cache..."
+        (
+            cd "$project_dir"
+            pnpm install --offline --frozen-lockfile
+        ) || {
+            echo -e "${RED}[error] Offline pnpm install failed.${NC}"
+            exit 1
+        }
+    else
+        (
+            cd "$project_dir"
+            pnpm install --prefer-offline --no-interactive
+        ) || {
+            echo -e "${RED}[error] pnpm install failed.${NC}"
+            exit 1
+        }
+    fi
 fi
 
 if [ "$TEMPLATE" = "python" ]; then
@@ -247,7 +262,11 @@ if [ "$TEMPLATE" = "laravel" ]; then
         if [ "$DB_CHOICE" = "MySQL" ]; then
             if ! docker ps -a --format '{{.Names}}' | grep -q "^devbox-mysql$"; then
                 echo "  [db] Container devbox-mysql not found. Creating it now..."
-                "$SCRIPT_DIR/db-manager.sh" create mysql 2>/dev/null || true
+                if [ -x "$SCRIPT_DIR/db-manager.sh" ]; then
+    "$SCRIPT_DIR/db-manager.sh" create mysql
+else
+    echo "[warn] db-manager.sh not found"
+fi
                 sleep 5
             elif ! docker ps --format '{{.Names}}' | grep -q "^devbox-mysql$"; then
                 "$SCRIPT_DIR/db-manager.sh" start mysql 2>/dev/null || true
@@ -256,7 +275,11 @@ if [ "$TEMPLATE" = "laravel" ]; then
         elif [ "$DB_CHOICE" = "PostgreSQL" ]; then
             if ! docker ps -a --format '{{.Names}}' | grep -q "^devbox-postgres$"; then
                 echo "  [db] Container devbox-postgres not found. Creating it now..."
-                "$SCRIPT_DIR/db-manager.sh" create postgres 2>/dev/null || true
+                if [ -x "$SCRIPT_DIR/db-manager.sh" ]; then
+    "$SCRIPT_DIR/db-manager.sh" create postgres
+else
+    echo "[warn] db-manager.sh not found"
+fi
                 sleep 5
             elif ! docker ps --format '{{.Names}}' | grep -q "^devbox-postgres$"; then
                 "$SCRIPT_DIR/db-manager.sh" start postgres 2>/dev/null || true
@@ -290,8 +313,8 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=root/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=/' "$project_dir/.env"
+                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
+                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
 
                 PGPASSWORD=devbox_pass psql -h "$PG_HOST" -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
                 ;;
@@ -409,7 +432,7 @@ EOF
         fi
     )
 
-    if [ -f "$project_dir/vite.config.js" ]; then
+    if [ -f "$project_dir/vite.config.js" ] || [ -f "$project_dir/vite.config.ts" ]; then
         node -e "
         const fs = require('fs');
         let content = fs.readFileSync('$project_dir/vite.config.js', 'utf8');
@@ -426,61 +449,104 @@ EOF
     fi
 
     echo "  [build] Compiling frontend assets..."
+
     (
         cd "$project_dir"
 
+
+        # Remove external font imports in offline mode
         if [ "$HAS_INTERNET" = "false" ]; then
-            echo "  [offline] Skipping pnpm install to prevent offline registry errors..."
 
-            # Disable online fonts to prevent timeout
-            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
-                -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + 2>/dev/null || true
+            echo "  [offline] Preparing frontend build..."
 
-            find resources -type f \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
-                -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
+            find resources \
+                -type f \
+                \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
+                -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + \
+                2>/dev/null || true
 
-            if pnpm --offline run build; then
-                echo "  [ok] Frontend assets built successfully."
-            else
-                echo -e "  ${RED}[error] Offline frontend build failed.${NC}"
-                exit 1
+
+            find resources \
+                -type f \
+                \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
+                -exec sed -i '/fonts\.bunny\.net/d' {} + \
+                2>/dev/null || true
+
+
+            if [ ! -d "node_modules" ]; then
+                echo "  [offline] Installing dependencies from pnpm cache..."
+
+                pnpm install \
+                    --offline \
+                    --frozen-lockfile
             fi
 
         else
+
             echo "  [online] Installing frontend dependencies..."
 
-            if pnpm install --prefer-offline --no-interactive; then
-                echo "  [ok] Dependencies installed."
-            else
-                echo -e "  ${RED}[error] Dependency installation failed.${NC}"
-                exit 1
-            fi
+            pnpm install \
+                --prefer-offline \
+                --no-interactive
 
-            if pnpm run build; then
-                echo "  [ok] Frontend assets built successfully."
-            else
-                echo -e "  ${RED}[error] Frontend build failed.${NC}"
-                exit 1
-            fi
         fi
-    )
 
+
+        if pnpm run build; then
+
+            echo "  [ok] Frontend assets built successfully."
+
+        else
+
+            echo -e "${RED}[error] Frontend build failed.${NC}"
+            exit 1
+
+        fi
+
+    )
     echo "[ok] Laravel project initialized successfully."
-fi
+  fi
 
 if [ "$TEMPLATE" != "laravel" ]; then
     if [ -f "$project_dir/.env.example" ] && [ ! -f "$project_dir/.env" ]; then
         cp "$project_dir/.env.example" "$project_dir/.env"
     fi
-    if [ -f "$project_dir/package.json" ]; then
-        echo "  [build] Compiling frontend assets..."
-        (
-            cd "$project_dir"
-            if [ "$HAS_INTERNET" = "true" ]; then
-                pnpm install --offline 2>/dev/null || pnpm install --prefer-offline 2>/dev/null || true
+if [ -f "$project_dir/package.json" ]; then
+
+    echo "  [build] Preparing frontend project..."
+
+    (
+        cd "$project_dir"
+
+
+        if [ ! -d "node_modules" ]; then
+
+            if [ "$HAS_INTERNET" = "false" ]; then
+
+                pnpm install \
+                    --offline \
+                    --frozen-lockfile
+
+            else
+
+                pnpm install \
+                    --prefer-offline \
+                    --no-interactive
+
             fi
-        )
-    fi
+
+        fi
+
+
+        if grep -q "\"build\"" package.json; then
+
+            pnpm run build || true
+
+        fi
+
+    )
+
+fi
 fi
 
 # ── Step 4: Final Message ────────────────────────────────────
