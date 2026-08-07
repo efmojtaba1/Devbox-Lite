@@ -36,7 +36,6 @@
 * [نکات مهم](#نکات-مهم)
 * [مستندات مرتبط](#مستندات-مرتبط)
 
----
 
 ## راه‌اندازی اولیه
 
@@ -59,7 +58,6 @@ echo "WORKSPACE_PATH=$PWD" > .env
 ./scripts/shell.sh
 ```
 
----
 
 ## گردش کار روزمره
 [🔝](#فهرست-مطالب)
@@ -69,7 +67,6 @@ echo "WORKSPACE_PATH=$PWD" > .env
 3. سپس VS Code را باز کنید → Remote Explorer → Dev Containers
 4. داخل پوشه `workspace/` کار کنید
 
----
 
 ## اسکریپت‌های مدیریت
 [🔝](#فهرست-مطالب)
@@ -98,7 +95,6 @@ echo "WORKSPACE_PATH=$PWD" > .env
 | `setup-example` | نصب dependency در template های نمونه |
 | `refresh-example` | بروزرسانی نمونه‌ها با ورژن‌های جدید |
 
----
 
 ## ساخت پروژه
 [🔝](#فهرست-مطالب)
@@ -150,20 +146,12 @@ new-project my-app react
 
 هنگام انتخاب Laravel، گزینه‌های تعاملی زیر نمایش داده می‌شوند:
 
-- **استارتر کیت:** Breeze (Blade/React/Vue), Jetstream (Livewire/Inertia), None
-- **دیتابیس:** SQLite, MySQL, PostgreSQL
-- **تست:** Pest, PHPUnit
-- **حالت تاریک:** بله/خیر
-- **مسیرهای API:** بله/خیر
 
 ### گزینه‌های React
 
-- **تایپ اسکریپت:** بله/خیر
-- **تیلویند:** بله/خیر
 
 ### گزینه‌های Python
 
-- **فریمورک:** Flask, FastAPI, Python خام
 
 ### راه‌اندازی template های نمونه
 
@@ -260,7 +248,6 @@ python app.py
 | Python (Flask) | `dev` | http://localhost:5001 |
 | Python (FastAPI) | `dev` | http://localhost:8000 |
 
----
 
 ## توقف و حذف Volume ها
 [🔝](#فهرست-مطالب)
@@ -281,7 +268,6 @@ python app.py
 
 > **هشدار:** این دستور تمام volume های named را حذف می‌کند شامل کالکشن‌های Bruno، pnpm store و dependency های کش شده.
 
----
 
 ## راه‌اندازی خودکار دیتابیس‌ها
 [🔝](#فهرست-مطالب)
@@ -327,12 +313,6 @@ redis-cli -h devbox-redis
 
 هنگام اجرای `setup-deps`، اسکریپت به صورت خودکار فایل `.env` لاراول شما را پیکربندی می‌کند:
 
-- مقدار `DB_HOST=devbox-mysql` را تنظیم می‌کند
-- مقدار `REDIS_HOST=devbox-redis` را تنظیم می‌کند
-- مقدار `CACHE_STORE=redis` را تنظیم می‌کند (اگر Redis در دسترس باشد)
-- مقدار `QUEUE_CONNECTION=redis` را تنظیم می‌کند (اگر Redis در دسترس باشد)
-- مقدار `SESSION_DRIVER=redis` را تنظیم می‌کند (اگر Redis در دسترس باشد)
-- در صورت خالی بودن `APP_KEY`، آن را می‌سازد
 
 اگر نیاز به پیکربندی دستی دارید:
 
@@ -357,12 +337,9 @@ SESSION_DRIVER=redis
 
 اگر پروژه لاراول خود را با starter kit React ساخته‌اید، `setup-deps` به صورت خودکار:
 
-- پکیج‌های فرانت‌اند را نصب می‌کند (`pnpm install`)
-- سرور Vite dev را با HMR در پس‌زمینه اجرا می‌کند
 
 سرور dev با Hot Module Replacement کار می‌کند - تغییرات فوراً اعمال می‌شوند و نیازی به بیلد مجدد نیست.
 
----
 
 ## مدیریت دیتابیس
 [🔝](#فهرست-مطالب)
@@ -394,7 +371,6 @@ SESSION_DRIVER=redis
 | `adminer` | http://localhost:8082 | مدیریت چند دیتابیس |
 | `pgadmin` | http://localhost:8083 | مدیریت PostgreSQL |
 
----
 
 ## پورت‌های پیش‌فرض
 [🔝](#فهرست-مطالب)
@@ -410,7 +386,6 @@ SESSION_DRIVER=redis
 | Adminer    | 8082 |        -        |
 | pgAdmin    | 8083 |        -        |
 
----
 
 ## اتصال VS Code به کانتینر
 [🔝](#فهرست-مطالب)
@@ -420,7 +395,6 @@ SESSION_DRIVER=redis
 3. روی **"+"** کلیک کنید و مسیر پروژه را انتخاب کنید
 4. ادیتور VS Code به صورت خودکار کانتینر را شناسایی و متصل می‌شود
 
----
 
 ## تست API
 [🔝](#فهرست-مطالب)
@@ -447,7 +421,6 @@ bruno
 2. کالکشن‌ها در `workspace/data/bruno/collections/` ذخیره می‌شوند
 3. کالکشن‌ها بدون اینترنت کار می‌کنند
 
----
 
 ## ورژن ابزارها
 [🔝](#فهرست-مطالب)
@@ -466,7 +439,6 @@ PYTHON_VERSION=3.12
 .\scripts\build
 ```
 
----
 
 ## نکات مهم
 [🔝](#فهرست-مطالب)
@@ -476,7 +448,6 @@ PYTHON_VERSION=3.12
 3. به‌طور منظم از پروژه پشتیبان بگیرید
 4. اگر مشکلی داشتید، به [عیب‌یابی](troubleshooting.md) مراجعه کنید
 
----
 
 ## مستندات مرتبط
 [🔝](#فهرست-مطالب)

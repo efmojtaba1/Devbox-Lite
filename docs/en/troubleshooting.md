@@ -44,7 +44,7 @@
   * [Docker Build Slow in WSL2](#docker-build-slow-in-wsl2)
   * [Cannot Access Windows Files from WSL2](#cannot-access-windows-files-from-wsl2)
 * [GitHub Authentication](#github-authentication)
-  * [Option 1: SSH Key (Recommended)](#option-1-ssh-key-recommended)
+  * [Option 1: SSH Key (Recommended)](#option-1-ssh-key)
   * [Option 2: Personal Access Token](#option-2-personal-access-token)
 * [Useful Resources](#useful-resources)
 * [Related Documentation](#related-documentation)

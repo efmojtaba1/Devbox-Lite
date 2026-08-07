@@ -19,7 +19,7 @@
   * [Detect Project Types](#detect-project-types)
 * [Image Commands](#image-commands)
   * [Build Image](#build-image)
-  * [Rebuild (No Cache)](#rebuild-no-cache)
+  * [Rebuild (No Cache)](#rebuild)
   * [List Images](#list-images)
   * [Remove Image](#remove-image)
 * [Cleanup Commands](#cleanup-commands)
