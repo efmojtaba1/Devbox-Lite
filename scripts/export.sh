@@ -57,11 +57,11 @@ for v in "${VOLUMES[@]}"; do
   fi
 done
 
-# جمع‌آوری پکیج‌های آفلاین داکر و هسته WSL برای سیستم‌های بدون اینترنت مقصد
+# جمع‌آوری خودکار پکیج‌های آفلاین داکر و هسته WSL بدون نیاز به پیش‌نیاز
 OFFLINE_DEPS_DIR="$ABS_OUT/offline-deps"
 mkdir -p "$OFFLINE_DEPS_DIR"
 
-echo "[export] Downloading offline DEB packages for Docker (if internet is available)..."
+echo "[export] Downloading offline DEB packages for Docker..."
 apt-get update -y >/dev/null 2>&1 || true
 apt-get download docker.io docker-compose-v2 containerd.io docker-buildx 2>/dev/null || true
 if compgen -G "*.deb" > /dev/null; then
@@ -82,7 +82,7 @@ fi
 if [ -f "$OFFLINE_DEPS_DIR/wsl_update_x64.msi" ]; then
   echo "  [ok] wsl_update_x64.msi downloaded successfully."
 else
-  echo "  [warn] Could not download WSL MSI package automatically (internet required)."
+  echo "  [warn] Could not download WSL MSI package automatically."
 fi
 
 if [ -d "$PROJECT_ROOT/prebuilt" ]; then
@@ -107,14 +107,14 @@ echo "  [ok] project source code -> project-src.tar.gz"
 mkdir -p "$ABS_OUT/scripts"
 cp -r "$PROJECT_ROOT/scripts/"* "$ABS_OUT/scripts/"
 
-# ساخت خودکار فایل setup-offline.bat پیشرفته در ریشه پوشه خروجی
-echo "[export] Generating ultimate setup-offline.bat..."
+# ساخت خودکار فایل setup-offline.bat با قابلیت پرسش مسیر از کاربر
+echo "[export] Generating setup-offline.bat with custom destination prompt..."
 cat << 'EOF' > "$ABS_OUT/setup-offline.bat"
 @echo off
-TITLE DevBox Lite - Ultimate Offline Setup & Restore
+TITLE DevBox Lite - Offline Setup & Restore
 color 0A
 echo ===================================================
-echo   DevBox Lite - Ultimate Offline Setup
+echo   DevBox Lite - Offline Setup
 echo ===================================================
 echo.
 
@@ -122,15 +122,20 @@ echo.
 NET SESSION >nul 2>&1
 if %errorLevel% neq 0 (
     echo [ERROR] Please right-click this script and choose "Run as administrator"!
-    echo Administrator rights are required to install WSL features and packages.
     echo.
     pause
     exit /b
 )
 
+:: 2. Ask user for project destination path
+echo.
+set /p DEST_PATH="Enter destination path for project setup [Default: C:\devbox-project]: "
+if "%DEST_PATH%"=="" set DEST_PATH=C:\devbox-project
+
+echo.
 echo [1/5] Enabling Windows Subsystem for Linux and Virtual Machine Platform...
 dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart >nul 2>&1
-dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart >nul 2>&1
+dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart >nol 2>&1
 
 echo [2/5] Installing WSL2 Linux Kernel update (if package exists)...
 if exist "%~dp0offline-deps\wsl_update_x64.msi" (
@@ -141,8 +146,8 @@ if exist "%~dp0offline-deps\wsl_update_x64.msi" (
 )
 
 echo.
-echo [3/5] Restoring project files, Docker image, and volumes...
-powershell -ExecutionPolicy Bypass -File "%~dp0scripts\import.ps1" -InputPath "%~dp0"
+echo [3/5] Restoring project files, Docker image, and volumes to: %DEST_PATH%...
+powershell -ExecutionPolicy Bypass -File "%~dp0scripts\import.ps1" -InputPath "%~dp0" -TargetProj "%DEST_PATH%"
 
 echo.
 echo [4/5] Preparing offline Docker installation guide for WSL...
@@ -163,7 +168,7 @@ if exist "%~dp0offline-deps\*.deb" (
 echo.
 echo [5/5] Setup process finished successfully!
 echo ===================================================
-echo Your offline environment is fully restored.
+echo Your offline environment is fully restored at: %DEST_PATH%
 echo ===================================================
 pause
 EOF
