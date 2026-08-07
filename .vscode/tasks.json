@@ -157,5 +157,30 @@
             "group": "none",
             "presentation": { "reveal": "always", "panel": "new" }
         }
+        ,
+        {
+            "label": "DevBox: Export Image",
+            "type": "shell",
+            "command": "bash",
+            "args": ["-lc", "./scripts/export-image"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-NoProfile", "-Command", "./scripts/export-image"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "shared" }
+        },
+        {
+            "label": "DevBox: Import Image",
+            "type": "shell",
+            "command": "bash",
+            "args": ["-lc", "./scripts/import-image"],
+            "windows": {
+                "command": "pwsh",
+                "args": ["-NoProfile", "-Command", "./scripts/import-image"]
+            },
+            "group": "none",
+            "presentation": { "reveal": "always", "panel": "shared" }
+        }
     ]
 }
