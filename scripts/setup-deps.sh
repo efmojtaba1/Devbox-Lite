@@ -364,6 +364,18 @@ EOF
     fuser -k 5173/tcp >/dev/null 2>&1 || true
 
     echo "  [build] Compiling production assets with Vite..."
+    if [ "$has_internet" = "false" ]; then
+        find "$project_dir/resources" \
+            -type f \
+            \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
+            -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g' {} + \
+            2>/dev/null || true
+        find "$project_dir/resources" \
+            -type f \
+            \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
+            -exec sed -i '/fonts\.bunny\.net/d' {} + \
+            2>/dev/null || true
+    fi
     (cd "$project_dir" && pnpm build > /dev/null 2>&1 || npm run build > /dev/null 2>&1) || true
     echo "  [ok] Assets compiled successfully!"
 }
