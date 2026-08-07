@@ -57,11 +57,10 @@ for v in "${VOLUMES[@]}"; do
   fi
 done
 
-# جمع‌آوری خودکار پکیج‌های آفلاین داکر با بررسی دسترسی روت و آپدیت مخازن
 OFFLINE_DEPS_DIR="$ABS_OUT/offline-deps"
 mkdir -p "$OFFLINE_DEPS_DIR"
 
-echo "[export] Updating package lists and downloading offline DEB packages for Docker..."
+echo "[export] Downloading offline packages for Docker..."
 if [ "$EUID" -ne 0 ]; then
   SUDO="sudo"
 else
@@ -69,13 +68,13 @@ else
 fi
 
 $SUDO apt-get update -y >/dev/null 2>&1 || true
-$SUDO apt-get download docker.io docker-compose-v2 containerd.io docker-buildx 2>/dev/null || true
+$SUDO apt-get download docker.io docker-compose containerd runc 2>/dev/null || true
 
 if compgen -G "*.deb" > /dev/null; then
   mv *.deb "$OFFLINE_DEPS_DIR/"
   echo "  [ok] Offline DEB packages saved successfully."
 else
-  echo "  [warn] Could not download offline debs automatically. (Check internet or repository access)."
+  echo "  [warn] Skipping DEB download (Docker Desktop can be used on target)."
 fi
 
 echo "[export] Downloading WSL2 Linux Kernel update (.msi) from Microsoft..."
@@ -114,8 +113,7 @@ echo "  [ok] project source code -> project-src.tar.gz"
 mkdir -p "$ABS_OUT/scripts"
 cp -r "$PROJECT_ROOT/scripts/"* "$ABS_OUT/scripts/"
 
-# ساخت خودکار فایل setup-offline.bat با پیش‌فرض درایو D
-echo "[export] Generating setup-offline.bat with D: drive default path..."
+echo "[export] Generating setup-offline.bat..."
 cat << 'EOF' > "$ABS_OUT/setup-offline.bat"
 @echo off
 TITLE DevBox Lite - Offline Setup & Restore
@@ -125,7 +123,6 @@ echo   DevBox Lite - Offline Setup
 echo ===================================================
 echo.
 
-:: 1. Check Administrator Rights
 NET SESSION >nul 2>&1
 if %errorLevel% neq 0 (
     echo [ERROR] Please right-click this script and choose "Run as administrator"!
@@ -134,7 +131,6 @@ if %errorLevel% neq 0 (
     exit /b
 )
 
-:: 2. Ask user for project destination path (Default: D:\devbox-project)
 echo.
 set /p DEST_PATH="Enter destination path for project setup [Default: D:\devbox-project]: "
 if "%DEST_PATH%"=="" set DEST_PATH=D:\devbox-project
@@ -149,7 +145,7 @@ if exist "%~dp0offline-deps\wsl_update_x64.msi" (
     echo   Found WSL kernel installer. Installing silently...
     msiexec /i "%~dp0offline-deps\wsl_update_x64.msi" /quiet /norestart
 ) else (
-    echo   [INFO] wsl_update_x64.msi not found in offline-deps (Skipping kernel install).
+    echo   [INFO] wsl_update_x64.msi not found in offline-deps.
 )
 
 echo.
@@ -169,7 +165,7 @@ if exist "%~dp0offline-deps\*.deb" (
     echo      sudo dpkg -i *.deb
     echo ===================================================
 ) else (
-    echo   [INFO] No Docker .deb packages found in offline-deps. (Assuming Docker Desktop is used).
+    echo   [INFO] No Docker .deb packages found. (Assuming Docker Desktop is used).
 )
 
 echo.
@@ -180,11 +176,10 @@ echo ===================================================
 pause
 EOF
 
-cat > "$ABS_OUT/manifest.txt" <<EOF
+cat <<EOF > "$ABS_OUT/manifest.txt"
 image:$IMAGE_NAME
 volumes:${VOLUMES[*]}
 generated_at:$(date --utc +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
 echo "[done] Full self-contained package exported successfully to: $ABS_OUT"
-```[cite: 1]
