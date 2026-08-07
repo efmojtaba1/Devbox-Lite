@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Interactive import: load Docker image and restore volumes from a package
-# If arguments provided, use them; otherwise prompt the user.
+DEFAULT_INPUT="/mnt/d/devbox-image"
+DEFAULT_COMPOSE="docker/compose/docker-compose.yml"
 
-if [ -n "${1:-}" ]; then
-  INPUT="$1"
+echo "========================================="
+echo " Import Configuration"
+echo "========================================="
+echo "1) Use default path/directory ($DEFAULT_INPUT)"
+echo "2) Enter custom path or archive (.tar.gz)"
+read -e -p "Choose an option [1/2] (default: 1): " choice
+choice="${choice:-1}"
+
+if [ "$choice" == "2" ]; then
+  echo "  [Tip] Example format: /mnt/d/devbox-image or /mnt/d/backup.tar.gz"
+  read -e -p "  Enter path: " custom_input
+  INPUT="${custom_input:-$DEFAULT_INPUT}"
 else
-  read -e -p "Package directory or tar.gz to import: " INPUT
-  if [ -z "$INPUT" ]; then
-    echo "No input provided. Aborting." >&2
-    exit 1
-  fi
+  INPUT="$DEFAULT_INPUT"
 fi
 
-if [ -n "${2:-}" ]; then
-  COMPOSE_FILE="$2"
-else
-  read -e -p "Compose file to start after import [docker/compose/docker-compose.yml]: " COMPOSE_FILE
-  COMPOSE_FILE="${COMPOSE_FILE:-docker/compose/docker-compose.yml}"
-fi
+COMPOSE_FILE="$DEFAULT_COMPOSE"
 
 if [ -f "$INPUT" ] && ([[ "$INPUT" == *.tar.gz ]] || [[ "$INPUT" == *.tgz ]]); then
   TMPDIR="$(mktemp -d)"
@@ -29,7 +30,7 @@ if [ -f "$INPUT" ] && ([[ "$INPUT" == *.tar.gz ]] || [[ "$INPUT" == *.tgz ]]); t
 elif [ -d "$INPUT" ]; then
   WORKDIR="$(cd "$INPUT" && pwd)"
 else
-  echo "Usage: $0 <package-dir-or-tar.gz> [compose-file]" >&2
+  echo "Error: Path or archive not found: $INPUT" >&2
   exit 1
 fi
 
@@ -60,4 +61,4 @@ else
   echo "[warn] Compose file $COMPOSE_FILE not found. Start containers manually." >&2
 fi
 
-echo "[done] Import finished. You can now run 'docker exec -it devbox-lite bash' and verify /example-data and /prebuilt contents."
+echo "[done] Import finished."

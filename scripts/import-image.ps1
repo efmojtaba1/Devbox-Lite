@@ -4,13 +4,21 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$DefaultInput = "D:\devbox-image"
 
-if (-not $InputPath) {
-    $InputPath = Read-Host "Package directory or tar.gz to import"
-    if (-not $InputPath) {
-        Write-Error "No input provided. Aborting."
-        exit 1
-    }
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host " Import Configuration" -ForegroundColor Cyan
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host "1) Use default path/directory ($DefaultInput)" -ForegroundColor White
+Write-Host "2) Enter custom path or archive (.tar.gz)" -ForegroundColor White
+$choice = Read-Host "Choose an option [1/2] (default: 1)"
+
+if ($choice -eq "2") {
+    Write-Host "  [Tip] Example format: D:\devbox-image or D:\backup.tar.gz" -ForegroundColor Yellow
+    $customInput = Read-Host "  Enter path"
+    $InputPath = if ($customInput) { $customInput } else { $DefaultInput }
+} else {
+    $InputPath = $DefaultInput
 }
 
 $WorkDir = ""
@@ -25,7 +33,7 @@ if ((Test-Path $InputPath) -and ($InputPath -like "*.tar.gz" -or $InputPath -lik
 } elseif (Test-Path $InputPath -PathType Container) {
     $WorkDir = (Get-Item $InputPath).FullName
 } else {
-    Write-Error "Usage: import-image <package-dir-or-tar.gz> [compose-file]"
+    Write-Error "Error: Path or archive not found: $InputPath"
     exit 1
 }
 
