@@ -52,3 +52,10 @@ Test-Result() {
         exit 1
     fi
 }
+
+is_online() {
+    local timeout=3
+
+    curl -fsS --connect-timeout "$timeout" https://registry.npmjs.org/ >/dev/null 2>&1 \
+    && curl -fsS --connect-timeout "$timeout" https://repo.packagist.org/ >/dev/null 2>&1
+}
