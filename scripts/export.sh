@@ -68,7 +68,13 @@ fi
 
 echo "[export] Downloading offline DEB packages for Docker via apt cache..."
 $SUDO apt-get update -y >/dev/null 2>&1 || true
-$SUDO apt-get install --download-only -y docker.io containerd runc 2>/dev/null || true
+
+if ! compgen -G "/var/cache/apt/archives/docker.io*.deb" > /dev/null; then
+  echo "  [info] Docker packages not found in cache. Forcing download..."
+  $SUDO apt-get install --reinstall --download-only -y docker.io containerd runc 2>/dev/null || true
+else
+  $SUDO apt-get install --download-only -y docker.io containerd runc 2>/dev/null || true
+fi
 
 if [ -d "/var/cache/apt/archives" ]; then
   $SUDO find /var/cache/apt/archives -name "*.deb" -exec cp {} "$OFFLINE_DEPS_DIR/" \; 2>/dev/null || true
@@ -188,3 +194,4 @@ generated_at:$(date --utc +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
 echo "[done] Full self-contained package exported successfully to: $ABS_OUT"
+```[cite: 1]
