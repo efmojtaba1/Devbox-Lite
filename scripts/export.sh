@@ -187,11 +187,12 @@ echo ===================================================
 pause
 EOF
 
-cat <<EOF > "$ABS_OUT/manifest.txt"
+echo "[export] Generating manifest.txt..."
+CURRENT_DATE="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+cat << EOF > "$ABS_OUT/manifest.txt"
 image:$IMAGE_NAME
 volumes:${VOLUMES[*]}
-generated_at:$(date --utc +%Y-%m-%dT%H:%M:%SZ)
+generated_at:$CURRENT_DATE
 EOF
 
 echo "[done] Full self-contained package exported successfully to: $ABS_OUT"
-```[cite: 1]
