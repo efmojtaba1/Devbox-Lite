@@ -27,7 +27,7 @@ read -e -p "Choose an option [1/2] (default: 1): " img_choice
 img_choice="${img_choice:-1}"
 
 if [ "$img_choice" == "2" ]; then
-  read -e -p "  Enter image name to save: " custom_image
+  read -e -p "  Enter custom image name to save: " custom_image
   IMAGE_NAME="${custom_image:-$DEFAULT_IMAGE}"
 else
   IMAGE_NAME="$DEFAULT_IMAGE"
@@ -87,18 +87,41 @@ else
   echo "  [warn] No DEB packages found in cache."
 fi
 
-echo "[export] Downloading WSL2 Linux Kernel update (.msi) from Microsoft..."
+echo "[export] Checking and downloading WSL2 Linux Kernel update (.msi)..."
 WSL_MSI_URL="https://wslstorestorage.blob.core.windows.net/wslblob/wsl_update_x64.msi"
-if command -v curl >/dev/null 2>&1; then
-  curl -L -s -o "$OFFLINE_DEPS_DIR/wsl_update_x64.msi" "$WSL_MSI_URL" || true
-elif command -v wget >/dev/null 2>&1; then
-  wget -q -O "$OFFLINE_DEPS_DIR/wsl_update_x64.msi" "$WSL_MSI_URL" || true
+MSI_OUTPUT="$OFFLINE_DEPS_DIR/wsl_update_x64.msi"
+DOWNLOAD_SUCCESS=false
+
+# 1. Check if file already exists in destination directory
+if [ -f "$MSI_OUTPUT" ] && [ -s "$MSI_OUTPUT" ]; then
+  echo "  [ok] wsl_update_x64.msi already exists in destination folder. Skipping download."
+  DOWNLOAD_SUCCESS=true
+else
+  # 2. Try downloading with curl
+  if [ "$DOWNLOAD_SUCCESS" = false ] && command -v curl >/dev/null 2>&1; then
+    echo "  [info] Attempting download using curl..."
+    if curl -L -s -o "$MSI_OUTPUT" "$WSL_MSI_URL"; then
+      if [ -f "$MSI_OUTPUT" ] && [ -s "$MSI_OUTPUT" ]; then
+        DOWNLOAD_SUCCESS=true
+      fi
+    fi
+  fi
+
+  # 3. Fallback to wget if curl failed
+  if [ "$DOWNLOAD_SUCCESS" = false ] && command -v wget >/dev/null 2>&1; then
+    echo "  [info] Curl failed. Falling back to wget..."
+    if wget -q -O "$MSI_OUTPUT" "$WSL_MSI_URL"; then
+      if [ -f "$MSI_OUTPUT" ] && [ -s "$MSI_OUTPUT" ]; then
+        DOWNLOAD_SUCCESS=true
+      fi
+    fi
+  fi
 fi
 
-if [ -f "$OFFLINE_DEPS_DIR/wsl_update_x64.msi" ]; then
-  echo "  [ok] wsl_update_x64.msi downloaded successfully."
+if [ "$DOWNLOAD_SUCCESS" = true ]; then
+  echo "  [ok] wsl_update_x64.msi is ready."
 else
-  echo "  [warn] Could not download WSL MSI package automatically."
+  echo "  [warn] Could not obtain WSL MSI package automatically."
 fi
 
 if [ -d "$PROJECT_ROOT/prebuilt" ]; then
