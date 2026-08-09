@@ -49,7 +49,8 @@ docker save -o "$ABS_OUT/image.tar" "$IMAGE_NAME"
 echo "[export] Exporting Docker volumes..."
 for v in "${VOLUMES[@]}"; do
   echo "[export] Volume: $v"
-docker run --rm -v "${v}":/volume -v "$ABS_OUT":/backup alpine tar czf /backup/vol-${v}.tar.gz -C /volume .  if [ -f "$ABS_OUT/vol-${v}.tar.gz" ]; then
+  docker run --rm -v "${v}":/volume -v "$ABS_OUT":/backup alpine tar czf /backup/vol-${v}.tar.gz -C /volume .
+  if [ -f "$ABS_OUT/vol-${v}.tar.gz" ]; then
     echo "  [ok] $v -> vol-${v}.tar.gz"
   else
     echo "  [warn] vol-${v}.tar.gz not created (volume may be empty)"
@@ -91,12 +92,10 @@ WSL_MSI_URL="https://wslstorestorage.blob.core.windows.net/wslblob/wsl_update_x6
 MSI_OUTPUT="$OFFLINE_DEPS_DIR/wsl_update_x64.msi"
 DOWNLOAD_SUCCESS=false
 
-# 1. Check if file already exists in destination directory
 if [ -f "$MSI_OUTPUT" ] && [ -s "$MSI_OUTPUT" ]; then
   echo "  [ok] wsl_update_x64.msi already exists in destination folder. Skipping download."
   DOWNLOAD_SUCCESS=true
 else
-  # 2. Try downloading with curl
   if [ "$DOWNLOAD_SUCCESS" = false ] && command -v curl >/dev/null 2>&1; then
     echo "  [info] Attempting download using curl..."
     if curl -L -s -o "$MSI_OUTPUT" "$WSL_MSI_URL"; then
@@ -106,7 +105,6 @@ else
     fi
   fi
 
-  # 3. Fallback to wget if curl failed
   if [ "$DOWNLOAD_SUCCESS" = false ] && command -v wget >/dev/null 2>&1; then
     echo "  [info] Curl failed. Falling back to wget..."
     if wget -q -O "$MSI_OUTPUT" "$WSL_MSI_URL"; then
