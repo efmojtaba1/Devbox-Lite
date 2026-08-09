@@ -240,7 +240,6 @@ git config --global --add safe.directory '*' 2>/dev/null || true
 example_dir="$EXAMPLE_DATA/$TEMPLATE"
 IS_OFFLINE=false
 
-# اصلاح شرط منطقی برای جلوگیری از چاپ خطای [offline] در حالت آنلاین
 if [ -d "$example_dir" ] && { [ "$HAS_INTERNET" = "false" ] || [ "$TEMPLATE" = "laravel" ]; }; then
     echo "[source] Using cached baseline template ($example_dir)..."
     mkdir -p "$project_dir"
@@ -383,42 +382,41 @@ window.axios = axios;
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
 
-    # تنظیم بسته‌ها بدون پنهان‌سازی کورکورانه خطاها (جلوگیری از خطای Namespace نامعتبر)
     if [ "$HAS_INTERNET" = "true" ] && [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Configuring $STARTER_KIT..."
         case "$STARTER_KIT" in
             "Breeze + Blade")
                 (
                     cd "$project_dir"
-                    composer require laravel/breeze --dev --prefer-offline --no-interaction
+                    composer require laravel/breeze --dev --no-interaction
                     php artisan breeze:install blade --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
             "Breeze + React")
                 (
                     cd "$project_dir"
-                    composer require laravel/breeze --dev --prefer-offline --no-interaction
+                    composer require laravel/breeze --dev --no-interaction
                     php artisan breeze:install react --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
             "Breeze + Vue")
                 (
                     cd "$project_dir"
-                    composer require laravel/breeze --dev --prefer-offline --no-interaction
+                    composer require laravel/breeze --dev --no-interaction
                     php artisan breeze:install vue --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
             "Jetstream + Livewire")
                 (
                     cd "$project_dir"
-                    composer require laravel/jetstream --prefer-offline --no-interaction
+                    composer require laravel/jetstream --no-interaction
                     php artisan jetstream:install livewire --no-interaction
                 )
                 ;;
             "Jetstream + Inertia")
                 (
                     cd "$project_dir"
-                    composer require laravel/jetstream --prefer-offline --no-interaction
+                    composer require laravel/jetstream --no-interaction
                     php artisan jetstream:install inertia --no-interaction
                 )
                 ;;
@@ -428,7 +426,7 @@ EOF
     if [ "$HAS_INTERNET" = "true" ] && [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
-            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --prefer-offline --no-interaction
+            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --no-interaction
             ./vendor/bin/pest --init || php artisan pest:install --no-interaction || true
         )
     fi
@@ -437,12 +435,11 @@ EOF
         echo "  [api] Setting up API routes..."
         (
             cd "$project_dir"
-            composer require laravel/sanctum --prefer-offline --no-interaction
+            composer require laravel/sanctum --no-interaction
             php artisan install:api --no-interaction || true
         )
     fi
 
-    # اجرای امن و Idempotent مهاجرت‌ها برای جلوگیری از خطای duplicate table
     if [ "$DB_CHOICE" != "None" ] && [ "$HAS_INTERNET" = "true" ]; then
         echo "  [db] Running initial migrations..."
         (
