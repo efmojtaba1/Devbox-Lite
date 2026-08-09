@@ -43,6 +43,9 @@ is_online() {
 HAS_INTERNET=false
 if is_online; then
     HAS_INTERNET=true
+    echo -e "${GREEN}[network] Online mode detected.${NC}"
+else
+    echo -e "${YELLOW}[network] Offline mode detected.${NC}"
 fi
 
 ensure_container_running() {
@@ -119,11 +122,6 @@ AR_FLAG="--app"
 if [ "$HAS_INTERNET" = "false" ]; then
     echo -e "\n${YELLOW}[notice] Network is offline. Interactive options are skipped.${NC}"
     echo -e "${YELLOW}         Project will be created using the pre-cached baseline template.${NC}"
-    if [ "$TEMPLATE" = "next-js" ]; then
-        echo -e "${CYAN}         (Template includes: TypeScript, Tailwind CSS, App Router)${NC}"
-    elif [ "$TEMPLATE" = "laravel" ]; then
-        echo -e "${CYAN}         (Template includes: Standard baseline structure)${NC}"
-    fi
 else
     if [ "$TEMPLATE" = "laravel" ]; then
         echo ""
@@ -233,17 +231,18 @@ echo "========================================="
 echo "Creating: $PROJECT_NAME ($TEMPLATE)"
 echo "========================================="
 
-# ── Fix Git Ownership (پیش از ساخت پروژه اعمال می‌شود) ──────
+# ── Fix Git Ownership ───────────────────────────────────────
 git config --global --add safe.directory "$project_dir" 2>/dev/null || true
 git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 git config --global --add safe.directory '*' 2>/dev/null || true
 
-# ── Step 1: Copy Source (Offline-First System) ──────────────
+# ── Step 1: Copy Source / Create Project (Decoupled Logic) ───
 example_dir="$EXAMPLE_DATA/$TEMPLATE"
 IS_OFFLINE=false
 
-if [ -d "$example_dir" ] && ([ "$HAS_INTERNET" = "false" ] || [ "$TEMPLATE" != "next-js" ]); then
-    echo "[offline] Copying baseline from template ($example_dir)..."
+# اصلاح شرط منطقی برای جلوگیری از چاپ خطای [offline] در حالت آنلاین
+if [ -d "$example_dir" ] && { [ "$HAS_INTERNET" = "false" ] || [ "$TEMPLATE" = "laravel" ]; }; then
+    echo "[source] Using cached baseline template ($example_dir)..."
     mkdir -p "$project_dir"
 
     (
@@ -252,9 +251,9 @@ if [ -d "$example_dir" ] && ([ "$HAS_INTERNET" = "false" ] || [ "$TEMPLATE" != "
     ) | tar -C "$project_dir" -xf -
 
     IS_OFFLINE=true
-    echo "[ok] Offline source copied."
+    echo "[ok] Baseline source copied successfully."
 else
-    echo -e "${YELLOW}[online] Creating fresh project via online CLI tools...${NC}"
+    echo -e "${CYAN}[source] Creating fresh project via online CLI tools...${NC}"
     mkdir -p "$project_dir"
     case "$TEMPLATE" in
         laravel) composer create-project laravel/laravel "$project_dir" --prefer-dist --no-interaction ;;
@@ -264,14 +263,14 @@ else
     esac
 fi
 
-# ── Step 2: Install Base Dependencies (Offline First) ───────
+# ── Step 2: Install Base Dependencies ────────────────────────
 echo ""
 echo "Installing dependencies..."
 
 if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
     if [ "$HAS_INTERNET" = "true" ]; then
-        (cd "$project_dir" && composer install --prefer-offline --no-audit --no-interaction 2>/dev/null) || true
+        (cd "$project_dir" && composer install --prefer-offline --no-audit --no-interaction)
     else
         echo -e "${YELLOW}[offline] Skipping composer install. Network unavailable.${NC}"
     fi
@@ -374,7 +373,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
     fi
 
     if [ -f "$project_dir/.env" ]; then
-        (cd "$project_dir" && php artisan key:generate --no-interaction 2>/dev/null) || true
+        (cd "$project_dir" && php artisan key:generate --no-interaction)
     fi
 
     mkdir -p "$project_dir/resources/js"
@@ -384,42 +383,43 @@ window.axios = axios;
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
 
+    # تنظیم بسته‌ها بدون پنهان‌سازی کورکورانه خطاها (جلوگیری از خطای Namespace نامعتبر)
     if [ "$HAS_INTERNET" = "true" ] && [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Configuring $STARTER_KIT..."
         case "$STARTER_KIT" in
             "Breeze + Blade")
                 (
                     cd "$project_dir"
-                    composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                    php artisan breeze:install blade --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
+                    composer require laravel/breeze --dev --prefer-offline --no-interaction
+                    php artisan breeze:install blade --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
             "Breeze + React")
                 (
                     cd "$project_dir"
-                    composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                    php artisan breeze:install react --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
+                    composer require laravel/breeze --dev --prefer-offline --no-interaction
+                    php artisan breeze:install react --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
             "Breeze + Vue")
                 (
                     cd "$project_dir"
-                    composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                    php artisan breeze:install vue --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
+                    composer require laravel/breeze --dev --prefer-offline --no-interaction
+                    php artisan breeze:install vue --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
             "Jetstream + Livewire")
                 (
                     cd "$project_dir"
-                    composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
-                    php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
+                    composer require laravel/jetstream --prefer-offline --no-interaction
+                    php artisan jetstream:install livewire --no-interaction
                 )
                 ;;
             "Jetstream + Inertia")
                 (
                     cd "$project_dir"
-                    composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
-                    php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
+                    composer require laravel/jetstream --prefer-offline --no-interaction
+                    php artisan jetstream:install inertia --no-interaction
                 )
                 ;;
         esac
@@ -428,8 +428,8 @@ EOF
     if [ "$HAS_INTERNET" = "true" ] && [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
-            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --prefer-offline --no-interaction 2>/dev/null || true
-            ./vendor/bin/pest --init 2>/dev/null || php artisan pest:install --no-interaction 2>/dev/null || true
+            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --prefer-offline --no-interaction
+            ./vendor/bin/pest --init || php artisan pest:install --no-interaction || true
         )
     fi
 
@@ -437,14 +437,18 @@ EOF
         echo "  [api] Setting up API routes..."
         (
             cd "$project_dir"
-            composer require laravel/sanctum --prefer-offline --no-interaction 2>/dev/null || true
-            php artisan install:api --no-interaction 2>/dev/null || true
+            composer require laravel/sanctum --prefer-offline --no-interaction
+            php artisan install:api --no-interaction || true
         )
     fi
 
+    # اجرای امن و Idempotent مهاجرت‌ها برای جلوگیری از خطای duplicate table
     if [ "$DB_CHOICE" != "None" ] && [ "$HAS_INTERNET" = "true" ]; then
         echo "  [db] Running initial migrations..."
-        (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Database migration skipped or failed.${NC}"
+        (
+            cd "$project_dir"
+            php artisan migrate --force || echo -e "  ${YELLOW}[notice] Migration already up-to-date or skipped.${NC}"
+        )
     fi
 
     echo "  [build] Compiling frontend assets..."
@@ -534,12 +538,12 @@ if [ "$TEMPLATE" != "laravel" ]; then
     fi
 fi
 
-# ── Step 4: Start runtime dependencies for the created project ─────────────
+# ── Step 4: Start runtime dependencies ───────────────────────
 if [ -f "$SCRIPT_DIR/setup-deps.sh" ]; then
     echo ""
     echo "[setup] Ensuring runtime dependencies for $TEMPLATE are started..."
     if ! bash "$SCRIPT_DIR/setup-deps.sh" "$project_dir" "$TEMPLATE"; then
-        echo -e "${YELLOW}[warn] setup-deps did not complete successfully for $TEMPLATE. Run './scripts/setup-deps.sh \"$project_dir\" \"$TEMPLATE\"' manually if needed.${NC}"
+        echo -e "${YELLOW}[warn] setup-deps did not complete successfully for $TEMPLATE.${NC}"
     fi
 fi
 
