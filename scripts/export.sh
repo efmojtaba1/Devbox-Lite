@@ -49,7 +49,7 @@ docker save -o "$ABS_OUT/image.tar" "$IMAGE_NAME"
 echo "[export] Exporting Docker volumes..."
 for v in "${VOLUMES[@]}"; do
   echo "[export] Volume: $v"
-  docker run --rm -v "${v}":/volume -v "$ABS_OUT":/backup alpine tar czf /backup/vol-${v}.tar.gz -C /volume .
+  docker run --rm -v "${v}":/volume -v "$ABS_OUT":/backup alpine sh -c "cd /volume && tar czf /backup/vol-${v}.tar.gz ."
   if [ -f "$ABS_OUT/vol-${v}.tar.gz" ]; then
     echo "  [ok] $v -> vol-${v}.tar.gz"
   else
