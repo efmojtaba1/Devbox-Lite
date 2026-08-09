@@ -19,7 +19,6 @@ fi
 
 echo "1) Use default location ($DEFAULT_OUT_DIR)"
 echo "2) Enter custom location"
-
 read -e -p "Choose an option [1/2] (default: 1): " choice
 choice="${choice:-1}"
 
@@ -37,7 +36,6 @@ ABS_OUT="$(cd "$OUT_DIR" && pwd)"
 echo ""
 echo "1) Use default image ($DEFAULT_IMAGE)"
 echo "2) Enter custom image name"
-
 read -e -p "Choose an option [1/2] (default: 1): " img_choice
 img_choice="${img_choice:-1}"
 
@@ -137,10 +135,7 @@ if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
 fi
 
 rm -f "$ABS_OUT/image.tar"
-
-docker save \
-  -o "$ABS_OUT/image.tar" \
-  "$IMAGE_NAME"
+docker save -o "$ABS_OUT/image.tar" "$IMAGE_NAME"
 
 if [ ! -s "$ABS_OUT/image.tar" ]; then
   echo "[error] Docker image archive was not created correctly."
@@ -198,11 +193,85 @@ for logical_volume in "${VOLUMES[@]}"; do
 
 done
 
+OFFLINE_DEPS_DIR="$ABS_OUT/offline-deps"
+mkdir -p "$OFFLINE_DEPS_DIR"
+
+if [ "$EUID" -ne 0 ]; then
+  SUDO="sudo"
+else
+  SUDO=""
+fi
+
+echo ""
+echo "[export] Downloading offline DEB packages for Docker via apt cache..."
+$SUDO apt-get update -y >/dev/null 2>&1 || true
+
+if ! compgen -G "/var/cache/apt/archives/docker.io*.deb" > /dev/null; then
+  echo "  [info] Docker packages not found in cache. Forcing download..."
+  $SUDO apt-get install --reinstall --download-only -y docker.io containerd runc 2>/dev/null || true
+else
+  $SUDO apt-get install --download-only -y docker.io containerd runc 2>/dev/null || true
+fi
+
+if [ -d "/var/cache/apt/archives" ]; then
+  $SUDO find /var/cache/apt/archives -name "*.deb" -exec cp {} "$OFFLINE_DEPS_DIR/" \; 2>/dev/null || true
+  $SUDO chown -R $(id -u):$(id -g) "$OFFLINE_DEPS_DIR" 2>/dev/null || true
+fi
+
+if compgen -G "$OFFLINE_DEPS_DIR/*.deb" > /dev/null; then
+  echo "  [ok] Offline DEB packages downloaded and verified successfully."
+else
+  echo "  [warn] No DEB packages found in cache."
+fi
+
+echo ""
+echo "[export] Checking and downloading WSL2 Linux Kernel update (.msi)..."
+WSL_MSI_URL="https://wslstorestorage.blob.core.windows.net/wslblob/wsl_update_x64.msi"
+MSI_OUTPUT="$OFFLINE_DEPS_DIR/wsl_update_x64.msi"
+DOWNLOAD_SUCCESS=false
+
+if [ -f "$MSI_OUTPUT" ] && [ -s "$MSI_OUTPUT" ]; then
+  echo "  [ok] wsl_update_x64.msi already exists in destination folder. Skipping download."
+  DOWNLOAD_SUCCESS=true
+else
+  if [ "$DOWNLOAD_SUCCESS" = false ] && command -v curl >/dev/null 2>&1; then
+    echo "  [info] Attempting download using curl..."
+    if curl -L -s -o "$MSI_OUTPUT" "$WSL_MSI_URL"; then
+      if [ -f "$MSI_OUTPUT" ] && [ -s "$MSI_OUTPUT" ]; then
+        DOWNLOAD_SUCCESS=true
+      fi
+    fi
+  fi
+
+  if [ "$DOWNLOAD_SUCCESS" = false ] && command -v wget >/dev/null 2>&1; then
+    echo "  [info] Curl failed. Falling back to wget..."
+    if wget -q -O "$MSI_OUTPUT" "$WSL_MSI_URL"; then
+      if [ -f "$MSI_OUTPUT" ] && [ -s "$MSI_OUTPUT" ]; then
+        DOWNLOAD_SUCCESS=true
+      fi
+    fi
+  fi
+fi
+
+if [ "$DOWNLOAD_SUCCESS" = true ]; then
+  echo "  [ok] wsl_update_x64.msi is ready."
+else
+  echo "  [warn] Could not obtain WSL MSI package automatically."
+fi
+
+if [ -d "$PROJECT_ROOT/prebuilt" ]; then
+  echo ""
+  echo "[export] Packaging prebuilt directory..."
+  tar czf "$ABS_OUT/prebuilt.tar.gz" -C "$PROJECT_ROOT" prebuilt
+  echo "  [ok] prebuilt -> prebuilt.tar.gz"
+else
+  echo ""
+  echo "[warn] prebuilt directory not found in project root; skipping"
+fi
+
 echo ""
 echo "[export] Packaging project source code..."
-
 rm -f "$ABS_OUT/project-src.tar.gz"
-
 tar \
   --exclude='.git' \
   --exclude='node_modules' \
@@ -223,14 +292,80 @@ cp -r "$PROJECT_ROOT/scripts/"* "$ABS_OUT/scripts/"
 echo "  [ok] project scripts copied."
 
 echo ""
-echo "[export] Generating manifest.txt..."
+echo "[export] Generating setup-offline.bat..."
+cat << 'EOF' > "$ABS_OUT/setup-offline.bat"
+@echo off
+TITLE DevBox Lite - Offline Setup & Restore
+color 0A
+echo ===================================================
+echo   DevBox Lite - Offline Setup
+echo ===================================================
+echo.
 
+NET SESSION >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [ERROR] Please right-click this script and choose "Run as administrator"!
+    echo.
+    pause
+    exit /b
+)
+
+echo.
+echo   [Tip] Example format: D:\devbox-project or C:\my-project
+set /p DEST_PATH="Enter destination path for project setup [Default: D:\devbox-project]: "
+if "%DEST_PATH%"=="" set DEST_PATH=D:\devbox-project
+
+echo.
+echo [1/5] Enabling Windows Subsystem for Linux and Virtual Machine Platform...
+dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart >nul 2>&1
+dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart >nul 2>&1
+
+echo [2/5] Installing WSL2 Linux Kernel update (if package exists)...
+if exist "%~dp0offline-deps\wsl_update_x64.msi" (
+    echo   Found WSL kernel installer. Installing silently...
+    msiexec /i "%~dp0offline-deps\wsl_update_x64.msi" /quiet /norestart
+) else (
+    echo   [INFO] wsl_update_x64.msi not found in offline-deps.
+)
+
+echo.
+echo [3/5] Restoring project files, Docker image, and volumes to: %DEST_PATH%...
+powershell -ExecutionPolicy Bypass -File "%~dp0scripts\import.ps1" -InputPath "%~dp0" -TargetProj "%DEST_PATH%"
+
+echo.
+echo [4/5] Preparing offline Docker installation guide for WSL...
+if exist "%~dp0offline-deps\*.deb" (
+    echo ===================================================
+    echo [NOTICE] Offline DEB packages for Docker are ready!
+    echo To complete native Docker setup inside WSL Ubuntu, execute:
+    echo   1. Open WSL Ubuntu terminal.
+    echo   2. Go to your shared folder or mount path:
+    echo      cd /mnt/d/devbox-project/offline-deps
+    echo   3. Install packages offline:
+    echo      sudo dpkg -i *.deb
+    echo ===================================================
+) else (
+    echo   [INFO] No Docker .deb packages found. (Assuming Docker Desktop is used).
+)
+
+echo.
+echo [5/5] Setup process finished successfully!
+echo ===================================================
+echo Your offline environment is fully restored at: %DEST_PATH%
+echo ===================================================
+pause
+EOF
+
+echo "  [ok] setup-offline.bat generated."
+
+echo ""
+echo "[export] Generating manifest.txt..."
 CURRENT_DATE="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
 
 {
   echo "image:$IMAGE_NAME"
   echo "compose_project:$COMPOSE_PROJECT"
-  echo "compose_file:docker-compose.yml"
+  echo "compose_file:docker/compose/docker-compose.yml"
   echo "generated_at:$CURRENT_DATE"
   echo ""
   echo "[volumes]"
@@ -246,5 +381,5 @@ echo "  [ok] manifest.txt generated."
 
 echo ""
 echo "========================================="
-echo "[done] Full self-contained package exported successfully."
+echo "[done] Full self-contained package exported successfully to: $ABS_OUT"
 echo "========================================="
