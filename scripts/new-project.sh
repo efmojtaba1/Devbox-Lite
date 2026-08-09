@@ -35,9 +35,13 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 
 # ── Check Real Network Status (Fix for WSL2/Docker) ──────────
+is_online() {
+    curl -fsI --connect-timeout 3 https://repo.packagist.org >/dev/null 2>&1 \
+    || curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1
+}
+
 HAS_INTERNET=false
-if curl -fsI --connect-timeout 3 https://repo.packagist.org >/dev/null 2>&1 \
-|| curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1; then
+if is_online; then
     HAS_INTERNET=true
 fi
 
@@ -108,70 +112,97 @@ TESTING="Pest"
 DARK_MODE="yes"
 ENABLE_API="no"
 
-if [ "$TEMPLATE" = "laravel" ]; then
-    echo ""
-    echo "┌─ Laravel Options ─────────────────────┐"
-    echo ""
-    echo "Starter kit:"
-    echo "  1) None (bare Laravel)"
-    echo "  2) Breeze + Blade"
-    echo "  3) Breeze + React"
-    echo "  4) Breeze + Vue"
-    echo "  5) Jetstream + Livewire"
-    echo "  6) Jetstream + Inertia"
-    read -rp "  → Choose [1-6]: " SK_CHOICE
+TS_FLAG="--ts"
+TW_FLAG="--tailwind"
+AR_FLAG="--app"
 
-    case "$SK_CHOICE" in
-        1) STARTER_KIT="None" ;;
-        2) STARTER_KIT="Breeze + Blade" ;;
-        3) STARTER_KIT="Breeze + React" ;;
-        4) STARTER_KIT="Breeze + Vue" ;;
-        5) STARTER_KIT="Jetstream + Livewire" ;;
-        6) STARTER_KIT="Jetstream + Inertia" ;;
-        *) STARTER_KIT="None" ;;
-    esac
-
-    echo ""
-    echo "Database:"
-    echo "  1) SQLite (recommended for dev)"
-    echo "  2) MySQL"
-    echo "  3) PostgreSQL"
-    echo "  4) None"
-    read -rp "  → Choose [1-4]: " DB_SEL
-
-    case "$DB_SEL" in
-        1) DB_CHOICE="SQLite" ;;
-        2) DB_CHOICE="MySQL" ;;
-        3) DB_CHOICE="PostgreSQL" ;;
-        4) DB_CHOICE="None" ;;
-        *) DB_CHOICE="SQLite" ;;
-    esac
-
-    echo ""
-    echo "Testing:"
-    echo "  1) Pest (recommended)"
-    echo "  2) PHPUnit"
-    read -rp "  → Choose [1-2]: " TEST_SEL
-    case "$TEST_SEL" in
-        1) TESTING="Pest" ;;
-        2) TESTING="PHPUnit" ;;
-        *) TESTING="Pest" ;;
-    esac
-
-    read -rp "  Dark mode? [Y/n]: " DARK_INPUT
-    if [[ "$DARK_INPUT" =~ ^[Nn]$ ]]; then
-        DARK_MODE="no"
-    else
-        DARK_MODE="yes"
+if [ "$HAS_INTERNET" = "false" ]; then
+    echo -e "\n${YELLOW}[notice] Network is offline. Interactive options are skipped.${NC}"
+    echo -e "${YELLOW}         Project will be created using the pre-cached baseline template.${NC}"
+    if [ "$TEMPLATE" = "next-js" ]; then
+        echo -e "${CYAN}         (Template includes: TypeScript, Tailwind CSS, App Router)${NC}"
+    elif [ "$TEMPLATE" = "laravel" ]; then
+        echo -e "${CYAN}         (Template includes: Standard baseline structure)${NC}"
     fi
+else
+    if [ "$TEMPLATE" = "laravel" ]; then
+        echo ""
+        echo "┌─ Laravel Options ─────────────────────┐"
+        echo ""
+        echo "Starter kit:"
+        echo "  1) None (bare Laravel)"
+        echo "  2) Breeze + Blade"
+        echo "  3) Breeze + React"
+        echo "  4) Breeze + Vue"
+        echo "  5) Jetstream + Livewire"
+        echo "  6) Jetstream + Inertia"
+        read -rp "  → Choose [1-6]: " SK_CHOICE
 
-    read -rp "  API routes? [y/N]: " API_INPUT
-    if [[ "$API_INPUT" =~ ^[Yy]$ ]]; then
-        ENABLE_API="yes"
-    else
-        ENABLE_API="no"
+        case "$SK_CHOICE" in
+            1) STARTER_KIT="None" ;;
+            2) STARTER_KIT="Breeze + Blade" ;;
+            3) STARTER_KIT="Breeze + React" ;;
+            4) STARTER_KIT="Breeze + Vue" ;;
+            5) STARTER_KIT="Jetstream + Livewire" ;;
+            6) STARTER_KIT="Jetstream + Inertia" ;;
+            *) STARTER_KIT="None" ;;
+        esac
+
+        echo ""
+        echo "Database:"
+        echo "  1) SQLite (recommended for dev)"
+        echo "  2) MySQL"
+        echo "  3) PostgreSQL"
+        echo "  4) None"
+        read -rp "  → Choose [1-4]: " DB_SEL
+
+        case "$DB_SEL" in
+            1) DB_CHOICE="SQLite" ;;
+            2) DB_CHOICE="MySQL" ;;
+            3) DB_CHOICE="PostgreSQL" ;;
+            4) DB_CHOICE="None" ;;
+            *) DB_CHOICE="SQLite" ;;
+        esac
+
+        echo ""
+        echo "Testing:"
+        echo "  1) Pest (recommended)"
+        echo "  2) PHPUnit"
+        read -rp "  → Choose [1-2]: " TEST_SEL
+        case "$TEST_SEL" in
+            1) TESTING="Pest" ;;
+            2) TESTING="PHPUnit" ;;
+            *) TESTING="Pest" ;;
+        esac
+
+        read -rp "  Dark mode? [Y/n]: " DARK_INPUT
+        if [[ "$DARK_INPUT" =~ ^[Nn]$ ]]; then
+            DARK_MODE="no"
+        else
+            DARK_MODE="yes"
+        fi
+
+        read -rp "  API routes? [y/N]: " API_INPUT
+        if [[ "$API_INPUT" =~ ^[Yy]$ ]]; then
+            ENABLE_API="yes"
+        else
+            ENABLE_API="no"
+        fi
+        echo "└────────────────────────────────────────┘"
+
+    elif [ "$TEMPLATE" = "next-js" ]; then
+        echo ""
+        echo "┌─ Next.js Options ─────────────────────┐"
+        read -rp "  Use TypeScript? [Y/n]: " TS_INPUT
+        if [[ "$TS_INPUT" =~ ^[Nn]$ ]]; then TS_FLAG="--no-ts"; else TS_FLAG="--ts"; fi
+
+        read -rp "  Use Tailwind CSS? [Y/n]: " TW_INPUT
+        if [[ "$TW_INPUT" =~ ^[Nn]$ ]]; then TW_FLAG="--no-tailwind"; else TW_FLAG="--tailwind"; fi
+
+        read -rp "  Use App Router? [Y/n]: " AR_INPUT
+        if [[ "$AR_INPUT" =~ ^[Nn]$ ]]; then AR_FLAG="--no-app"; else AR_FLAG="--app"; fi
+        echo "└────────────────────────────────────────┘"
     fi
-    echo "└────────────────────────────────────────┘"
 fi
 
 # ── Summary & Confirmation ──────────────────────────────────
@@ -179,12 +210,16 @@ echo ""
 echo "── Summary ──"
 echo "  Name:     $PROJECT_NAME"
 echo "  Template: $TEMPLATE"
-if [ "$TEMPLATE" = "laravel" ]; then
+if [ "$TEMPLATE" = "laravel" ] && [ "$HAS_INTERNET" = "true" ]; then
     echo "  Starter:  $STARTER_KIT"
     echo "  Database: $DB_CHOICE"
     echo "  Testing:  $TESTING"
     echo "  Dark:     $DARK_MODE"
     echo "  API:      $ENABLE_API"
+elif [ "$TEMPLATE" = "next-js" ] && [ "$HAS_INTERNET" = "true" ]; then
+    echo "  TypeScript: $([ "$TS_FLAG" = "--ts" ] && echo "Yes" || echo "No")"
+    echo "  Tailwind:   $([ "$TW_FLAG" = "--tailwind" ] && echo "Yes" || echo "No")"
+    echo "  App Router: $([ "$AR_FLAG" = "--app" ] && echo "Yes" || echo "No")"
 fi
 echo ""
 read -rp "  Create this project? [Y/n]: " CONFIRM
@@ -202,7 +237,7 @@ echo "========================================="
 example_dir="$EXAMPLE_DATA/$TEMPLATE"
 IS_OFFLINE=false
 
-if [ -d "$example_dir" ]; then
+if [ -d "$example_dir" ] && ([ "$HAS_INTERNET" = "false" ] \vert{}\vert{} [ "$TEMPLATE" != "next-js" ]); then
     echo "[offline] Copying baseline from template ($example_dir)..."
     mkdir -p "$project_dir"
 
@@ -214,11 +249,11 @@ if [ -d "$example_dir" ]; then
     IS_OFFLINE=true
     echo "[ok] Offline source copied."
 else
-    echo -e "${YELLOW}[online] Template volume not found. Downloading via online fallback...${NC}"
+    echo -e "${YELLOW}[online] Creating fresh project via online CLI tools...${NC}"
     mkdir -p "$project_dir"
     case "$TEMPLATE" in
         laravel) composer create-project laravel/laravel "$project_dir" --prefer-dist --no-interaction ;;
-        next-js) pnpm create next-app "$project_dir" --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-pnpm ;;
+        next-js) pnpm create next-app "$project_dir" $TS_FLAG $TW_FLAG --eslint$AR_FLAG --src-dir --import-alias "@/*" --use-pnpm ;;
         react)   pnpm create vite "$project_dir" --template react-ts ;;
         python)  python3 -m venv "$project_dir/venv" ;;
     esac
@@ -283,7 +318,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
 
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    if [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; then
+    if [ "$HAS_INTERNET" = "true" ] && ([ "$DB_CHOICE" = "MySQL" ] \vert{}\vert{} [ "$DB_CHOICE" = "PostgreSQL" ]); then
         echo "  [db] Ensuring database service is running..."
 
         if [ "$DB_CHOICE" = "MySQL" ]; then
@@ -348,113 +383,67 @@ window.axios = axios;
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
 
-    if [ "$STARTER_KIT" != "None" ]; then
+    if [ "$HAS_INTERNET" = "true" ] && [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Configuring $STARTER_KIT..."
-        if [ "$HAS_INTERNET" = "false" ]; then
-            echo -e "  ${YELLOW}[offline] Skipping $STARTER_KIT setup (No Internet).${NC}"
-        else
-            case "$STARTER_KIT" in
-                "Breeze + Blade")
-                    (
-                        cd "$project_dir"
-                        composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                        php artisan breeze:install blade --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
-                    )
-                    ;;
-                "Breeze + React")
-                    (
-                        cd "$project_dir"
-                        composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                        php artisan breeze:install react --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
-                    )
-                    ;;
-                "Breeze + Vue")
-                    (
-                        cd "$project_dir"
-                        composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
-                        php artisan breeze:install vue --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
-                    )
-                    ;;
-                "Jetstream + Livewire")
-                    (
-                        cd "$project_dir"
-                        composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
-                        php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
-                    )
-                    ;;
-                "Jetstream + Inertia")
-                    (
-                        cd "$project_dir"
-                        composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
-                        php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
-                    )
-                    ;;
-            esac
-        fi
+        case "$STARTER_KIT" in
+            "Breeze + Blade")
+                (
+                    cd "$project_dir"
+                    composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
+                    php artisan breeze:install blade --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
+                )
+                ;;
+            "Breeze + React")
+                (
+                    cd "$project_dir"
+                    composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
+                    php artisan breeze:install react --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
+                )
+                ;;
+            "Breeze + Vue")
+                (
+                    cd "$project_dir"
+                    composer require laravel/breeze --dev --prefer-offline --no-interaction 2>/dev/null || true
+                    php artisan breeze:install vue --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark") 2>/dev/null || true
+                )
+                ;;
+            "Jetstream + Livewire")
+                (
+                    cd "$project_dir"
+                    composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
+                    php artisan jetstream:install livewire --no-interaction 2>/dev/null || true
+                )
+                ;;
+            "Jetstream + Inertia")
+                (
+                    cd "$project_dir"
+                    composer require laravel/jetstream --prefer-offline --no-interaction 2>/dev/null || true
+                    php artisan jetstream:install inertia --no-interaction 2>/dev/null || true
+                )
+                ;;
+        esac
     fi
 
-    if [ "$TESTING" = "Pest" ]; then
+    if [ "$HAS_INTERNET" = "true" ] && [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
-            if [ "$HAS_INTERNET" = "true" ]; then
-                composer require pestphp/pest pestphp/pest-plugin-laravel --dev --prefer-offline --no-interaction 2>/dev/null || true
-                ./vendor/bin/pest --init 2>/dev/null || php artisan pest:install --no-interaction 2>/dev/null || true
-            else
-                echo -e "  ${YELLOW}[offline] Skipping Pest setup (No Internet).${NC}"
-            fi
+            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --prefer-offline --no-interaction 2>/dev/null || true
+            ./vendor/bin/pest --init 2>/dev/null || php artisan pest:install --no-interaction 2>/dev/null || true
         )
     fi
 
-    if [ "$ENABLE_API" = "yes" ]; then
+    if [ "$HAS_INTERNET" = "true" ] && [ "$ENABLE_API" = "yes" ]; then
         echo "  [api] Setting up API routes..."
         (
             cd "$project_dir"
-            if [ "$HAS_INTERNET" = "true" ]; then
-                composer require laravel/sanctum --prefer-offline --no-interaction 2>/dev/null || true
-                php artisan install:api --no-interaction 2>/dev/null || true
-            else
-                echo -e "  ${YELLOW}[offline] Skipping API setup (No Internet).${NC}"
-            fi
+            composer require laravel/sanctum --prefer-offline --no-interaction 2>/dev/null || true
+            php artisan install:api --no-interaction 2>/dev/null || true
         )
     fi
 
-    if [ ! -f "$project_dir/resources/js/bootstrap.js" ]; then
-        cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
-import axios from 'axios';
-window.axios = axios;
-window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-EOF
-    fi
-
-    if [ "$DB_CHOICE" != "None" ]; then
+    if [ "$DB_CHOICE" != "None" ] && [ "$HAS_INTERNET" = "true" ]; then
         echo "  [db] Running initial migrations..."
         (cd "$project_dir" && php artisan migrate --force 2>/dev/null) || echo -e "  ${YELLOW}[notice] Database migration skipped or failed.${NC}"
-    fi
-
-    echo "  [fix] Checking Tailwind v4 configuration..."
-    (
-        cd "$project_dir"
-        if grep -q "@tailwindcss/vite" vite.config.ts 2>/dev/null; then
-            echo "  [ok] Tailwind v4 Vite plugin detected."
-        else
-            echo "  [warn] Tailwind Vite plugin not detected."
-        fi
-    )
-
-    if [ -f "$project_dir/vite.config.js" ] || [ -f "$project_dir/vite.config.ts" ]; then
-        node -e "
-        const fs = require('fs');
-        let content = fs.readFileSync('$project_dir/vite.config.js', 'utf8');
-        if (!content.includes('0.0.0.0')) {
-            const serverConfig = \"server: { host: '0.0.0.0', port: 5173, strictPort: true, hmr: { host: 'localhost' } },\n    \";
-            if (content.includes('server:')) {
-                content = content.replace(/server\s*:\s*\{[^}]*\}/, serverConfig.trim().slice(0, -1));
-            } else {
-                content = content.replace('plugins:', serverConfig + 'plugins:');
-            }
-            fs.writeFileSync('$project_dir/vite.config.js', content);
-        }
-        " 2>/dev/null || true
     fi
 
     echo "  [build] Compiling frontend assets..."
@@ -505,7 +494,6 @@ if [ "$TEMPLATE" != "laravel" ]; then
         (
             cd "$project_dir"
 
-            # Next.js Offline Layout Fix (Removes Google Fonts dependency during build)
             if [ "$TEMPLATE" = "next-js" ] && [ "$HAS_INTERNET" = "false" ]; then
                 echo "  [offline] Preparing Next.js layout for offline build..."
                 LAYOUT_FILE=""
