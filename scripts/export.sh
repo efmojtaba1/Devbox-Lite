@@ -86,8 +86,6 @@ fi
 
 echo ""
 echo "[export] Project root: $PROJECT_ROOT"
-echo "[export] Compose file: $COMPOSE_FILE"
-echo "[export] Compose project: $COMPOSE_PROJECT"
 echo "[export] Output directory: $ABS_OUT"
 
 VOLUMES=(
@@ -152,20 +150,14 @@ declare -A ACTUAL_VOLUMES
 
 for logical_volume in "${VOLUMES[@]}"; do
 
-  echo ""
-  echo "[export] Volume: $logical_volume"
-
   ACTUAL_VOLUME="$(resolve_volume "$logical_volume" || true)"
 
   if [ -z "$ACTUAL_VOLUME" ]; then
-    echo "  [error] Docker volume not found:"
-    echo "          logical name: $logical_volume"
-    echo "          compose project: $COMPOSE_PROJECT"
+    echo "  [error] Docker volume not found: $logical_volume"
     exit 1
   fi
 
   ACTUAL_VOLUMES["$logical_volume"]="$ACTUAL_VOLUME"
-  echo "  [info] Actual Docker volume: $ACTUAL_VOLUME"
 
   ARCHIVE="$ABS_OUT/vol-${logical_volume}.tar.gz"
   rm -f "$ARCHIVE"
@@ -189,6 +181,7 @@ for logical_volume in "${VOLUMES[@]}"; do
     exit 1
   fi
 
+  echo "[export] Volume: $logical_volume"
   echo "  [ok] $logical_volume -> vol-${logical_volume}.tar.gz (${ARCHIVE_SIZE}, ${ARCHIVE_BYTES} bytes)"
 
 done
