@@ -444,7 +444,7 @@ EOF
         echo "  [db] Running initial migrations..."
         (
             cd "$project_dir"
-            php artisan migrate --force || echo -e "  ${YELLOW}[notice] Migration already up-to-date or skipped.${NC}"
+            php artisan migrate:fresh --force || echo -e "  ${YELLOW}[notice] Migration already up-to-date or skipped.${NC}"
         )
     fi
 
@@ -473,7 +473,7 @@ EOF
             fi
         else
             echo "  [online] Installing frontend dependencies..."
-            pnpm install --prefer-offline --no-interactive
+            pnpm install --prefer-offline
         fi
 
         if pnpm run build; then
