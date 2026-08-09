@@ -49,8 +49,7 @@ docker save -o "$ABS_OUT/image.tar" "$IMAGE_NAME"
 echo "[export] Exporting Docker volumes..."
 for v in "${VOLUMES[@]}"; do
   echo "[export] Volume: $v"
-  docker run --rm -v "${v}":/volume -v "$ABS_OUT":/backup alpine sh -c "cd /volume 2>/dev/null || true; tar czf /backup/vol-${v}.tar.gz -C /volume . || tar czf /backup/vol-${v}.tar.gz --files-from /dev/null"
-  if [ -f "$ABS_OUT/vol-${v}.tar.gz" ]; then
+docker run --rm -v "${v}":/volume -v "$ABS_OUT":/backup alpine tar czf /backup/vol-${v}.tar.gz -C /volume .  if [ -f "$ABS_OUT/vol-${v}.tar.gz" ]; then
     echo "  [ok] $v -> vol-${v}.tar.gz"
   else
     echo "  [warn] vol-${v}.tar.gz not created (volume may be empty)"
