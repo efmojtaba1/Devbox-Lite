@@ -206,8 +206,6 @@ if [ -d "$example_dir" ]; then
     echo "[offline] Copying baseline from template ($example_dir)..."
     mkdir -p "$project_dir"
 
-    # Use tar copy to preserve hidden files and avoid silent cp failures.
-    # Exclude generated build artifacts that should not be copied.
     (
         cd "$example_dir"
         tar --exclude='./.next' --exclude='./__pycache__' -cf - .
@@ -285,7 +283,6 @@ if [ "$TEMPLATE" = "laravel" ]; then
 
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    # Auto-start/Create Databases
     if [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; then
         echo "  [db] Ensuring database service is running..."
 
@@ -351,7 +348,7 @@ window.axios = axios;
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 EOF
 
-if [ "$STARTER_KIT" != "None" ]; then
+    if [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Configuring $STARTER_KIT..."
         if [ "$HAS_INTERNET" = "false" ]; then
             echo -e "  ${YELLOW}[offline] Skipping $STARTER_KIT setup (No Internet).${NC}"
@@ -437,7 +434,6 @@ EOF
     echo "  [fix] Checking Tailwind v4 configuration..."
     (
         cd "$project_dir"
-
         if grep -q "@tailwindcss/vite" vite.config.ts 2>/dev/null; then
             echo "  [ok] Tailwind v4 Vite plugin detected."
         else
@@ -462,14 +458,10 @@ EOF
     fi
 
     echo "  [build] Compiling frontend assets..."
-
     (
         cd "$project_dir"
 
-
-        # Remove external font imports in offline mode
         if [ "$HAS_INTERNET" = "false" ]; then
-
             echo "  [offline] Preparing frontend build..."
 
             find resources \
@@ -478,91 +470,79 @@ EOF
                 -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g; s|@import '\''@fontsource-variable/figtree'\'';||g; s|@import "@fontsource-variable/figtree";||g' {} + \
                 2>/dev/null || true
 
-
             find resources \
                 -type f \
                 \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
                 -exec sed -i '/fonts\.bunny\.net/d' {} + \
                 2>/dev/null || true
 
-
             if [ ! -d "node_modules" ]; then
                 echo "  [offline] Installing dependencies from pnpm cache..."
-
-                pnpm install \
-                    --offline \
-                    --frozen-lockfile
+                pnpm install --offline --frozen-lockfile
             fi
-
         else
-
             echo "  [online] Installing frontend dependencies..."
-
-            pnpm install \
-                --prefer-offline \
-                --no-interactive
-
+            pnpm install --prefer-offline --no-interactive
         fi
-
 
         if pnpm run build; then
-
             echo "  [ok] Frontend assets built successfully."
-
         else
-
             echo -e "${RED}[error] Frontend build failed.${NC}"
             exit 1
-
         fi
-
     )
     echo "[ok] Laravel project initialized successfully."
-  fi
+fi
 
 if [ "$TEMPLATE" != "laravel" ]; then
     if [ -f "$project_dir/.env.example" ] && [ ! -f "$project_dir/.env" ]; then
         cp "$project_dir/.env.example" "$project_dir/.env"
     fi
-if [ -f "$project_dir/package.json" ]; then
 
-    echo "  [build] Preparing frontend project..."
+    if [ -f "$project_dir/package.json" ]; then
+        echo "  [build] Preparing frontend project..."
+        (
+            cd "$project_dir"
 
-    (
-        cd "$project_dir"
+            # Next.js Offline Layout Fix (Removes Google Fonts dependency during build)
+            if [ "$TEMPLATE" = "next-js" ] && [ "$HAS_INTERNET" = "false" ]; then
+                echo "  [offline] Preparing Next.js layout for offline build..."
+                LAYOUT_FILE=""
+                if [ -f "src/app/layout.tsx" ]; then
+                    LAYOUT_FILE="src/app/layout.tsx"
+                elif [ -f "app/layout.tsx" ]; then
+                    LAYOUT_FILE="app/layout.tsx"
+                fi
 
-
-        if [ ! -d "node_modules" ]; then
-
-            if [ "$HAS_INTERNET" = "false" ]; then
-
-                pnpm install \
-                    --offline \
-                    --frozen-lockfile
-
-            else
-
-                pnpm install \
-                    --prefer-offline \
-                    --no-interactive
-
+                if [ -n "$LAYOUT_FILE" ]; then
+                    sed -i '/from "next\/font\/google"/d; /from '\''next\/font\/google'\''/d' "$LAYOUT_FILE"
+                    sed -i '/const .* = Geist({/,/\});/d' "$LAYOUT_FILE"
+                    sed -i '/const .* = Geist_Mono({/,/\});/d' "$LAYOUT_FILE"
+                    sed -i 's/\${.*\.variable}//g' "$LAYOUT_FILE"
+                    sed -i 's/geistSans\.variable//g' "$LAYOUT_FILE"
+                    sed -i 's/geistMono\.variable//g' "$LAYOUT_FILE"
+                fi
             fi
 
-        fi
-
-
-        if grep -q "\"build\"" package.json; then
-            if pnpm run build; then
-                echo "  [ok] Frontend assets built successfully."
-            else
-                echo -e "${RED}[error] Frontend build failed.${NC}"
-                exit 1
+            if [ ! -d "node_modules" ]; then
+                if [ "$HAS_INTERNET" = "false" ]; then
+                    pnpm install --offline --frozen-lockfile
+                else
+                    pnpm install --prefer-offline --no-interactive
+                fi
             fi
-        fi
 
-    )
-
-fi
+            if grep -q "\"build\"" package.json; then
+                if pnpm run build; then
+                    echo "  [ok] Frontend assets built successfully."
+                else
+                    echo -e "${RED}[error] Frontend build failed.${NC}"
+                    exit 1
+                fi
+            fi
+        )
+    fi
 fi
 
 # ── Step 4: Start runtime dependencies for the created project ─────────────
