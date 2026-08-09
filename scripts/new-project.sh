@@ -426,7 +426,7 @@ EOF
     if [ "$HAS_INTERNET" = "true" ] && [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
-            composer require pestphp/pest pestphp/pest-plugin-laravel --dev --no-interaction
+            composer require pestphp/pest pestphp/pest-plugin-laravel --dev -W --no-interaction
             ./vendor/bin/pest --init || php artisan pest:install --no-interaction || true
         )
     fi
