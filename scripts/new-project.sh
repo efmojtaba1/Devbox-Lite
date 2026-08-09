@@ -233,11 +233,16 @@ echo "========================================="
 echo "Creating: $PROJECT_NAME ($TEMPLATE)"
 echo "========================================="
 
+# ── Fix Git Ownership (پیش از ساخت پروژه اعمال می‌شود) ──────
+git config --global --add safe.directory "$project_dir" 2>/dev/null || true
+git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
+git config --global --add safe.directory '*' 2>/dev/null || true
+
 # ── Step 1: Copy Source (Offline-First System) ──────────────
 example_dir="$EXAMPLE_DATA/$TEMPLATE"
 IS_OFFLINE=false
 
-if [ -d "$example_dir" ] && ([ "$HAS_INTERNET" = "false" ] \vert{}\vert{} [ "$TEMPLATE" != "next-js" ]); then
+if [ -d "$example_dir" ] && ([ "$HAS_INTERNET" = "false" ] || [ "$TEMPLATE" != "next-js" ]); then
     echo "[offline] Copying baseline from template ($example_dir)..."
     mkdir -p "$project_dir"
 
@@ -258,10 +263,6 @@ else
         python)  python3 -m venv "$project_dir/venv" ;;
     esac
 fi
-
-# ── Fix Git Ownership ────────────────────────────────────────
-git config --global --add safe.directory "$project_dir" 2>/dev/null || true
-git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 
 # ── Step 2: Install Base Dependencies (Offline First) ───────
 echo ""
@@ -318,7 +319,7 @@ if [ "$TEMPLATE" = "laravel" ]; then
 
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    if [ "$HAS_INTERNET" = "true" ] && ([ "$DB_CHOICE" = "MySQL" ] \vert{}\vert{} [ "$DB_CHOICE" = "PostgreSQL" ]); then
+    if [ "$HAS_INTERNET" = "true" ] && ([ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]); then
         echo "  [db] Ensuring database service is running..."
 
         if [ "$DB_CHOICE" = "MySQL" ]; then
