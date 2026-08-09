@@ -9,7 +9,7 @@ echo " Full Project & Docker Export (Offline Ready)"
 echo "========================================="
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-COMPOSE_FILE="$PROJECT_ROOT/docker-compose.yml"
+COMPOSE_FILE="$PROJECT_ROOT/docker/compose/docker-compose.yml"
 
 if [ ! -f "$COMPOSE_FILE" ]; then
   echo "[error] docker-compose.yml not found:"
