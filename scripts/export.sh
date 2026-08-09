@@ -1,21 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ============================================================
-# DevBox Lite - Full Project & Docker Export
-# Offline Ready
-# ============================================================
-
 DEFAULT_OUT_DIR="/mnt/d/devbox-project"
 DEFAULT_IMAGE="devbox-lite:latest"
 
 echo "========================================="
 echo " Full Project & Docker Export (Offline Ready)"
 echo "========================================="
-
-# ------------------------------------------------------------
-# Dynamic project paths
-# ------------------------------------------------------------
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 COMPOSE_FILE="$PROJECT_ROOT/docker-compose.yml"
@@ -25,10 +16,6 @@ if [ ! -f "$COMPOSE_FILE" ]; then
   echo "        $COMPOSE_FILE"
   exit 1
 fi
-
-# ------------------------------------------------------------
-# Output directory
-# ------------------------------------------------------------
 
 echo "1) Use default location ($DEFAULT_OUT_DIR)"
 echo "2) Enter custom location"
@@ -47,10 +34,6 @@ fi
 mkdir -p "$OUT_DIR"
 ABS_OUT="$(cd "$OUT_DIR" && pwd)"
 
-# ------------------------------------------------------------
-# Docker image selection
-# ------------------------------------------------------------
-
 echo ""
 echo "1) Use default image ($DEFAULT_IMAGE)"
 echo "2) Enter custom image name"
@@ -64,10 +47,6 @@ if [ "$img_choice" == "2" ]; then
 else
   IMAGE_NAME="$DEFAULT_IMAGE"
 fi
-
-# ------------------------------------------------------------
-# Required Docker commands
-# ------------------------------------------------------------
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[error] Docker command not found."
@@ -84,10 +63,6 @@ if ! docker compose version >/dev/null 2>&1; then
   echo "[error] Docker Compose is not available."
   exit 1
 fi
-
-# ------------------------------------------------------------
-# Compose project information
-# ------------------------------------------------------------
 
 COMPOSE_PROJECT="$(
   docker compose \
@@ -117,10 +92,6 @@ echo "[export] Compose file: $COMPOSE_FILE"
 echo "[export] Compose project: $COMPOSE_PROJECT"
 echo "[export] Output directory: $ABS_OUT"
 
-# ------------------------------------------------------------
-# Logical volume names from docker-compose.yml
-# ------------------------------------------------------------
-
 VOLUMES=(
   example-templates
   pnpm-store
@@ -129,10 +100,6 @@ VOLUMES=(
   bruno-config
   bruno-collections
 )
-
-# ------------------------------------------------------------
-# Helper: resolve real Docker volume name
-# ------------------------------------------------------------
 
 resolve_volume() {
   local logical_name="$1"
@@ -160,10 +127,6 @@ resolve_volume() {
   return 1
 }
 
-# ------------------------------------------------------------
-# Docker image export
-# ------------------------------------------------------------
-
 echo ""
 echo "[export] Saving Docker image: $IMAGE_NAME -> $ABS_OUT/image.tar"
 
@@ -185,12 +148,7 @@ if [ ! -s "$ABS_OUT/image.tar" ]; then
 fi
 
 IMAGE_SIZE="$(du -h "$ABS_OUT/image.tar" | cut -f1)"
-
 echo "  [ok] image.tar created (${IMAGE_SIZE})"
-
-# ------------------------------------------------------------
-# Docker volume export
-# ------------------------------------------------------------
 
 echo ""
 echo "[export] Exporting Docker volumes..."
@@ -208,47 +166,20 @@ for logical_volume in "${VOLUMES[@]}"; do
     echo "  [error] Docker volume not found:"
     echo "          logical name: $logical_volume"
     echo "          compose project: $COMPOSE_PROJECT"
-    echo ""
-    echo "  Available Docker volumes:"
-    docker volume ls --format '  {{.Name}}'
     exit 1
   fi
 
   ACTUAL_VOLUMES["$logical_volume"]="$ACTUAL_VOLUME"
-
   echo "  [info] Actual Docker volume: $ACTUAL_VOLUME"
 
   ARCHIVE="$ABS_OUT/vol-${logical_volume}.tar.gz"
-
   rm -f "$ARCHIVE"
 
-  # ----------------------------------------------------------
-  # Check whether the volume contains data.
-  # ----------------------------------------------------------
-
-  HAS_CONTENT="$(
-    docker run --rm \
-      --mount "type=volume,source=${ACTUAL_VOLUME},target=/volume,readonly" \
-      "$IMAGE_NAME" \
-      sh -c 'find /volume -mindepth 1 -print -quit 2>/dev/null || true'
-  )"
-
-  if [ -z "$HAS_CONTENT" ]; then
-    echo "  [info] Volume is empty."
-  else
-    echo "  [info] Volume contains data."
-  fi
-
-  # Archive the volume using the container image itself
   docker run --rm \
     --mount "type=volume,source=${ACTUAL_VOLUME},target=/volume,readonly" \
     --mount "type=bind,source=${ABS_OUT},target=/backup" \
     "$IMAGE_NAME" \
     sh -c "tar czf /backup/vol-${logical_volume}.tar.gz -C /volume ."
-
-  # ----------------------------------------------------------
-  # Validate generated archive.
-  # ----------------------------------------------------------
 
   if [ ! -f "$ARCHIVE" ] || [ ! -s "$ARCHIVE" ]; then
     echo "  [error] Archive is missing or empty: $ARCHIVE"
@@ -266,10 +197,6 @@ for logical_volume in "${VOLUMES[@]}"; do
   echo "  [ok] $logical_volume -> vol-${logical_volume}.tar.gz (${ARCHIVE_SIZE}, ${ARCHIVE_BYTES} bytes)"
 
 done
-
-# ------------------------------------------------------------
-# Project source code & scripts
-# ------------------------------------------------------------
 
 echo ""
 echo "[export] Packaging project source code..."
@@ -293,12 +220,7 @@ echo "  [ok] project source code -> project-src.tar.gz"
 rm -rf "$ABS_OUT/scripts"
 mkdir -p "$ABS_OUT/scripts"
 cp -r "$PROJECT_ROOT/scripts/"* "$ABS_OUT/scripts/"
-
 echo "  [ok] project scripts copied."
-
-# ------------------------------------------------------------
-# Generate manifest
-# ------------------------------------------------------------
 
 echo ""
 echo "[export] Generating manifest.txt..."
@@ -326,4 +248,3 @@ echo ""
 echo "========================================="
 echo "[done] Full self-contained package exported successfully."
 echo "========================================="
-```
