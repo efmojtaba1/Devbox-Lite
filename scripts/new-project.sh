@@ -447,7 +447,21 @@ EOF
             php artisan migrate:fresh --force || echo -e "  ${YELLOW}[notice] Migration already up-to-date or skipped.${NC}"
         )
     fi
-
+# ── [Fix] Auto-migrate for Offline/Cached Projects ──
+    if [ "$TEMPLATE" = "laravel" ]; then
+        echo "  [check] Verifying database schema..."
+        (
+            cd "$project_dir"
+            # بررسی اینکه آیا دیتابیس در .env ست شده یا خیر
+            if grep -q "DB_CONNECTION=sqlite" .env; then
+                # اگر SQLite است، دیتابیس را لمس کن تا ساخته شود
+                touch database/database.sqlite
+            fi
+            
+            # اجرای مایگریشن برای اطمینان از وجود جدول‌ها
+            php artisan migrate --force
+        )
+    fi
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
