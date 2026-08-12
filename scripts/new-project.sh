@@ -290,7 +290,7 @@ if [ -f "$project_dir/package.json" ] && [ ! -d "$project_dir/node_modules" ]; t
     else
         (
             cd "$project_dir"
-            pnpm install --prefer-offline --no-interactive
+            pnpm install --prefer-offline
         ) || {
             echo -e "${RED}[error] pnpm install failed.${NC}"
             exit 1
@@ -554,7 +554,7 @@ if [ "$TEMPLATE" != "laravel" ]; then
                 if [ "$HAS_INTERNET" = "false" ]; then
                     pnpm install --offline --frozen-lockfile
                 else
-                    pnpm install --prefer-offline --no-interactive
+                    pnpm install --prefer-offline
                 fi
             fi
 
