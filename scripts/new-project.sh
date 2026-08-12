@@ -468,25 +468,21 @@ EOF
         )
     fi
 
+# Final frontend build
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
 
-        # --- FIX TAILWIND V4 + BREEZE ---
-        # Breeze generates Tailwind v3 PostCSS config, but Laravel 12 needs v4
+        # --- FIX TAILWIND V4 + BREEZE POSTCSS ISSUE ---
         for pc in postcss.config.js postcss.config.cjs postcss.config.mjs; do
             if [ -f "$pc" ] && grep -q "tailwindcss" "$pc" && ! grep -q "@tailwindcss/postcss" "$pc"; then
                 echo "  [patch] Upgrading PostCSS config for Tailwind v4 compatibility..."
-                # جایگزینی کلمه کلیدی قدیمی با پکیج جدید
                 sed -i -e "s/tailwindcss[[:space:]]*:/'@tailwindcss\/postcss':/g" \
                        -e "s/\"tailwindcss\"[[:space:]]*:/\"@tailwindcss\/postcss\":/g" \
                        -e "s/'tailwindcss'[[:space:]]*:/'@tailwindcss\/postcss':/g" "$pc"
-
-                # نصب افزونه مورد نیاز برای نسخه ۴
-                pnpm add -D @tailwindcss/postcss
             fi
         done
-        # --------------------------------
+        # ----------------------------------------------
 
         if [ "$HAS_INTERNET" = "false" ]; then
             echo "  [offline] Preparing frontend build..."
@@ -503,12 +499,15 @@ EOF
                 -exec sed -i '/fonts\.bunny\.net/d' {} + \
                 2>/dev/null || true
 
+            pnpm add -D @tailwindcss/postcss --offline || true
+
             if [ ! -d "node_modules" ]; then
                 echo "  [offline] Installing dependencies from pnpm cache..."
                 pnpm install --offline --frozen-lockfile
             fi
         else
             echo "  [online] Installing frontend dependencies..."
+            pnpm add -D @tailwindcss/postcss
             pnpm install --prefer-offline
         fi
 
