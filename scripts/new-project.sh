@@ -384,6 +384,10 @@ EOF
 
     if [ "$HAS_INTERNET" = "true" ] && [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Configuring $STARTER_KIT..."
+
+        # پاک کردن فایل‌های پیکربندی قدیمی برای جلوگیری از تداخل در بیلد Tailwind v4
+        rm -f "$project_dir/postcss.config.js" "$project_dir/tailwind.config.js"
+
         case "$STARTER_KIT" in
             "Breeze + Blade")
                 (
@@ -392,13 +396,11 @@ EOF
                     php artisan breeze:install blade --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
-"Breeze + React")
+            "Breeze + React")
                 (
                     cd "$project_dir"
                     composer require laravel/breeze --dev --no-interaction
                     php artisan breeze:install react --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
-                    # اضافه کردن پکیج PostCSS برای تیل‌ویند نسخه 4
-                    pnpm add -D @tailwindcss/postcss postcss
                 )
                 ;;
             "Breeze + Vue")
@@ -449,7 +451,8 @@ EOF
             php artisan migrate:fresh --force || echo -e "  ${YELLOW}[notice] Migration already up-to-date or skipped.${NC}"
         )
     fi
-# ── [Fix] Auto-migrate for Offline/Cached Projects ──
+
+    # ── [Fix] Auto-migrate for Offline/Cached Projects ──
     if [ "$TEMPLATE" = "laravel" ]; then
         echo "  [check] Verifying database schema..."
         (
@@ -464,24 +467,7 @@ EOF
             php artisan migrate --force
         )
     fi
-    # ── [Fix] Tailwind v4 & PostCSS fix for Online/Breeze Projects ──
-    if [ "$STARTER_KIT" != "None" ] && [ "$HAS_INTERNET" = "true" ]; then
-        echo "  [fix] Ensuring @tailwindcss/postcss is installed for Tailwind v4..."
-        (
-            cd "$project_dir"
-            pnpm add -D @tailwindcss/postcss postcss --silent || true
 
-            if [ -f "postcss.config.js" ]; then
-                cat << 'EOF' > postcss.config.js
-export default {
-  plugins: {
-    '@tailwindcss/postcss': {},
-  },
-}
-EOF
-            fi
-        )
-    fi
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
