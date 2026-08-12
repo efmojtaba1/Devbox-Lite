@@ -34,10 +34,10 @@ echo -e "${CYAN}║       DevBox Lite — New Project       ║${NC}"
 echo -e "${CYAN}╚═══════════════════════════════════════╝${NC}"
 echo ""
 
-# ── Check Real Network Status ─────────────────────────────────
+# ── Network Detection ───────────────────────────────────────
 is_online() {
     curl -fsI --connect-timeout 3 https://repo.packagist.org >/dev/null 2>&1 \
-    || curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1
+        || curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1
 }
 
 HAS_INTERNET=false
@@ -48,17 +48,17 @@ else
     echo -e "${YELLOW}[network] Offline mode detected.${NC}"
 fi
 
-# ── Helpers ────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────
 ensure_container_running() {
     local name="$1"
     local kind="$2"
 
-    if docker ps --format '{{.Names}}' | grep -q "^$name$"; then
+    if docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "  [skip] $kind is already running"
         return 0
     fi
 
-    if docker ps -a --format '{{.Names}}' | grep -q "^$name$"; then
+    if docker ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "  [start] $kind exists, starting..."
         if docker start "$name" >/dev/null 2>&1; then
             echo "  [ok] $kind is running"
@@ -75,7 +75,7 @@ ensure_container_running() {
         "$SCRIPT_DIR/db-manager.sh" create "$kind"
         sleep 4
     else
-        echo "  [warn] db-manager.sh not available; cannot create $kind"
+        echo -e "  ${YELLOW}[warn] db-manager.sh not available; cannot create $kind${NC}"
         return 1
     fi
 }
@@ -85,49 +85,94 @@ run_pnpm_install() {
 
     (
         cd "$dir"
-
-        if [ "$HAS_INTERNET" = "false" ]; then
-            pnpm install --offline --frozen-lockfile
+        if [ "$HAS_INTERNET" = "true" ]; then
+            pnpm install --prefer-offline --frozen-lockfile=false
         else
-            pnpm install --prefer-offline
+            pnpm install --offline --frozen-lockfile
         fi
     )
 }
 
-ensure_pnpm_package() {
-    local dir="$1"
-    local package="$2"
-    local mode="${3:-prod}"
+# Configure a fresh Laravel application's .env for DevBox runtime.
+configure_laravel_database() {
+    local project_dir="$1"
+    local db_choice="$2"
+    local project_name="$3"
 
-    (
-        cd "$dir"
+    local db_name
+    db_name="$(printf '%s' "$project_name" | sed 's/[^A-Za-z0-9_]/_/g')"
+    [ -n "$db_name" ] || db_name="laravel"
 
-        if [ "$HAS_INTERNET" = "true" ]; then
-            if [ "$mode" = "dev" ]; then
-                pnpm add -D "$package"
-            else
-                pnpm add "$package"
-            fi
-        else
-            if [ "$mode" = "dev" ]; then
-                pnpm add -D "$package" --offline
-            else
-                pnpm add "$package" --offline
-            fi
-        fi
-    )
+    [ -f "$project_dir/.env" ] || return 0
+
+    case "$db_choice" in
+        MySQL)
+            local mysql_host="devbox-mysql"
+            getent hosts devbox-mysql >/dev/null 2>&1 || mysql_host="127.0.0.1"
+
+            sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' "$project_dir/.env"
+            sed -i "s|^DB_HOST=.*|DB_HOST=${mysql_host}|" "$project_dir/.env"
+            sed -i "s|^# DB_HOST=.*|DB_HOST=${mysql_host}|" "$project_dir/.env"
+            sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
+            sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
+            sed -i "s|^DB_DATABASE=.*|DB_DATABASE=${db_name}|" "$project_dir/.env"
+            sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
+            sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+
+            mysql -h "$mysql_host" -u devbox -pdevbox_pass \
+                -e "CREATE DATABASE IF NOT EXISTS \`${db_name}\`;" 2>/dev/null || true
+            ;;
+
+        PostgreSQL)
+            local pg_host="devbox-postgres"
+            getent hosts devbox-postgres >/dev/null 2>&1 || pg_host="127.0.0.1"
+
+            sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/' "$project_dir/.env"
+            sed -i "s|^DB_HOST=.*|DB_HOST=${pg_host}|" "$project_dir/.env"
+            sed -i "s|^# DB_HOST=.*|DB_HOST=${pg_host}|" "$project_dir/.env"
+            sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
+            sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
+            sed -i "s|^DB_DATABASE=.*|DB_DATABASE=${db_name}|" "$project_dir/.env"
+            sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
+            sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+
+            PGPASSWORD=devbox_pass psql -h "$pg_host" -U devbox \
+                -tc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" 2>/dev/null \
+                | grep -q 1 \
+                || PGPASSWORD=devbox_pass psql -h "$pg_host" -U devbox \
+                    -c "CREATE DATABASE \"${db_name}\";" 2>/dev/null || true
+            ;;
+
+        SQLite)
+            sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
+            sed -i 's|^DB_DATABASE=.*|# DB_DATABASE=|' "$project_dir/.env"
+            mkdir -p "$project_dir/database"
+            touch "$project_dir/database/database.sqlite"
+            ;;
+
+        None)
+            # Leave Laravel's existing database configuration untouched.
+            ;;
+    esac
 }
 
 # ── 1. Input Project Name ────────────────────────────────────
 read -rp "Project name: " PROJECT_NAME
+
 if [ -z "$PROJECT_NAME" ]; then
     echo -e "${RED}[error] Project name cannot be empty.${NC}"
     exit 1
 fi
 
+if [[ ! "$PROJECT_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo -e "${RED}[error] Project name may contain only letters, numbers, dots, dashes, and underscores.${NC}"
+    exit 1
+fi
+
 project_dir="$WORKSPACE/$PROJECT_NAME"
-if [ -d "$project_dir" ]; then
-    echo -e "${RED}[error] Directory $project_dir already exists.${NC}"
+
+if [ -e "$project_dir" ]; then
+    echo -e "${RED}[error] Path $project_dir already exists.${NC}"
     exit 1
 fi
 
@@ -148,11 +193,13 @@ case "$FW_CHOICE" in
     *) echo -e "${RED}[error] Invalid framework selection.${NC}"; exit 1 ;;
 esac
 
-# ── 3. Framework Specific Interactive Options ────────────────
+# ── Defaults ─────────────────────────────────────────────────
 STARTER_KIT="None"
+LARAVEL_STARTER_FLAG=""
 DB_CHOICE="SQLite"
+LARAVEL_DATABASE_FLAG="--database=sqlite"
 TESTING="Pest"
-DARK_MODE="yes"
+LARAVEL_TESTING_FLAG="--pest"
 ENABLE_API="no"
 
 TS_FLAG="--ts"
@@ -160,8 +207,8 @@ TW_FLAG="--tailwind"
 AR_FLAG="--app"
 
 if [ "$HAS_INTERNET" = "false" ]; then
-    echo -e "\n${YELLOW}[notice] Network is offline. Interactive options are skipped.${NC}"
-    echo -e "${YELLOW}         Project will be created using the pre-cached baseline template.${NC}"
+    echo -e "\n${YELLOW}[notice] Network is offline. Interactive framework options are skipped.${NC}"
+    echo -e "${YELLOW}         The cached baseline template will be used.${NC}"
 else
     if [ "$TEMPLATE" = "laravel" ]; then
         echo ""
@@ -169,21 +216,37 @@ else
         echo ""
         echo "Starter kit:"
         echo "  1) None (bare Laravel)"
-        echo "  2) Breeze + Blade"
-        echo "  3) Breeze + React"
-        echo "  4) Breeze + Vue"
-        echo "  5) Jetstream + Livewire"
-        echo "  6) Jetstream + Inertia"
-        read -rp "  → Choose [1-6]: " SK_CHOICE
+        echo "  2) React"
+        echo "  3) Vue"
+        echo "  4) Svelte"
+        echo "  5) Livewire"
+        read -rp "  → Choose [1-5]: " SK_CHOICE
 
         case "$SK_CHOICE" in
-            1) STARTER_KIT="None" ;;
-            2) STARTER_KIT="Breeze + Blade" ;;
-            3) STARTER_KIT="Breeze + React" ;;
-            4) STARTER_KIT="Breeze + Vue" ;;
-            5) STARTER_KIT="Jetstream + Livewire" ;;
-            6) STARTER_KIT="Jetstream + Inertia" ;;
-            *) STARTER_KIT="None" ;;
+            1)
+                STARTER_KIT="None"
+                LARAVEL_STARTER_FLAG=""
+                ;;
+            2)
+                STARTER_KIT="React"
+                LARAVEL_STARTER_FLAG="--react"
+                ;;
+            3)
+                STARTER_KIT="Vue"
+                LARAVEL_STARTER_FLAG="--vue"
+                ;;
+            4)
+                STARTER_KIT="Svelte"
+                LARAVEL_STARTER_FLAG="--svelte"
+                ;;
+            5)
+                STARTER_KIT="Livewire"
+                LARAVEL_STARTER_FLAG="--livewire"
+                ;;
+            *)
+                STARTER_KIT="None"
+                LARAVEL_STARTER_FLAG=""
+                ;;
         esac
 
         echo ""
@@ -195,11 +258,26 @@ else
         read -rp "  → Choose [1-4]: " DB_SEL
 
         case "$DB_SEL" in
-            1) DB_CHOICE="SQLite" ;;
-            2) DB_CHOICE="MySQL" ;;
-            3) DB_CHOICE="PostgreSQL" ;;
-            4) DB_CHOICE="None" ;;
-            *) DB_CHOICE="SQLite" ;;
+            1)
+                DB_CHOICE="SQLite"
+                LARAVEL_DATABASE_FLAG="--database=sqlite"
+                ;;
+            2)
+                DB_CHOICE="MySQL"
+                LARAVEL_DATABASE_FLAG="--database=sqlite"
+                ;;
+            3)
+                DB_CHOICE="PostgreSQL"
+                LARAVEL_DATABASE_FLAG="--database=sqlite"
+                ;;
+            4)
+                DB_CHOICE="None"
+                LARAVEL_DATABASE_FLAG="--database=sqlite"
+                ;;
+            *)
+                DB_CHOICE="SQLite"
+                LARAVEL_DATABASE_FLAG="--database=sqlite"
+                ;;
         esac
 
         echo ""
@@ -207,25 +285,32 @@ else
         echo "  1) Pest (recommended)"
         echo "  2) PHPUnit"
         read -rp "  → Choose [1-2]: " TEST_SEL
+
         case "$TEST_SEL" in
-            1) TESTING="Pest" ;;
-            2) TESTING="PHPUnit" ;;
-            *) TESTING="Pest" ;;
+            1)
+                TESTING="Pest"
+                LARAVEL_TESTING_FLAG="--pest"
+                ;;
+            2)
+                TESTING="PHPUnit"
+                LARAVEL_TESTING_FLAG="--phpunit"
+                ;;
+            *)
+                TESTING="Pest"
+                LARAVEL_TESTING_FLAG="--pest"
+                ;;
         esac
 
-        read -rp "  Dark mode? [Y/n]: " DARK_INPUT
-        if [[ "$DARK_INPUT" =~ ^[Nn]$ ]]; then
-            DARK_MODE="no"
-        else
-            DARK_MODE="yes"
-        fi
+        echo ""
+        echo "Theme:"
+        echo "  Official Laravel Starter Kits include built-in light/dark mode."
 
+        echo ""
         read -rp "  API routes? [y/N]: " API_INPUT
         if [[ "$API_INPUT" =~ ^[Yy]$ ]]; then
             ENABLE_API="yes"
-        else
-            ENABLE_API="no"
         fi
+
         echo "└────────────────────────────────────────┘"
 
     elif [ "$TEMPLATE" = "next-js" ]; then
@@ -248,17 +333,21 @@ echo ""
 echo "── Summary ──"
 echo "  Name:     $PROJECT_NAME"
 echo "  Template: $TEMPLATE"
+
 if [ "$TEMPLATE" = "laravel" ] && [ "$HAS_INTERNET" = "true" ]; then
     echo "  Starter:  $STARTER_KIT"
     echo "  Database: $DB_CHOICE"
     echo "  Testing:  $TESTING"
-    echo "  Dark:     $DARK_MODE"
+    if [ "$STARTER_KIT" != "None" ]; then
+        echo "  Theme:    built-in light/dark"
+    fi
     echo "  API:      $ENABLE_API"
 elif [ "$TEMPLATE" = "next-js" ] && [ "$HAS_INTERNET" = "true" ]; then
     echo "  TypeScript: $([ "$TS_FLAG" = "--ts" ] && echo "Yes" || echo "No")"
     echo "  Tailwind:   $([ "$TW_FLAG" = "--tailwind" ] && echo "Yes" || echo "No")"
     echo "  App Router: $([ "$AR_FLAG" = "--app" ] && echo "Yes" || echo "No")"
 fi
+
 echo ""
 read -rp "  Create this project? [Y/n]: " CONFIRM
 if [[ "$CONFIRM" =~ ^[Nn]$ ]]; then
@@ -271,20 +360,20 @@ echo "========================================="
 echo "Creating: $PROJECT_NAME ($TEMPLATE)"
 echo "========================================="
 
-# ── Fix Git Ownership ───────────────────────────────────────
+# ── Git Ownership ────────────────────────────────────────────
 git config --global --add safe.directory "$project_dir" 2>/dev/null || true
 git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 git config --global --add safe.directory '*' 2>/dev/null || true
 
-# ── Step 1: Copy Source / Create Project ─────────────────────
+# ── Step 1: Create/Copy Project ──────────────────────────────
 example_dir="$EXAMPLE_DATA/$TEMPLATE"
 
-# Important:
-# - Offline: use cached baseline templates.
-# - Online Laravel: always create a fresh Laravel project.
-#   This prevents an existing Breeze/Inertia scaffold in the cached
-#   template from colliding with the selected online starter kit.
-if [ "$HAS_INTERNET" = "false" ] && [ -d "$example_dir" ]; then
+if [ "$HAS_INTERNET" = "false" ]; then
+    if [ ! -d "$example_dir" ]; then
+        echo -e "${RED}[error] Offline baseline template not found: $example_dir${NC}"
+        exit 1
+    fi
+
     echo "[source] Using cached baseline template ($example_dir)..."
     mkdir -p "$project_dir"
 
@@ -295,30 +384,56 @@ if [ "$HAS_INTERNET" = "false" ] && [ -d "$example_dir" ]; then
 
     echo "[ok] Baseline source copied successfully."
 else
-    echo -e "${CYAN}[source] Creating fresh project via online CLI tools...${NC}"
-    mkdir -p "$project_dir"
-
     case "$TEMPLATE" in
         laravel)
-            composer create-project laravel/laravel "$project_dir" --prefer-dist --no-interaction
+            echo -e "${CYAN}[source] Creating fresh Laravel project with the official Starter Kit installer...${NC}"
+
+            # The official Laravel installer is responsible for scaffolding
+            # React/Vue/Svelte/Livewire and their modern frontend stack.
+            # We intentionally use --database=sqlite during the scaffold phase
+            # so installer-time migrations never depend on DevBox's external DB.
+            # The selected DevBox database is configured immediately afterward.
+            laravel_args=(
+                new
+                "$project_dir"
+                "$LARAVEL_DATABASE_FLAG"
+                "$LARAVEL_TESTING_FLAG"
+                "--no-node"
+                "--no-interaction"
+            )
+
+            if [ -n "$LARAVEL_STARTER_FLAG" ]; then
+                laravel_args+=("$LARAVEL_STARTER_FLAG")
+            fi
+
+            laravel "${laravel_args[@]}"
             ;;
+
         next-js)
-            pnpm create next-app "$project_dir" $TS_FLAG $TW_FLAG --eslint "$AR_FLAG" --src-dir --import-alias "@/*" --use-pnpm
+            echo -e "${CYAN}[source] Creating fresh Next.js project...${NC}"
+            pnpm create next-app "$project_dir" \
+                "$TS_FLAG" "$TW_FLAG" --eslint "$AR_FLAG" \
+                --src-dir --import-alias "@/*" --use-pnpm
             ;;
+
         react)
+            echo -e "${CYAN}[source] Creating fresh React project...${NC}"
             pnpm create vite "$project_dir" --template react-ts
             ;;
+
         python)
+            echo -e "${CYAN}[source] Creating Python project...${NC}"
+            mkdir -p "$project_dir"
             python3 -m venv "$project_dir/venv"
             ;;
     esac
 fi
 
-# ── Step 2: Install Base Dependencies ────────────────────────
+# ── Step 2: Base Dependencies for Cached/Non-Laravel Projects ─
 echo ""
 echo "Installing dependencies..."
 
-if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
+if [ -f "$project_dir/composer.json" ] && [ "$TEMPLATE" != "laravel" ] && [ ! -d "$project_dir/vendor" ]; then
     echo "[install] composer install..."
     if [ "$HAS_INTERNET" = "true" ]; then
         (cd "$project_dir" && composer install --prefer-offline --no-audit --no-interaction)
@@ -327,12 +442,12 @@ if [ -f "$project_dir/composer.json" ] && [ ! -d "$project_dir/vendor" ]; then
     fi
 fi
 
-if [ -f "$project_dir/package.json" ] && [ ! -d "$project_dir/node_modules" ]; then
+if [ -f "$project_dir/package.json" ] && [ "$TEMPLATE" != "laravel" ] && [ ! -d "$project_dir/node_modules" ]; then
     echo "[install] pnpm install..."
-    run_pnpm_install "$project_dir" || {
+    if ! run_pnpm_install "$project_dir"; then
         echo -e "${RED}[error] pnpm install failed.${NC}"
         exit 1
-    }
+    fi
 fi
 
 if [ "$TEMPLATE" = "python" ]; then
@@ -349,17 +464,20 @@ if [ "$TEMPLATE" = "python" ]; then
     fi
 fi
 
-# ── Step 3: Framework Specific Configuration ────────────────
+# ── Step 3: Laravel Configuration ────────────────────────────
 if [ "$TEMPLATE" = "laravel" ]; then
     echo ""
     echo "[configure] Applying Laravel options..."
 
-    if [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ]; then
-        cp "$project_dir/.env.example" "$project_dir/.env"
-    fi
+    [ -f "$project_dir/.env" ] || [ ! -f "$project_dir/.env.example" ] || cp "$project_dir/.env.example" "$project_dir/.env"
 
-    # ── Database / Redis ──────────────────────────────────────
-    if [ "$HAS_INTERNET" = "true" ] && { [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; }; then
+    # Fresh Laravel projects created by the official installer already have
+    # their Composer dependencies and starter-kit scaffold. Do not run a second
+    # Composer install here; doing so only duplicates work and can alter the
+    # installer-selected dependency graph.
+
+    # ── Database / Redis Services ─────────────────────────────
+    if [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; then
         echo "  [db] Ensuring database service is running..."
 
         if [ "$DB_CHOICE" = "MySQL" ]; then
@@ -374,258 +492,122 @@ if [ "$TEMPLATE" = "laravel" ]; then
         fi
     fi
 
-    if [ -f "$project_dir/.env" ]; then
-        case "$DB_CHOICE" in
-            MySQL)
-                MYSQL_HOST="devbox-mysql"
-                getent hosts devbox-mysql >/dev/null 2>&1 || MYSQL_HOST="127.0.0.1"
+    # ── Runtime .env Configuration ───────────────────────────
+    configure_laravel_database "$project_dir" "$DB_CHOICE" "$PROJECT_NAME"
 
-                sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=mysql/" "$project_dir/.env"
-                sed -i "s/^DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
-                sed -i "s/^# DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
-                sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
-                sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
-                sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
-
-                mysql -h "$MYSQL_HOST" -u devbox -pdevbox_pass -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
-                ;;
-
-            PostgreSQL)
-                PG_HOST="devbox-postgres"
-                getent hosts devbox-postgres >/dev/null 2>&1 || PG_HOST="127.0.0.1"
-
-                sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/" "$project_dir/.env"
-                sed -i "s/^DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
-                sed -i "s/^# DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
-                sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
-                sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
-                sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
-
-                PGPASSWORD=devbox_pass psql -h "$PG_HOST" -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
-                ;;
-
-            SQLite)
-                sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
-                sed -i 's/^DB_DATABASE=.*/# DB_DATABASE=/' "$project_dir/.env"
-                mkdir -p "$project_dir/database"
-                touch "$project_dir/database/database.sqlite" 2>/dev/null || true
-                ;;
-        esac
-    fi
-
-    # ── App key ────────────────────────────────────────────────
     if [ -f "$project_dir/.env" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction)
     fi
 
-    # ── Frontend bootstrap dependency ─────────────────────────
-    # DevBox maintains a small bootstrap.js using Axios. Fresh Laravel
-    # projects may not include Axios, so ensure it explicitly before any
-    # Breeze build can reference it.
-    mkdir -p "$project_dir/resources/js"
-    cat <<'BOOTSTRAP_EOF' > "$project_dir/resources/js/bootstrap.js"
-import axios from 'axios';
-window.axios = axios;
-window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-BOOTSTRAP_EOF
-
-    echo "  [frontend] Ensuring axios dependency..."
-    ensure_pnpm_package "$project_dir" "axios" "prod"
-
-    # ── Starter kit ────────────────────────────────────────────
-    if [ "$HAS_INTERNET" = "true" ] && [ "$STARTER_KIT" != "None" ]; then
-        echo "  [starter] Configuring $STARTER_KIT..."
-
-        # IMPORTANT: do not force Tailwind v4 after installing Breeze.
-        # Breeze manages its own frontend stack/configuration, including the
-        # Tailwind/PostCSS version it needs. Mixing Breeze's Tailwind v3 stack
-        # with Tailwind v4 plugins causes broken/missing styles at runtime.
-
-        case "$STARTER_KIT" in
-            "Breeze + Blade")
-                (
-                    cd "$project_dir"
-                    composer require laravel/breeze --dev --no-interaction
-                    php artisan breeze:install blade --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
-                )
-                ;;
-
-            "Breeze + React")
-                (
-                    cd "$project_dir"
-                    composer require laravel/breeze --dev --no-interaction
-                    php artisan breeze:install react --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
-                )
-                ;;
-
-            "Breeze + Vue")
-                (
-                    cd "$project_dir"
-                    composer require laravel/breeze --dev --no-interaction
-                    php artisan breeze:install vue --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
-                )
-                ;;
-
-            "Jetstream + Livewire")
-                (
-                    cd "$project_dir"
-                    composer require laravel/jetstream --no-interaction
-                    php artisan jetstream:install livewire --no-interaction
-                )
-                ;;
-
-            "Jetstream + Inertia")
-                (
-                    cd "$project_dir"
-                    composer require laravel/jetstream --no-interaction
-                    php artisan jetstream:install inertia --no-interaction
-                )
-                ;;
-        esac
-    fi
-
-    # ── Testing ────────────────────────────────────────────────
-    if [ "$HAS_INTERNET" = "true" ] && [ "$TESTING" = "Pest" ]; then
-        (
-            cd "$project_dir"
-            composer require pestphp/pest pestphp/pest-plugin-laravel --dev -W --no-interaction
-            ./vendor/bin/pest --init || php artisan pest:install --no-interaction || true
-        )
-    fi
-
-    # ── API ────────────────────────────────────────────────────
+    # ── API Routes ────────────────────────────────────────────
     if [ "$HAS_INTERNET" = "true" ] && [ "$ENABLE_API" = "yes" ]; then
         echo "  [api] Setting up API routes..."
         (
             cd "$project_dir"
-            composer require laravel/sanctum --no-interaction
-            php artisan install:api --no-interaction || true
+            php artisan install:api --no-interaction
         )
     fi
 
-    # ── Initial database reset for online database projects ───
-    if [ "$DB_CHOICE" != "None" ] && [ "$HAS_INTERNET" = "true" ]; then
+    # ── Database Migrations ──────────────────────────────────
+    if [ "$DB_CHOICE" != "None" ]; then
         echo "  [db] Running initial migrations..."
         (
             cd "$project_dir"
-            php artisan migrate:fresh --force || echo -e "  ${YELLOW}[notice] Migration already up-to-date or skipped.${NC}"
+            php artisan migrate:fresh --force
+        )
+
+        echo "  [check] Verifying database schema..."
+        (
+            cd "$project_dir"
+            php artisan migrate --force
         )
     fi
 
-    # ── Verify database schema ─────────────────────────────────
-    echo "  [check] Verifying database schema..."
-    (
-        cd "$project_dir"
+    # ── Frontend Dependencies / Build ─────────────────────────
+    if [ -f "$project_dir/package.json" ]; then
+        echo "  [build] Compiling frontend assets..."
 
-        if grep -q '^DB_CONNECTION=sqlite' .env 2>/dev/null; then
-            touch database/database.sqlite 2>/dev/null || true
-        fi
+        (
+            cd "$project_dir"
 
-        php artisan migrate --force
-    )
+            if [ "$HAS_INTERNET" = "false" ]; then
+                echo "  [offline] Preparing frontend build..."
 
-    # ── Final frontend build ───────────────────────────────────
-    echo "  [build] Compiling frontend assets..."
-    (
-        cd "$project_dir"
+                # Cached offline projects may contain remote font imports.
+                # Remove only those external font references; leave the starter
+                # kit's Tailwind/Vite configuration untouched.
+                if [ -d resources ]; then
+                    find resources \
+                        -type f \
+                        \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
+                        -exec sed -i \
+                            's|@import url(.*fonts\.bunny\.net.*);||g; s|@import '\''@fontsource-variable/figtree'\'';||g; s|@import "@fontsource-variable/figtree";||g' \
+                            {} + 2>/dev/null || true
 
-        # Keep the frontend stack exactly as generated by Laravel or the
-        # selected starter kit. Do NOT inject @tailwindcss/postcss or rewrite
-        # PostCSS/Tailwind configuration here.
-        #
-        # Fresh Laravel projects use the Tailwind v4 Vite setup. Breeze 2.x
-        # installs its own React/Vue/Blade frontend stack and may use Tailwind
-        # v3. The two stacks must remain internally consistent.
-
-        if [ "$HAS_INTERNET" = "false" ]; then
-            echo "  [offline] Preparing frontend build..."
-
-            # Remove remote font imports only for offline builds. Keep the
-            # rest of the cached baseline frontend configuration untouched.
-            if [ -d resources ]; then
-                find resources \
-                    -type f \
-                    \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
-                    -exec sed -i \
-                        's|@import url(.*fonts\.bunny\.net.*);||g; s|@import '\''@fontsource-variable/figtree'\'';||g; s|@import "@fontsource-variable/figtree";||g' \
-                        {} + \
-                    2>/dev/null || true
-
-                find resources \
-                    -type f \
-                    \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
-                    -exec sed -i '/fonts\.bunny\.net/d' {} + \
-                    2>/dev/null || true
+                    find resources \
+                        -type f \
+                        \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
+                        -exec sed -i '/fonts\.bunny\.net/d' {} + 2>/dev/null || true
+                fi
             fi
-        fi
 
-        # Reconcile the lockfile after starter-kit changes. In online mode
-        # this is also where Breeze's frontend dependency changes are finalized.
-        run_pnpm_install "$project_dir"
+            run_pnpm_install "$project_dir"
 
-        if pnpm run build; then
-            echo "  [ok] Frontend assets built successfully."
-        else
-            echo -e "${RED}[error] Frontend build failed.${NC}"
-            exit 1
-        fi
-    )
+            if pnpm run build; then
+                echo "  [ok] Frontend assets built successfully."
+            else
+                echo -e "${RED}[error] Frontend build failed.${NC}"
+                exit 1
+            fi
+        )
+    fi
 
     echo "[ok] Laravel project initialized successfully."
 fi
 
-# ── Non-Laravel Projects ─────────────────────────────────────
-if [ "$TEMPLATE" != "laravel" ]; then
-    if [ -f "$project_dir/.env.example" ] && [ ! -f "$project_dir/.env" ]; then
-        cp "$project_dir/.env.example" "$project_dir/.env"
-    fi
+# ── Step 4: Build Non-Laravel Frontends ───────────────────────
+if [ "$TEMPLATE" != "laravel" ] && [ -f "$project_dir/package.json" ]; then
+    echo "  [build] Preparing frontend project..."
 
-    if [ -f "$project_dir/package.json" ]; then
-        echo "  [build] Preparing frontend project..."
-        (
-            cd "$project_dir"
+    (
+        cd "$project_dir"
 
-            if [ "$TEMPLATE" = "next-js" ] && [ "$HAS_INTERNET" = "false" ]; then
-                echo "  [offline] Preparing Next.js layout for offline build..."
-                LAYOUT_FILE=""
+        if [ "$TEMPLATE" = "next-js" ] && [ "$HAS_INTERNET" = "false" ]; then
+            echo "  [offline] Preparing Next.js layout for offline build..."
+            LAYOUT_FILE=""
 
-                if [ -f "src/app/layout.tsx" ]; then
-                    LAYOUT_FILE="src/app/layout.tsx"
-                elif [ -f "app/layout.tsx" ]; then
-                    LAYOUT_FILE="app/layout.tsx"
-                fi
-
-                if [ -n "$LAYOUT_FILE" ]; then
-                    sed -i '/from "next\/font\/google"/d; /from '\''next\/font\/google'\''/d' "$LAYOUT_FILE"
-                    sed -i '/const .* = Geist({/,/\});/d' "$LAYOUT_FILE"
-                    sed -i '/const .* = Geist_Mono({/,/\});/d' "$LAYOUT_FILE"
-                    sed -i 's/\${.*\.variable}//g' "$LAYOUT_FILE"
-                    sed -i 's/geistSans\.variable//g' "$LAYOUT_FILE"
-                    sed -i 's/geistMono\.variable//g' "$LAYOUT_FILE"
-                fi
+            if [ -f "src/app/layout.tsx" ]; then
+                LAYOUT_FILE="src/app/layout.tsx"
+            elif [ -f "app/layout.tsx" ]; then
+                LAYOUT_FILE="app/layout.tsx"
             fi
 
-            if [ ! -d "node_modules" ]; then
-                run_pnpm_install "$project_dir"
+            if [ -n "$LAYOUT_FILE" ]; then
+                sed -i '/from "next\/font\/google"/d; /from '\''next\/font\/google'\''/d' "$LAYOUT_FILE"
+                sed -i '/const .* = Geist({/,/\);/d' "$LAYOUT_FILE"
+                sed -i '/const .* = Geist_Mono({/,/\);/d' "$LAYOUT_FILE"
+                sed -i 's/\${.*\.variable}//g' "$LAYOUT_FILE"
+                sed -i 's/geistSans\.variable//g' "$LAYOUT_FILE"
+                sed -i 's/geistMono\.variable//g' "$LAYOUT_FILE"
             fi
+        fi
 
-            if grep -q '"build"' package.json; then
-                if pnpm run build; then
-                    echo "  [ok] Frontend assets built successfully."
-                else
-                    echo -e "${RED}[error] Frontend build failed.${NC}"
-                    exit 1
-                fi
+        if [ ! -d "node_modules" ]; then
+            run_pnpm_install "$project_dir"
+        fi
+
+        if grep -q '"build"' package.json; then
+            if pnpm run build; then
+                echo "  [ok] Frontend assets built successfully."
+            else
+                echo -e "${RED}[error] Frontend build failed.${NC}"
+                exit 1
             fi
-        )
-    fi
+        fi
+    )
 fi
 
-# ── Step 4: Start runtime dependencies ───────────────────────
+# ── Step 5: Runtime Dependencies ─────────────────────────────
 if [ -f "$SCRIPT_DIR/setup-deps.sh" ]; then
     echo ""
     echo "[setup] Ensuring runtime dependencies for $TEMPLATE are started..."
@@ -634,7 +616,7 @@ if [ -f "$SCRIPT_DIR/setup-deps.sh" ]; then
     fi
 fi
 
-# ── Step 5: Final Message ────────────────────────────────────
+# ── Step 6: Final Message ────────────────────────────────────
 echo ""
 echo "========================================="
 echo -e "${GREEN}  Project ready: $PROJECT_NAME${NC}"
@@ -642,6 +624,7 @@ echo "========================================="
 echo ""
 echo "  cd $project_dir"
 echo ""
+
 case "$TEMPLATE" in
     laravel)
         echo "  serve"
@@ -653,4 +636,5 @@ case "$TEMPLATE" in
         echo "  source venv/bin/activate && python main.py"
         ;;
 esac
+
 echo ""
