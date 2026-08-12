@@ -240,7 +240,7 @@ git config --global --add safe.directory '*' 2>/dev/null || true
 example_dir="$EXAMPLE_DATA/$TEMPLATE"
 IS_OFFLINE=false
 
-if [ -d "$example_dir" ] && { [ "$HAS_INTERNET" = "false" ] || [ "$TEMPLATE" = "laravel" ]; }; then
+if [ -d "$example_dir" ] && [ "$HAS_INTERNET" = "false" ]; then
     echo "[source] Using cached baseline template ($example_dir)..."
     mkdir -p "$project_dir"
 
