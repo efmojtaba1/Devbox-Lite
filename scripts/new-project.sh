@@ -472,6 +472,22 @@ EOF
     (
         cd "$project_dir"
 
+        # --- FIX TAILWIND V4 + BREEZE ---
+        # Breeze generates Tailwind v3 PostCSS config, but Laravel 12 needs v4
+        for pc in postcss.config.js postcss.config.cjs postcss.config.mjs; do
+            if [ -f "$pc" ] && grep -q "tailwindcss" "$pc" && ! grep -q "@tailwindcss/postcss" "$pc"; then
+                echo "  [patch] Upgrading PostCSS config for Tailwind v4 compatibility..."
+                # جایگزینی کلمه کلیدی قدیمی با پکیج جدید
+                sed -i -e "s/tailwindcss[[:space:]]*:/'@tailwindcss\/postcss':/g" \
+                       -e "s/\"tailwindcss\"[[:space:]]*:/\"@tailwindcss\/postcss\":/g" \
+                       -e "s/'tailwindcss'[[:space:]]*:/'@tailwindcss\/postcss':/g" "$pc"
+
+                # نصب افزونه مورد نیاز برای نسخه ۴
+                pnpm add -D @tailwindcss/postcss
+            fi
+        done
+        # --------------------------------
+
         if [ "$HAS_INTERNET" = "false" ]; then
             echo "  [offline] Preparing frontend build..."
 
