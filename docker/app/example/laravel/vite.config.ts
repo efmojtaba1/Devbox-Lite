@@ -18,6 +18,7 @@ export default defineConfig({
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.tsx'],
             refresh: true,
+            fonts: false, // غیرفعال کردن دریافت خودکار فونت‌های راه دور
         }),
         inertia(),
         react({
