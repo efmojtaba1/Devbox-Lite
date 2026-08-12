@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # ── Colors & Constants ───────────────────────────────────────
 GREEN='\033[0;32m'
@@ -34,7 +34,7 @@ echo -e "${CYAN}║       DevBox Lite — New Project       ║${NC}"
 echo -e "${CYAN}╚═══════════════════════════════════════╝${NC}"
 echo ""
 
-# ── Check Real Network Status (Fix for WSL2/Docker) ──────────
+# ── Check Real Network Status ─────────────────────────────────
 is_online() {
     curl -fsI --connect-timeout 3 https://repo.packagist.org >/dev/null 2>&1 \
     || curl -fsI --connect-timeout 3 https://registry.npmjs.org >/dev/null 2>&1
@@ -48,6 +48,7 @@ else
     echo -e "${YELLOW}[network] Offline mode detected.${NC}"
 fi
 
+# ── Helpers ────────────────────────────────────────────────────
 ensure_container_running() {
     local name="$1"
     local kind="$2"
@@ -64,6 +65,7 @@ ensure_container_running() {
             sleep 3
             return 0
         fi
+
         echo "  [fix] $kind failed to start, recreating..."
         docker rm -f "$name" >/dev/null 2>&1 || true
     fi
@@ -78,7 +80,45 @@ ensure_container_running() {
     fi
 }
 
-# ── 1. Input Project Name ───────────────────────────────────
+run_pnpm_install() {
+    local dir="$1"
+
+    (
+        cd "$dir"
+
+        if [ "$HAS_INTERNET" = "false" ]; then
+            pnpm install --offline --frozen-lockfile
+        else
+            pnpm install --prefer-offline
+        fi
+    )
+}
+
+ensure_pnpm_package() {
+    local dir="$1"
+    local package="$2"
+    local mode="${3:-prod}"
+
+    (
+        cd "$dir"
+
+        if [ "$HAS_INTERNET" = "true" ]; then
+            if [ "$mode" = "dev" ]; then
+                pnpm add -D "$package"
+            else
+                pnpm add "$package"
+            fi
+        else
+            if [ "$mode" = "dev" ]; then
+                pnpm add -D "$package" --offline
+            else
+                pnpm add "$package" --offline
+            fi
+        fi
+    )
+}
+
+# ── 1. Input Project Name ────────────────────────────────────
 read -rp "Project name: " PROJECT_NAME
 if [ -z "$PROJECT_NAME" ]; then
     echo -e "${RED}[error] Project name cannot be empty.${NC}"
@@ -91,7 +131,7 @@ if [ -d "$project_dir" ]; then
     exit 1
 fi
 
-# ── 2. Select Framework ─────────────────────────────────────
+# ── 2. Select Framework ──────────────────────────────────────
 echo ""
 echo "Select framework:"
 echo "  1) laravel"
@@ -236,11 +276,15 @@ git config --global --add safe.directory "$project_dir" 2>/dev/null || true
 git config --global --add safe.directory "$WORKSPACE" 2>/dev/null || true
 git config --global --add safe.directory '*' 2>/dev/null || true
 
-# ── Step 1: Copy Source / Create Project (Decoupled Logic) ───
+# ── Step 1: Copy Source / Create Project ─────────────────────
 example_dir="$EXAMPLE_DATA/$TEMPLATE"
-IS_OFFLINE=false
 
-if [ -d "$example_dir" ] && [ "$HAS_INTERNET" = "false" ]; then
+# Important:
+# - Offline: use cached baseline templates.
+# - Online Laravel: always create a fresh Laravel project.
+#   This prevents an existing Breeze/Inertia scaffold in the cached
+#   template from colliding with the selected online starter kit.
+if [ "$HAS_INTERNET" = "false" ] && [ -d "$example_dir" ]; then
     echo "[source] Using cached baseline template ($example_dir)..."
     mkdir -p "$project_dir"
 
@@ -249,16 +293,24 @@ if [ -d "$example_dir" ] && [ "$HAS_INTERNET" = "false" ]; then
         tar --exclude='./.next' --exclude='./__pycache__' -cf - .
     ) | tar -C "$project_dir" -xf -
 
-    IS_OFFLINE=true
     echo "[ok] Baseline source copied successfully."
 else
     echo -e "${CYAN}[source] Creating fresh project via online CLI tools...${NC}"
     mkdir -p "$project_dir"
+
     case "$TEMPLATE" in
-        laravel) composer create-project laravel/laravel "$project_dir" --prefer-dist --no-interaction ;;
-        next-js) pnpm create next-app "$project_dir" $TS_FLAG $TW_FLAG --eslint$AR_FLAG --src-dir --import-alias "@/*" --use-pnpm ;;
-        react)   pnpm create vite "$project_dir" --template react-ts ;;
-        python)  python3 -m venv "$project_dir/venv" ;;
+        laravel)
+            composer create-project laravel/laravel "$project_dir" --prefer-dist --no-interaction
+            ;;
+        next-js)
+            pnpm create next-app "$project_dir" $TS_FLAG $TW_FLAG --eslint "$AR_FLAG" --src-dir --import-alias "@/*" --use-pnpm
+            ;;
+        react)
+            pnpm create vite "$project_dir" --template react-ts
+            ;;
+        python)
+            python3 -m venv "$project_dir/venv"
+            ;;
     esac
 fi
 
@@ -277,25 +329,10 @@ fi
 
 if [ -f "$project_dir/package.json" ] && [ ! -d "$project_dir/node_modules" ]; then
     echo "[install] pnpm install..."
-
-    if [ "$HAS_INTERNET" = "false" ]; then
-        echo "[offline] Installing from pnpm cache..."
-        (
-            cd "$project_dir"
-            pnpm install --offline --frozen-lockfile
-        ) || {
-            echo -e "${RED}[error] Offline pnpm install failed.${NC}"
-            exit 1
-        }
-    else
-        (
-            cd "$project_dir"
-            pnpm install --prefer-offline
-        ) || {
-            echo -e "${RED}[error] pnpm install failed.${NC}"
-            exit 1
-        }
-    fi
+    run_pnpm_install "$project_dir" || {
+        echo -e "${RED}[error] pnpm install failed.${NC}"
+        exit 1
+    }
 fi
 
 if [ "$TEMPLATE" = "python" ]; then
@@ -303,26 +340,31 @@ if [ "$TEMPLATE" = "python" ]; then
         echo "[install] creating python venv..."
         python3 -m venv "$project_dir/venv"
     fi
+
     if [ -f "$project_dir/requirements.txt" ]; then
         echo "[install] pip install..."
-        "$project_dir/venv/bin/pip" install --no-index --find-links=/root/.cache/pip -r "$project_dir/requirements.txt" 2>/dev/null || "$project_dir/venv/bin/pip" install -r "$project_dir/requirements.txt" 2>/dev/null || true
+        "$project_dir/venv/bin/pip" install --no-index --find-links=/root/.cache/pip -r "$project_dir/requirements.txt" 2>/dev/null \
+            || "$project_dir/venv/bin/pip" install -r "$project_dir/requirements.txt" 2>/dev/null \
+            || true
     fi
 fi
 
 # ── Step 3: Framework Specific Configuration ────────────────
-
 if [ "$TEMPLATE" = "laravel" ]; then
     echo ""
     echo "[configure] Applying Laravel options..."
 
-    [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
+    if [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ]; then
+        cp "$project_dir/.env.example" "$project_dir/.env"
+    fi
 
-    if [ "$HAS_INTERNET" = "true" ] && ([ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]); then
+    # ── Database / Redis ──────────────────────────────────────
+    if [ "$HAS_INTERNET" = "true" ] && { [ "$DB_CHOICE" = "MySQL" ] || [ "$DB_CHOICE" = "PostgreSQL" ]; }; then
         echo "  [db] Ensuring database service is running..."
 
         if [ "$DB_CHOICE" = "MySQL" ]; then
             ensure_container_running devbox-mysql mysql
-        elif [ "$DB_CHOICE" = "PostgreSQL" ]; then
+        else
             ensure_container_running devbox-postgres postgres
         fi
 
@@ -334,9 +376,10 @@ if [ "$TEMPLATE" = "laravel" ]; then
 
     if [ -f "$project_dir/.env" ]; then
         case "$DB_CHOICE" in
-            "MySQL")
+            MySQL)
                 MYSQL_HOST="devbox-mysql"
                 getent hosts devbox-mysql >/dev/null 2>&1 || MYSQL_HOST="127.0.0.1"
+
                 sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=mysql/" "$project_dir/.env"
                 sed -i "s/^DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
                 sed -i "s/^# DB_HOST=.*/DB_HOST=${MYSQL_HOST}/" "$project_dir/.env"
@@ -348,9 +391,11 @@ if [ "$TEMPLATE" = "laravel" ]; then
 
                 mysql -h "$MYSQL_HOST" -u devbox -pdevbox_pass -e "CREATE DATABASE IF NOT EXISTS \`${PROJECT_NAME}\`;" 2>/dev/null || true
                 ;;
-            "PostgreSQL")
+
+            PostgreSQL)
                 PG_HOST="devbox-postgres"
                 getent hosts devbox-postgres >/dev/null 2>&1 || PG_HOST="127.0.0.1"
+
                 sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/" "$project_dir/.env"
                 sed -i "s/^DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
                 sed -i "s/^# DB_HOST=.*/DB_HOST=${PG_HOST}/" "$project_dir/.env"
@@ -362,7 +407,8 @@ if [ "$TEMPLATE" = "laravel" ]; then
 
                 PGPASSWORD=devbox_pass psql -h "$PG_HOST" -U devbox -c "CREATE DATABASE ${PROJECT_NAME};" 2>/dev/null || true
                 ;;
-            "SQLite")
+
+            SQLite)
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
                 sed -i 's/^DB_DATABASE=.*/# DB_DATABASE=/' "$project_dir/.env"
                 mkdir -p "$project_dir/database"
@@ -371,21 +417,31 @@ if [ "$TEMPLATE" = "laravel" ]; then
         esac
     fi
 
+    # ── App key ────────────────────────────────────────────────
     if [ -f "$project_dir/.env" ]; then
         (cd "$project_dir" && php artisan key:generate --no-interaction)
     fi
 
+    # ── Frontend bootstrap dependency ─────────────────────────
+    # DevBox maintains a small bootstrap.js using Axios. Fresh Laravel
+    # projects may not include Axios, so ensure it explicitly before any
+    # Breeze build can reference it.
     mkdir -p "$project_dir/resources/js"
-    cat << 'EOF' > "$project_dir/resources/js/bootstrap.js"
+    cat <<'BOOTSTRAP_EOF' > "$project_dir/resources/js/bootstrap.js"
 import axios from 'axios';
 window.axios = axios;
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-EOF
+BOOTSTRAP_EOF
 
+    echo "  [frontend] Ensuring axios dependency..."
+    ensure_pnpm_package "$project_dir" "axios" "prod"
+
+    # ── Starter kit ────────────────────────────────────────────
     if [ "$HAS_INTERNET" = "true" ] && [ "$STARTER_KIT" != "None" ]; then
         echo "  [starter] Configuring $STARTER_KIT..."
 
-        # پاک کردن فایل‌های پیکربندی قدیمی برای جلوگیری از تداخل در بیلد Tailwind v4
+        # Breeze must be installed on a fresh Laravel project. Remove only
+        # legacy Tailwind/PostCSS configs that could conflict with Tailwind v4.
         rm -f "$project_dir/postcss.config.js" "$project_dir/tailwind.config.js"
 
         case "$STARTER_KIT" in
@@ -396,6 +452,7 @@ EOF
                     php artisan breeze:install blade --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
+
             "Breeze + React")
                 (
                     cd "$project_dir"
@@ -403,6 +460,7 @@ EOF
                     php artisan breeze:install react --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
+
             "Breeze + Vue")
                 (
                     cd "$project_dir"
@@ -410,6 +468,7 @@ EOF
                     php artisan breeze:install vue --no-interaction $([ "$DARK_MODE" = "yes" ] && echo "--dark")
                 )
                 ;;
+
             "Jetstream + Livewire")
                 (
                     cd "$project_dir"
@@ -417,6 +476,7 @@ EOF
                     php artisan jetstream:install livewire --no-interaction
                 )
                 ;;
+
             "Jetstream + Inertia")
                 (
                     cd "$project_dir"
@@ -427,6 +487,7 @@ EOF
         esac
     fi
 
+    # ── Testing ────────────────────────────────────────────────
     if [ "$HAS_INTERNET" = "true" ] && [ "$TESTING" = "Pest" ]; then
         (
             cd "$project_dir"
@@ -435,6 +496,7 @@ EOF
         )
     fi
 
+    # ── API ────────────────────────────────────────────────────
     if [ "$HAS_INTERNET" = "true" ] && [ "$ENABLE_API" = "yes" ]; then
         echo "  [api] Setting up API routes..."
         (
@@ -444,6 +506,7 @@ EOF
         )
     fi
 
+    # ── Initial database reset for online database projects ───
     if [ "$DB_CHOICE" != "None" ] && [ "$HAS_INTERNET" = "true" ]; then
         echo "  [db] Running initial migrations..."
         (
@@ -452,37 +515,34 @@ EOF
         )
     fi
 
-    # ── [Fix] Auto-migrate for Offline/Cached Projects ──
-    if [ "$TEMPLATE" = "laravel" ]; then
-        echo "  [check] Verifying database schema..."
-        (
-            cd "$project_dir"
-            # بررسی اینکه آیا دیتابیس در .env ست شده یا خیر
-            if grep -q "DB_CONNECTION=sqlite" .env; then
-                # اگر SQLite است، دیتابیس را لمس کن تا ساخته شود
-                touch database/database.sqlite
-            fi
+    # ── Verify database schema ─────────────────────────────────
+    echo "  [check] Verifying database schema..."
+    (
+        cd "$project_dir"
 
-            # اجرای مایگریشن برای اطمینان از وجود جدول‌ها
-            php artisan migrate --force
-        )
-    fi
+        if grep -q '^DB_CONNECTION=sqlite' .env 2>/dev/null; then
+            touch database/database.sqlite 2>/dev/null || true
+        fi
 
-# Final frontend build
+        php artisan migrate --force
+    )
+
+    # ── Final frontend build ───────────────────────────────────
     echo "  [build] Compiling frontend assets..."
     (
         cd "$project_dir"
 
-        # --- FIX TAILWIND V4 + BREEZE POSTCSS ISSUE ---
+        # Tailwind v4 + Breeze/PostCSS compatibility.
         for pc in postcss.config.js postcss.config.cjs postcss.config.mjs; do
             if [ -f "$pc" ] && grep -q "tailwindcss" "$pc" && ! grep -q "@tailwindcss/postcss" "$pc"; then
                 echo "  [patch] Upgrading PostCSS config for Tailwind v4 compatibility..."
-                sed -i -e "s/tailwindcss[[:space:]]*:/'@tailwindcss\/postcss':/g" \
-                       -e "s/\"tailwindcss\"[[:space:]]*:/\"@tailwindcss\/postcss\":/g" \
-                       -e "s/'tailwindcss'[[:space:]]*:/'@tailwindcss\/postcss':/g" "$pc"
+                sed -i \
+                    -e "s/tailwindcss[[:space:]]*:/'@tailwindcss\/postcss':/g" \
+                    -e "s/\"tailwindcss\"[[:space:]]*:/\"@tailwindcss\/postcss\":/g" \
+                    -e "s/'tailwindcss'[[:space:]]*:/'@tailwindcss\/postcss':/g" \
+                    "$pc"
             fi
         done
-        # ----------------------------------------------
 
         if [ "$HAS_INTERNET" = "false" ]; then
             echo "  [offline] Preparing frontend build..."
@@ -490,7 +550,9 @@ EOF
             find resources \
                 -type f \
                 \( -name "*.css" -o -name "*.blade.php" -o -name "*.jsx" -o -name "*.tsx" \) \
-                -exec sed -i 's|@import url(.*fonts\.bunny\.net.*);||g; s|@import '\''@fontsource-variable/figtree'\'';||g; s|@import "@fontsource-variable/figtree";||g' {} + \
+                -exec sed -i \
+                    's|@import url(.*fonts\.bunny\.net.*);||g; s|@import '\''@fontsource-variable/figtree'\'';||g; s|@import "@fontsource-variable/figtree";||g' \
+                    {} + \
                 2>/dev/null || true
 
             find resources \
@@ -499,17 +561,14 @@ EOF
                 -exec sed -i '/fonts\.bunny\.net/d' {} + \
                 2>/dev/null || true
 
-            pnpm add -D @tailwindcss/postcss --offline || true
-
-            if [ ! -d "node_modules" ]; then
-                echo "  [offline] Installing dependencies from pnpm cache..."
-                pnpm install --offline --frozen-lockfile
-            fi
+            ensure_pnpm_package "$project_dir" "@tailwindcss/postcss" "dev" || true
         else
             echo "  [online] Installing frontend dependencies..."
-            pnpm add -D @tailwindcss/postcss
-            pnpm install --prefer-offline
+            ensure_pnpm_package "$project_dir" "@tailwindcss/postcss" "dev"
         fi
+
+        # Reconcile lockfile after framework/starter-kit package changes.
+        run_pnpm_install "$project_dir"
 
         if pnpm run build; then
             echo "  [ok] Frontend assets built successfully."
@@ -518,9 +577,11 @@ EOF
             exit 1
         fi
     )
+
     echo "[ok] Laravel project initialized successfully."
 fi
 
+# ── Non-Laravel Projects ─────────────────────────────────────
 if [ "$TEMPLATE" != "laravel" ]; then
     if [ -f "$project_dir/.env.example" ] && [ ! -f "$project_dir/.env" ]; then
         cp "$project_dir/.env.example" "$project_dir/.env"
@@ -534,6 +595,7 @@ if [ "$TEMPLATE" != "laravel" ]; then
             if [ "$TEMPLATE" = "next-js" ] && [ "$HAS_INTERNET" = "false" ]; then
                 echo "  [offline] Preparing Next.js layout for offline build..."
                 LAYOUT_FILE=""
+
                 if [ -f "src/app/layout.tsx" ]; then
                     LAYOUT_FILE="src/app/layout.tsx"
                 elif [ -f "app/layout.tsx" ]; then
@@ -551,14 +613,10 @@ if [ "$TEMPLATE" != "laravel" ]; then
             fi
 
             if [ ! -d "node_modules" ]; then
-                if [ "$HAS_INTERNET" = "false" ]; then
-                    pnpm install --offline --frozen-lockfile
-                else
-                    pnpm install --prefer-offline
-                fi
+                run_pnpm_install "$project_dir"
             fi
 
-            if grep -q "\"build\"" package.json; then
+            if grep -q '"build"' package.json; then
                 if pnpm run build; then
                     echo "  [ok] Frontend assets built successfully."
                 else
@@ -588,8 +646,14 @@ echo ""
 echo "  cd $project_dir"
 echo ""
 case "$TEMPLATE" in
-    laravel)       echo "  serve" ;;
-    next-js|react) echo "  pnpm dev" ;;
-    python)        echo "  source venv/bin/activate && python main.py" ;;
+    laravel)
+        echo "  serve"
+        ;;
+    next-js|react)
+        echo "  pnpm dev"
+        ;;
+    python)
+        echo "  source venv/bin/activate && python main.py"
+        ;;
 esac
 echo ""
