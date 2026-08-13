@@ -164,7 +164,7 @@ RUN mkdir -p /root/.cache/pip/wheels && \
 # Copy example templates and install dependencies (offline-first with full asset compilation)
 COPY example/ /prebuilt/example/
 RUN cd /prebuilt/example/laravel && \
-    composer install --no-interaction 2>/dev/null; \
+    composer install --no-interaction 2>/dev/null && \
     if [ -f package.json ]; then \
     pnpm install 2>/dev/null && \
     pnpm build 2>/dev/null; \
