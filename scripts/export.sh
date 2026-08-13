@@ -356,7 +356,6 @@ PY
 fi
 
 WSL_MSI_SHA256="$(sha256sum "$WSL_MSI" | awk '{print $1}')"
-echo "  [ok] WSL MSI SHA256: $WSL_MSI_SHA256"
 
 # ------------------------------------------------------------
 # Ubuntu 24.04 WSL distribution
@@ -376,7 +375,7 @@ if [ "$ACTUAL_UBUNTU_SHA256" != "$UBUNTU_WSL_SHA256" ]; then
   exit 1
 fi
 
-echo "  [ok] Ubuntu 24.04 WSL SHA256 verified."
+echo "  [ok] Ubuntu 24.04 WSL verified."
 
 # ------------------------------------------------------------
 # Docker Desktop installer
@@ -411,7 +410,6 @@ DOCKER_INSTALLER_SHA256="$(sha256sum "$DOCKER_INSTALLER" | awk '{print $1}')"
 
 printf '%s  %s\n'   "$DOCKER_INSTALLER_SHA256"   "$(basename "$DOCKER_INSTALLER")"   > "$DOCKER_INSTALLER_SHA_FILE"
 
-echo "  [ok] Docker Desktop installer SHA256: $DOCKER_INSTALLER_SHA256"
 
 # ------------------------------------------------------------
 # Docker image
@@ -434,7 +432,6 @@ fi
 
 IMAGE_SHA256="$(sha256sum "$ABS_OUT/image.tar" | awk '{print $1}')"
 echo "  [ok] image.tar"
-echo "       SHA256: $IMAGE_SHA256"
 
 # ------------------------------------------------------------
 # Docker volumes
@@ -476,7 +473,6 @@ for logical_volume in "${VOLUMES[@]}"; do
 
   sha="$(sha256sum "$archive" | awk '{print $1}')"
   echo "  [ok] $logical_volume -> $(basename "$archive")"
-  echo "       SHA256: $sha"
 done
 
 # ------------------------------------------------------------
@@ -505,7 +501,6 @@ fi
 
 PROJECT_SHA256="$(sha256sum "$ABS_OUT/project-src.tar.gz" | awk '{print $1}')"
 echo "  [ok] project-src.tar.gz"
-echo "       SHA256: $PROJECT_SHA256"
 
 # ------------------------------------------------------------
 # Prebuilt
