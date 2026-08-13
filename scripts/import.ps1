@@ -1,100 +1,312 @@
 param(
-    [string]$InputPath
+    [string]$InputPath,
+    [string]$TargetProj
 )
 
 $ErrorActionPreference = "Stop"
-$DefaultInput = "D:\devbox-image"
 
-Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host " Full Self-Contained Import" -ForegroundColor Cyan
-Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "1) Use default path/directory ($DefaultInput)" -ForegroundColor White
-Write-Host "2) Enter custom path or archive (.tar.gz)" -ForegroundColor White
-$choice = Read-Host "Choose an option [1/2] (default: 1)"
-
-if ($choice -eq "2") {
-    Write-Host "  [Tip] Example format: D:\devbox-image or D:\backup.tar.gz" -ForegroundColor Yellow
-    $customInput = Read-Host "  Enter path"
-    $InputPath = if ($customInput) { $customInput } else { $DefaultInput }
-} else {
-    $InputPath = $DefaultInput
+function Write-Info($Message) {
+    Write-Host $Message -ForegroundColor Cyan
 }
 
-$CurrentDir = (Get-Location).Path
-$DefaultProjDest = $CurrentDir
-if ((Split-Path $CurrentDir -Leaf) -eq "scripts") {
-    $DefaultProjDest = Split-Path $CurrentDir -Parent
+function Write-Ok($Message) {
+    Write-Host $Message -ForegroundColor Green
 }
 
-Write-Host ""
-$TargetProj = Read-Host "Enter destination path for project setup [Default: $DefaultProjDest]"
-$ProjectRoot = if ($TargetProj) { $TargetProj } else { $DefaultProjDest }
-
-if (!(Test-Path $ProjectRoot)) {
-    New-Item -ItemType Directory -Force -Path $ProjectRoot | Out-Null
+function Write-Warn($Message) {
+    Write-Host $Message -ForegroundColor Yellow
 }
 
-$WorkDir = ""
-$TmpDir = ""
-
-if ((Test-Path $InputPath) -and ($InputPath -like "*.tar.gz" -or $InputPath -like "*.tgz")) {
-    $TmpDir = Join-Path $env:TEMP ([Guid]::NewGuid().ToString())
-    New-Item -ItemType Directory -Force -Path $TmpDir | Out-Null
-    Write-Host "[import] Extracting archive $InputPath -> $TmpDir"
-    tar xzf $InputPath -C $TmpDir
-    $WorkDir = $TmpDir
-} elseif (Test-Path $InputPath -PathType Container) {
-    $WorkDir = (Get-Item $InputPath).FullName
-} else {
-    Write-Error "Error: Path or archive not found: $InputPath"
+function Fail($Message) {
+    Write-Host "[ERROR] $Message" -ForegroundColor Red
     exit 1
 }
 
-$ProjectSrcTar = Join-Path $WorkDir "project-src.tar.gz"
-if (Test-Path $ProjectSrcTar) {
-    Write-Host "[import] Restoring project source code to $ProjectRoot..." -ForegroundColor Cyan
-    tar xzf $ProjectSrcTar -C $ProjectRoot
-    Write-Host "  [ok] Project source code restored." -ForegroundColor Green
-} else {
-    Write-Host "  [warn] project-src.tar.gz not found; skipping project files restoration." -ForegroundColor Yellow
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host " DevBox Lite - Offline DevBox Restore" -ForegroundColor Cyan
+Write-Host "=========================================" -ForegroundColor Cyan
+
+if (-not $InputPath) {
+    $InputPath = Join-Path (Get-Location).Path ".."
 }
 
-$PrebuiltTar = Join-Path $WorkDir "prebuilt.tar.gz"
-if (Test-Path $PrebuiltTar) {
-    Write-Host "[import] Restoring prebuilt directory..." -ForegroundColor Cyan
-    tar xzf $PrebuiltTar -C $ProjectRoot
-    Write-Host "  [ok] prebuilt folder restored." -ForegroundColor Green
-} else {
-    Write-Host "  [warn] prebuilt.tar.gz not found in package; skipping" -ForegroundColor Yellow
-}
-
-$ImageTar = Join-Path $WorkDir "image.tar"
-if (Test-Path $ImageTar) {
-    Write-Host "[import] Loading Docker image from $ImageTar" -ForegroundColor Cyan
-    docker load -i $ImageTar
-} else {
-    Write-Host "[warn] image.tar not found in package; skipping docker load" -ForegroundColor Yellow
-}
-
-Get-ChildItem -Path $WorkDir -Filter "vol-*.tar.gz" | ForEach-Object {
-    $fname = $_.Name
-    $volname = $fname -replace '^vol-', '' -replace '\.tar\.gz$', ''
-    Write-Host "[import] Restoring volume: $volname from $fname"
-
-    $existingVolumes = docker volume ls -q
-    if ($existingVolumes -notcontains $volname) {
-        docker volume create $volname | Out-Null
+if (-not $TargetProj) {
+    $TargetProj = Read-Host "Enter destination path for project setup [Default: D:\devbox-project]"
+    if (-not $TargetProj) {
+        $TargetProj = "D:\devbox-project"
     }
-    docker run --rm -i -v "${volname}:/volume" -v "${WorkDir}:/backup" alpine sh -c "cd /volume || mkdir -p /volume; tar xzf /backup/$fname -C /volume || true"
 }
 
-$ComposeFile = Join-Path $ProjectRoot "docker/compose/docker-compose.yml"
-if (Test-Path $ComposeFile) {
-    Write-Host "[ok] All assets restored. Starting compose: $ComposeFile" -ForegroundColor Green
-    docker compose -f $ComposeFile up -d
-    Write-Host "[ok] docker compose up started successfully." -ForegroundColor Green
-} else {
-    Write-Host "[warn] Compose file not found at $ComposeFile. Start containers manually." -ForegroundColor Yellow
+$InputPath = [System.IO.Path]::GetFullPath($InputPath)
+$ProjectRoot = [System.IO.Path]::GetFullPath($TargetProj)
+
+if (-not (Test-Path $InputPath)) {
+    Fail "Offline package path not found: $InputPath"
 }
 
-Write-Host "[done] Import finished successfully!" -ForegroundColor Green
+if (-not (Get-Command docker.exe -ErrorAction SilentlyContinue)) {
+    Fail "Docker CLI is not available. Docker Desktop must be installed and running before restore."
+}
+
+try {
+    docker version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Docker Engine is not ready."
+    }
+}
+catch {
+    Fail "Docker Engine is not ready."
+}
+
+$ManifestPath = Join-Path $InputPath "manifest.txt"
+if (-not (Test-Path $ManifestPath)) {
+    Fail "manifest.txt not found in package: $ManifestPath"
+}
+
+$Manifest = @{}
+$Volumes = @{}
+
+$section = ""
+foreach ($line in Get-Content -LiteralPath $ManifestPath) {
+    $trimmed = $line.Trim()
+
+    if (-not $trimmed) {
+        continue
+    }
+
+    if ($trimmed -match '^\[(.+)\]$') {
+        $section = $Matches[1]
+        continue
+    }
+
+    if ($trimmed -match '^([^:]+):(.*)$') {
+        $key = $Matches[1]
+        $value = $Matches[2]
+
+        if ($section -eq "volumes") {
+            $Volumes[$key] = $value
+        }
+        else {
+            $Manifest[$key] = $value
+        }
+    }
+}
+
+$ImageName = $Manifest["image"]
+$ComposeProject = $Manifest["compose_project"]
+
+if (-not $ImageName) {
+    Fail "Image name is missing from manifest.txt"
+}
+
+if (-not $ComposeProject) {
+    $ComposeProject = "devbox"
+}
+
+if (-not (Test-Path $ProjectRoot)) {
+    New-Item -ItemType Directory -Force -Path $ProjectRoot | Out-Null
+}
+
+Write-Info "[restore] Package: $InputPath"
+Write-Info "[restore] Project: $ProjectRoot"
+Write-Info "[restore] Image:   $ImageName"
+Write-Info "[restore] Compose: $ComposeProject"
+
+# ------------------------------------------------------------
+# Helper: verify SHA256 if the manifest contains one.
+# ------------------------------------------------------------
+function Verify-Sha256($Path, $Expected) {
+    if (-not $Expected) {
+        return
+    }
+
+    if (-not (Test-Path $Path)) {
+        Fail "File not found for checksum verification: $Path"
+    }
+
+    $Actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $ExpectedNormalized = $Expected.ToLowerInvariant()
+
+    if ($Actual -ne $ExpectedNormalized) {
+        Fail "SHA256 mismatch for $(Split-Path $Path -Leaf). Expected $ExpectedNormalized but got $Actual"
+    }
+
+    Write-Ok "  [OK] SHA256 $(Split-Path $Path -Leaf)"
+}
+
+# ------------------------------------------------------------
+# Verify package archives before modifying the destination.
+# ------------------------------------------------------------
+Write-Info "[1/5] Verifying package archives..."
+
+$ImageTar = Join-Path $InputPath "image.tar"
+$ProjectSrcTar = Join-Path $InputPath "project-src.tar.gz"
+
+Verify-Sha256 $ImageTar $Manifest["image_sha256"]
+Verify-Sha256 $ProjectSrcTar $Manifest["project-src.tar.gz"]
+
+foreach ($logical in $Volumes.Keys) {
+    $Archive = Join-Path $InputPath "vol-$logical.tar.gz"
+    if (-not (Test-Path $Archive)) {
+        Fail "Volume archive is missing: $Archive"
+    }
+
+    $Expected = $Manifest["vol-$logical.tar.gz"]
+    Verify-Sha256 $Archive $Expected
+}
+
+$PrebuiltTar = Join-Path $InputPath "prebuilt.tar.gz"
+if (Test-Path $PrebuiltTar) {
+    Verify-Sha256 $PrebuiltTar $Manifest["prebuilt.tar.gz"]
+}
+
+# ------------------------------------------------------------
+# Restore source.
+# ------------------------------------------------------------
+Write-Info "[2/5] Restoring project source..."
+
+tar.exe -xzf $ProjectSrcTar -C $ProjectRoot
+if ($LASTEXITCODE -ne 0) {
+    Fail "Failed to extract project-src.tar.gz"
+}
+
+Write-Ok "  [OK] Project source restored."
+
+if (Test-Path $PrebuiltTar) {
+    Write-Info "[restore] Restoring prebuilt directory..."
+    tar.exe -xzf $PrebuiltTar -C $ProjectRoot
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Failed to extract prebuilt.tar.gz"
+    }
+
+    Write-Ok "  [OK] prebuilt restored."
+}
+
+# ------------------------------------------------------------
+# Load DevBox image.
+# ------------------------------------------------------------
+Write-Info "[3/5] Loading DevBox Docker image..."
+
+docker.exe load -i $ImageTar
+if ($LASTEXITCODE -ne 0) {
+    Fail "docker load failed."
+}
+
+docker.exe image inspect $ImageName *> $null
+if ($LASTEXITCODE -ne 0) {
+    Fail "Loaded image could not be found as '$ImageName'."
+}
+
+Write-Ok "  [OK] Docker image loaded: $ImageName"
+
+# ------------------------------------------------------------
+# Restore volumes.
+#
+# IMPORTANT:
+# The old implementation used the external 'alpine' image.
+# That is not valid for a fully offline package.
+#
+# The DevBox image itself already contains tar/sh because the
+# export process uses the same image to create volume archives.
+# Therefore no external helper image or network access is needed.
+# ------------------------------------------------------------
+Write-Info "[4/5] Restoring Docker volumes..."
+
+foreach ($logical in $Volumes.Keys) {
+    $VolumeName = $Volumes[$logical]
+    $Archive = Join-Path $InputPath "vol-$logical.tar.gz"
+
+    if (-not $VolumeName) {
+        Fail "Empty Docker volume name for logical volume '$logical'"
+    }
+
+    docker.exe volume inspect $VolumeName *> $null
+    if ($LASTEXITCODE -ne 0) {
+        docker.exe volume create $VolumeName *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Fail "Could not create Docker volume '$VolumeName'"
+        }
+    }
+
+    Write-Info "  Restoring $logical -> $VolumeName"
+
+    $ArchiveName = Split-Path $Archive -Leaf
+
+    # Use the already-loaded DevBox image as the restore helper.
+    # No alpine pull and no internet access are required.
+    $RestoreCommand = "rm -rf /restore-target/* /restore-target/.[!.]* /restore-target/..?* 2>/dev/null || true; tar xzf /backup/$ArchiveName -C /restore-target"
+
+    docker.exe run --rm `
+        -v "${VolumeName}:/restore-target" `
+        -v "${InputPath}:/backup:ro" `
+        $ImageName `
+        sh -c $RestoreCommand
+
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Failed to restore Docker volume '$VolumeName'"
+    }
+
+    Write-Ok "  [OK] $VolumeName"
+}
+
+# ------------------------------------------------------------
+# Start Compose using the original Compose project name.
+# This prevents Compose from silently creating a different set
+# of volume names on the destination machine.
+# ------------------------------------------------------------
+Write-Info "[5/5] Starting DevBox Lite..."
+
+$ComposeRelative = $Manifest["compose_file"]
+if (-not $ComposeRelative) {
+    $ComposeRelative = "docker/compose/docker-compose.yml"
+}
+
+$ComposeFile = Join-Path $ProjectRoot ($ComposeRelative -replace '/', '\')
+
+if (-not (Test-Path $ComposeFile)) {
+    Fail "Compose file not found after project restore: $ComposeFile"
+}
+
+docker.exe compose -p $ComposeProject -f $ComposeFile up -d
+if ($LASTEXITCODE -ne 0) {
+    Fail "docker compose up failed."
+}
+
+Write-Ok "  [OK] Docker Compose started."
+
+# ------------------------------------------------------------
+# Final checks.
+# ------------------------------------------------------------
+Write-Info "[verify] Checking DevBox container state..."
+
+$ComposePs = docker.exe compose -p $ComposeProject -f $ComposeFile ps --format json 2>$null
+
+if ($LASTEXITCODE -ne 0) {
+    Fail "Could not query Docker Compose status."
+}
+
+docker.exe image inspect $ImageName *> $null
+if ($LASTEXITCODE -ne 0) {
+    Fail "DevBox image verification failed."
+}
+
+foreach ($logical in $Volumes.Keys) {
+    $VolumeName = $Volumes[$logical]
+    docker.exe volume inspect $VolumeName *> $null
+
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Docker volume verification failed: $VolumeName"
+    }
+}
+
+Write-Host ""
+Write-Host "=========================================" -ForegroundColor Green
+Write-Host " DevBox Lite Restore Completed" -ForegroundColor Green
+Write-Host "=========================================" -ForegroundColor Green
+Write-Host "Project : $ProjectRoot"
+Write-Host "Compose : $ComposeProject"
+Write-Host "Image   : $ImageName"
+Write-Host ""
+Write-Host "Docker Desktop can now be used normally."
+Write-Host "Ubuntu-24.04 is installed as WSL2 and can be used independently."
+Write-Host ""
