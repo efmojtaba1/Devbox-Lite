@@ -514,7 +514,6 @@ if [ -d "$PROJECT_ROOT/prebuilt" ]; then
 
   PREBUILT_SHA256="$(sha256sum "$ABS_OUT/prebuilt.tar.gz" | awk '{print $1}')"
   echo "  [ok] prebuilt.tar.gz"
-  echo "       SHA256: $PREBUILT_SHA256"
 else
   rm -f "$ABS_OUT/prebuilt.tar.gz"
   echo ""
