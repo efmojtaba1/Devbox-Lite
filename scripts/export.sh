@@ -31,8 +31,8 @@ UBUNTU_WSL_URL="https://releases.ubuntu.com/24.04.4/ubuntu-24.04.4-wsl-amd64.wsl
 UBUNTU_WSL_SHA256="9b2f7730dc68227dd04a9f3e5eab86ad85caf556b8606ad94f1f29ff5c4fd3f5"
 
 # Docker's official stable Windows x64 installer endpoint.
-DOCKER_DESKTOP_URL="https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe"
-
+DOCKER_DESKTOP_VERSION="4.86.0"
+DOCKER_DESKTOP_URL="https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe?utm_source=docker&utm_medium=webreferral&utm_campaign=docs-driven-download-win-amd64"
 echo "========================================="
 echo " DevBox Lite - Full Offline Export"
 echo "========================================="
@@ -160,34 +160,157 @@ resolve_volume() {
 }
 
 # ------------------------------------------------------------
-# Download helper
+# Robust resumable download helper
 # ------------------------------------------------------------
-download_if_missing() {
-  local url="$1"
-  local output="$2"
+# Uses curl's native progress meter as the single progress mechanism.
+#
+# Strategy:
+#   1. Reuse an existing complete file.
+#   2. Resume *.part files.
+#   3. Prefer IPv4 in WSL.
+#   4. Retry transient failures.
+#   5. If WSL receives a blocked response (for example HTTP 403),
+#      retry through the Windows host's curl.exe/network stack.
+#   6. Preserve partial files on failure.
+#
+# No blocking HEAD request and no second progress-monitor process.
+# ------------------------------------------------------------
+DOWNLOAD_RETRIES="8"
+DOWNLOAD_RETRY_DELAY="5"
+DOWNLOAD_MAX_RETRY_TIME="1800"
+DOWNLOAD_CONNECT_TIMEOUT="30"
+DOWNLOAD_SPEED_LIMIT="1024"
+DOWNLOAD_SPEED_TIME="180"
+DOWNLOAD_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36"
+
+download_with_wsl_curl() {
+  local url="${1:-}"
+  local part="${2:-}"
+  local resume_args=()
+
+  [ -s "$part" ] && resume_args=(--continue-at -)
+
+  curl \
+    -4 \
+    --fail \
+    --location \
+    --user-agent "$DOWNLOAD_USER_AGENT" \
+    "${resume_args[@]}" \
+    --retry "$DOWNLOAD_RETRIES" \
+    --retry-delay "$DOWNLOAD_RETRY_DELAY" \
+    --retry-max-time "$DOWNLOAD_MAX_RETRY_TIME" \
+    --retry-all-errors \
+    --connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
+    --speed-limit "$DOWNLOAD_SPEED_LIMIT" \
+    --speed-time "$DOWNLOAD_SPEED_TIME" \
+    --output "$part" \
+    "$url"
+}
+
+download_with_windows_host() {
+  local url="${1:-}"
+  local part="${2:-}"
+  local win_output=""
+  local resume="0"
+
+  command -v powershell.exe >/dev/null 2>&1 || return 127
+  command -v wslpath >/dev/null 2>&1 || return 127
+
+  win_output="$(wslpath -w "$part" 2>/dev/null || true)"
+  [ -n "$win_output" ] || return 127
+
+  [ -s "$part" ] && resume="1"
+
+  echo "  [fallback] Retrying through Windows host networking..."
+  echo "             Output: $win_output"
+
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
+    \$ErrorActionPreference = 'Stop'
+    \$args = @(
+      '-4',
+      '--fail',
+      '--location',
+      '--user-agent', '$DOWNLOAD_USER_AGENT',
+      '--retry', '$DOWNLOAD_RETRIES',
+      '--retry-delay', '$DOWNLOAD_RETRY_DELAY',
+      '--retry-max-time', '$DOWNLOAD_MAX_RETRY_TIME',
+      '--retry-all-errors',
+      '--connect-timeout', '$DOWNLOAD_CONNECT_TIMEOUT',
+      '--speed-limit', '$DOWNLOAD_SPEED_LIMIT',
+      '--speed-time', '$DOWNLOAD_SPEED_TIME'
+    )
+
+    if ('$resume' -eq '1') {
+      \$args += @('--continue-at', '-')
+    }
+
+    \$args += @('--output', '$win_output', '$url')
+    & curl.exe @args
+    exit \$LASTEXITCODE
+  "
+}
+
+download_resumable() {
+  local url="${1:-}"
+  local output="${2:-}"
+  local label="${3:-}"
+
+  if [ -z "$url" ] || [ -z "$output" ]; then
+    echo "  [error] download_resumable requires URL and output path."
+    return 1
+  fi
+
+  [ -n "$label" ] || label="$(basename "$output")"
+
+  local part="${output}.part"
 
   if [ -s "$output" ]; then
-    echo "  [ok] Existing: $(basename "$output")"
+    echo "  [ok] Existing: $label"
+    echo "  [info] Size: $(du -h "$output" | cut -f1)"
     return 0
   fi
 
-  echo "  [download] $(basename "$output")"
-  rm -f "$output"
+  echo "  [download] $label"
+  echo "  [info] Download URL:"
+  echo "         $url"
 
-  if ! curl -fL --retry 3 --retry-delay 2 -o "$output" "$url"; then
-    rm -f "$output"
-    echo "  [error] Download failed:"
-    echo "          $url"
+  if [ -s "$part" ]; then
+    local bytes
+    bytes="$(stat -c '%s' "$part" 2>/dev/null || echo 0)"
+    echo "  [resume] Partial file detected: $((bytes / 1024 / 1024)) MB"
+  fi
+
+  if download_with_wsl_curl "$url" "$part"; then
+    :
+  else
+    local wsl_rc=$?
+    echo ""
+    echo "  [warn] WSL download failed (curl exit $wsl_rc)."
+
+    if download_with_windows_host "$url" "$part"; then
+      :
+    else
+      local host_rc=$?
+      echo ""
+      echo "  [error] Download failed: $label"
+      echo "          WSL curl exit : $wsl_rc"
+      echo "          Host curl exit: $host_rc"
+      [ -s "$part" ] || rm -f "$part"
+      return 1
+    fi
+  fi
+
+  if [ ! -s "$part" ]; then
+    echo "  [error] Downloaded file is missing or empty: $label"
+    rm -f "$part"
     return 1
   fi
 
-  if [ ! -s "$output" ]; then
-    echo "  [error] Downloaded file is empty: $output"
-    return 1
-  fi
+  mv -f "$part" "$output"
+
+  echo "  [ok] Download complete: $label ($(du -h "$output" | cut -f1))"
 }
 
-# ------------------------------------------------------------
 # WSL MSI - latest stable x64 release
 # ------------------------------------------------------------
 echo ""
@@ -229,7 +352,7 @@ PY
   echo "  [info] WSL MSI URL:"
   echo "         $WSL_ASSET_URL"
 
-  download_if_missing "$WSL_ASSET_URL" "$WSL_MSI"
+  download_resumable "$WSL_ASSET_URL" "$WSL_MSI" "WSL x64 MSI"
 fi
 
 WSL_MSI_SHA256="$(sha256sum "$WSL_MSI" | awk '{print $1}')"
@@ -242,7 +365,7 @@ echo ""
 echo "[export] Preparing Ubuntu 24.04 WSL distribution..."
 
 UBUNTU_WSL="$OFFLINE_DEPS_DIR/ubuntu-24.04.4-wsl-amd64.wsl"
-download_if_missing "$UBUNTU_WSL_URL" "$UBUNTU_WSL"
+download_resumable "$UBUNTU_WSL_URL" "$UBUNTU_WSL" "Ubuntu 24.04 WSL"
 
 ACTUAL_UBUNTU_SHA256="$(sha256sum "$UBUNTU_WSL" | awk '{print $1}')"
 
@@ -262,9 +385,32 @@ echo ""
 echo "[export] Preparing Docker Desktop Windows x64 installer..."
 
 DOCKER_INSTALLER="$OFFLINE_DEPS_DIR/Docker Desktop Installer.exe"
-download_if_missing "$DOCKER_DESKTOP_URL" "$DOCKER_INSTALLER"
+DOCKER_INSTALLER_SHA_FILE="$OFFLINE_DEPS_DIR/docker-desktop.sha256"
+
+if [ -s "$DOCKER_INSTALLER" ] && [ -s "$DOCKER_INSTALLER_SHA_FILE" ]; then
+  CACHED_DOCKER_SHA256="$(awk 'NF {print $1; exit}' "$DOCKER_INSTALLER_SHA_FILE")"
+  CURRENT_DOCKER_SHA256="$(sha256sum "$DOCKER_INSTALLER" | awk '{print $1}')"
+
+  if [ "$CURRENT_DOCKER_SHA256" = "$CACHED_DOCKER_SHA256" ]; then
+    echo "  [ok] Existing Docker Desktop installer verified."
+  else
+    echo "  [warn] Existing Docker Desktop installer checksum mismatch."
+    echo "  [info] Removing invalid cached installer."
+    rm -f "$DOCKER_INSTALLER"
+  fi
+fi
+
+download_resumable   "$DOCKER_DESKTOP_URL"   "$DOCKER_INSTALLER"   "Docker Desktop $DOCKER_DESKTOP_VERSION"
+
+if [ ! -s "$DOCKER_INSTALLER" ]; then
+  echo "[error] Docker Desktop installer is missing or empty."
+  exit 1
+fi
 
 DOCKER_INSTALLER_SHA256="$(sha256sum "$DOCKER_INSTALLER" | awk '{print $1}')"
+
+printf '%s  %s\n'   "$DOCKER_INSTALLER_SHA256"   "$(basename "$DOCKER_INSTALLER")"   > "$DOCKER_INSTALLER_SHA_FILE"
+
 echo "  [ok] Docker Desktop installer SHA256: $DOCKER_INSTALLER_SHA256"
 
 # ------------------------------------------------------------
@@ -769,7 +915,6 @@ pause
 exit /b 1
 BAT
 
-chmod +x "$ABS_OUT/setup-offline.bat"
 
 echo "  [ok] setup-offline.bat"
 
@@ -791,8 +936,10 @@ CURRENT_DATE="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
   echo "ubuntu_wsl_sha256:$UBUNTU_WSL_SHA256"
   echo "wsl_msi_filename:$(basename "$WSL_MSI")"
   echo "wsl_msi_sha256:$WSL_MSI_SHA256"
+  echo "docker_desktop_version:$DOCKER_DESKTOP_VERSION"
   echo "docker_desktop_installer_filename:$(basename "$DOCKER_INSTALLER")"
   echo "docker_desktop_installer_sha256:$DOCKER_INSTALLER_SHA256"
+  echo "docker_desktop_download_policy:wsl-curl-then-windows-host-fallback"
   echo "image:$IMAGE_NAME"
   echo "image_sha256:$IMAGE_SHA256"
   echo "compose_project:$COMPOSE_PROJECT"
@@ -830,6 +977,7 @@ required_files=(
   "$ABS_OUT/offline-deps/$(basename "$WSL_MSI")"
   "$ABS_OUT/offline-deps/ubuntu-24.04.4-wsl-amd64.wsl"
   "$ABS_OUT/offline-deps/Docker Desktop Installer.exe"
+  "$ABS_OUT/offline-deps/docker-desktop.sha256"
   "$ABS_OUT/scripts/import.ps1"
 )
 
