@@ -505,21 +505,6 @@ fi
 
 PROJECT_SHA256="$(sha256sum "$BUNDLE_DIR/project-src.tar.gz" | awk '{print $1}')"
 
-# بخش Prebuilt:
-if [ -d "$PROJECT_ROOT/prebuilt" ]; then
-  echo ""
-  echo "[export] Packaging prebuilt directory..."
-  rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
-  tar czf "$BUNDLE_DIR/prebuilt.tar.gz" -C "$PROJECT_ROOT" prebuilt
-
-  PREBUILT_SHA256="$(sha256sum "$BUNDLE_DIR/prebuilt.tar.gz" | awk '{print $1}')"
-  echo "  [ok] prebuilt.tar.gz"
-else
-  rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
-  echo ""
-  echo "[info] prebuilt directory not found; skipping."
-fi
-
 # ------------------------------------------------------------
 # Prebuilt
 # ------------------------------------------------------------
