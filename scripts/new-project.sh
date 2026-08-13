@@ -291,8 +291,8 @@ reset_mysql_database() {
         return 1
     fi
 
-    mysql -h "$host" -u devbox -pdevbox_pass \
-        -e "DROP DATABASE IF EXISTS \`$db_name\`; CREATE DATABASE \`$db_name\`;" 2>/dev/null
+    mysql -h "$host" -u root \
+        -e "DROP DATABASE IF EXISTS \`$db_name\`; CREATE DATABASE \`$db_name\`;"
 }
 
 reset_postgres_database() {
@@ -462,8 +462,8 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
                 sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=root/' "$project_dir/.env"
+                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=/' "$project_dir/.env"
                 ;;
             "PostgreSQL")
                 PG_HOST="devbox-postgres"
