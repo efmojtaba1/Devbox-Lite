@@ -31,9 +31,8 @@ UBUNTU_WSL_URL="https://releases.ubuntu.com/24.04.4/ubuntu-24.04.4-wsl-amd64.wsl
 UBUNTU_WSL_SHA256="9b2f7730dc68227dd04a9f3e5eab86ad85caf556b8606ad94f1f29ff5c4fd3f5"
 
 # Docker's official stable Windows x64 installer endpoint.
-DOCKER_DESKTOP_VERSION="4.86.0"
+DOCKER_DESKTOP_VERSION="latest"
 DOCKER_DESKTOP_URL="https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe?utm_source=docker&utm_medium=webreferral&utm_campaign=docs-driven-download-win-amd64"
-echo "========================================="
 echo " DevBox Lite - Full Offline Export"
 echo "========================================="
 
@@ -394,12 +393,11 @@ if [ -s "$DOCKER_INSTALLER" ] && [ -s "$DOCKER_INSTALLER_SHA_FILE" ]; then
     echo "  [ok] Existing Docker Desktop installer verified."
   else
     echo "  [warn] Existing Docker Desktop installer checksum mismatch."
-    echo "  [info] Removing invalid cached installer."
     rm -f "$DOCKER_INSTALLER"
   fi
 fi
 
-download_resumable   "$DOCKER_DESKTOP_URL"   "$DOCKER_INSTALLER"   "Docker Desktop $DOCKER_DESKTOP_VERSION"
+download_resumable "$DOCKER_DESKTOP_URL" "$DOCKER_INSTALLER" "Docker Desktop Installer"
 
 if [ ! -s "$DOCKER_INSTALLER" ]; then
   echo "[error] Docker Desktop installer is missing or empty."
@@ -407,9 +405,7 @@ if [ ! -s "$DOCKER_INSTALLER" ]; then
 fi
 
 DOCKER_INSTALLER_SHA256="$(sha256sum "$DOCKER_INSTALLER" | awk '{print $1}')"
-
-printf '%s  %s\n'   "$DOCKER_INSTALLER_SHA256"   "$(basename "$DOCKER_INSTALLER")"   > "$DOCKER_INSTALLER_SHA_FILE"
-
+printf '%s  %s\n' "$DOCKER_INSTALLER_SHA256" "$(basename "$DOCKER_INSTALLER")" > "$DOCKER_INSTALLER_SHA_FILE"
 
 # ------------------------------------------------------------
 # Docker image
