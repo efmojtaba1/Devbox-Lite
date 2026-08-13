@@ -435,6 +435,10 @@ echo "  [ok] image.tar"
 echo ""
 echo "[export] Exporting Docker volumes..."
 
+# ایجاد پوشه جداگانه برای ولوم‌ها
+VOLUMES_OUT="$ABS_OUT/volumes"
+mkdir -p "$VOLUMES_OUT"
+
 declare -A ACTUAL_VOLUMES
 
 for logical_volume in "${VOLUMES[@]}"; do
@@ -448,12 +452,13 @@ for logical_volume in "${VOLUMES[@]}"; do
 
   ACTUAL_VOLUMES["$logical_volume"]="$actual_volume"
 
-  archive="$ABS_OUT/vol-${logical_volume}.tar.gz"
+  # ذخیره آرشیو داخل پوشه volumes
+  archive="$VOLUMES_OUT/vol-${logical_volume}.tar.gz"
   rm -f "$archive"
 
   docker run --rm \
     --mount "type=volume,source=${actual_volume},target=/volume,readonly" \
-    --mount "type=bind,source=${ABS_OUT},target=/backup" \
+    --mount "type=bind,source=${VOLUMES_OUT},target=/backup" \
     "$IMAGE_NAME" \
     sh -c "tar czf /backup/vol-${logical_volume}.tar.gz -C /volume ."
 
@@ -941,14 +946,14 @@ CURRENT_DATE="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
     echo "$logical_volume:${ACTUAL_VOLUMES[$logical_volume]}"
   done
   echo ""
-  echo "[archives]"
+echo "[archives]"
   echo "project-src.tar.gz:$PROJECT_SHA256"
   if [ -f "$ABS_OUT/prebuilt.tar.gz" ]; then
     echo "prebuilt.tar.gz:$PREBUILT_SHA256"
   fi
   for logical_volume in "${VOLUMES[@]}"; do
-    archive="$ABS_OUT/vol-${logical_volume}.tar.gz"
-    echo "$(basename "$archive"):$(sha256sum "$archive" | awk '{print $1}')"
+    archive="$ABS_OUT/volumes/vol-${logical_volume}.tar.gz"
+    echo "volumes/$(basename "$archive"):$(sha256sum "$archive" | awk '{print $1}')"
   done
 } > "$ABS_OUT/manifest.txt"
 

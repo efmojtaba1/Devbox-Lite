@@ -146,12 +146,12 @@ Verify-Sha256 $ImageTar $Manifest["image_sha256"]
 Verify-Sha256 $ProjectSrcTar $Manifest["project-src.tar.gz"]
 
 foreach ($logical in $Volumes.Keys) {
-    $Archive = Join-Path $InputPath "vol-$logical.tar.gz"
+    $Archive = Join-Path $InputPath "volumes\vol-$logical.tar.gz"
     if (-not (Test-Path $Archive)) {
         Fail "Volume archive is missing: $Archive"
     }
 
-    $Expected = $Manifest["vol-$logical.tar.gz"]
+    $Expected = $Manifest["volumes/vol-$logical.tar.gz"]
     Verify-Sha256 $Archive $Expected
 }
 
@@ -201,20 +201,20 @@ Write-Ok "  [OK] Docker image loaded: $ImageName"
 
 # ------------------------------------------------------------
 # Restore volumes.
-#
-# IMPORTANT:
-# The old implementation used the external 'alpine' image.
-# That is not valid for a fully offline package.
-#
-# The DevBox image itself already contains tar/sh because the
-# export process uses the same image to create volume archives.
-# Therefore no external helper image or network access is needed.
 # ------------------------------------------------------------
 Write-Info "[4/5] Restoring Docker volumes..."
 
+# تعریف مسیر دقیق پوشه volumes
+$VolumesPath = Join-Path $InputPath "volumes"
+
 foreach ($logical in $Volumes.Keys) {
     $VolumeName = $Volumes[$logical]
-    $Archive = Join-Path $InputPath "vol-$logical.tar.gz"
+    # اصلاح مسیر آرشیو برای خواندن از پوشه volumes
+    $Archive = Join-Path $VolumesPath "vol-$logical.tar.gz"
+
+    if (-not (Test-Path $Archive)) {
+        Fail "Volume archive is missing: $Archive"
+    }
 
     if (-not $VolumeName) {
         Fail "Empty Docker volume name for logical volume '$logical'"
@@ -232,13 +232,12 @@ foreach ($logical in $Volumes.Keys) {
 
     $ArchiveName = Split-Path $Archive -Leaf
 
-    # Use the already-loaded DevBox image as the restore helper.
-    # No alpine pull and no internet access are required.
     $RestoreCommand = "rm -rf /restore-target/* /restore-target/.[!.]* /restore-target/..?* 2>/dev/null || true; tar xzf /backup/$ArchiveName -C /restore-target"
 
+    # اتصال مستقیم پوشه volumes به جای کل ریشه پکیج به مسیر /backup در کانتینر
     docker.exe run --rm `
         -v "${VolumeName}:/restore-target" `
-        -v "${InputPath}:/backup:ro" `
+        -v "${VolumesPath}:/backup:ro" `
         $ImageName `
         sh -c $RestoreCommand
 
