@@ -61,7 +61,10 @@ fi
 
 mkdir -p "$OUT_DIR"
 ABS_OUT="$(cd "$OUT_DIR" && pwd)"
-OFFLINE_DEPS_DIR="$ABS_OUT/offline-deps"
+# اضافه کردن این دو خط برای ساخت پوشه داخلی
+BUNDLE_DIR="$ABS_OUT/devbox-data"
+mkdir -p "$BUNDLE_DIR"
+OFFLINE_DEPS_DIR="$BUNDLE_DIR/offline-deps"
 
 mkdir -p "$OFFLINE_DEPS_DIR"
 
@@ -419,14 +422,14 @@ if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
 fi
 
 rm -f "$ABS_OUT/image.tar"
-docker save -o "$ABS_OUT/image.tar" "$IMAGE_NAME"
+docker save -o "$BUNDLE_DIR/image.tar" "$IMAGE_NAME"
 
-if [ ! -s "$ABS_OUT/image.tar" ]; then
+if [ ! -s "$BUNDLE_DIR/image.tar" ]; then
   echo "[error] image.tar was not created correctly."
   exit 1
 fi
 
-IMAGE_SHA256="$(sha256sum "$ABS_OUT/image.tar" | awk '{print $1}')"
+IMAGE_SHA256="$(sha256sum "$BUNDLE_DIR/image.tar" | awk '{print $1}')"
 echo "  [ok] image.tar"
 
 # ------------------------------------------------------------
@@ -436,7 +439,7 @@ echo ""
 echo "[export] Exporting Docker volumes..."
 
 # ایجاد پوشه جداگانه برای ولوم‌ها
-VOLUMES_OUT="$ABS_OUT/volumes"
+VOLUMES_OUT="$BUNDLE_DIR/volumes"
 mkdir -p "$VOLUMES_OUT"
 
 declare -A ACTUAL_VOLUMES
@@ -482,7 +485,7 @@ done
 echo ""
 echo "[export] Packaging project source code..."
 
-rm -f "$ABS_OUT/project-src.tar.gz"
+rm -f "$BUNDLE_DIR/project-src.tar.gz"
 
 tar \
   --exclude='.git' \
@@ -492,16 +495,30 @@ tar \
   --exclude='devbox-offline' \
   --exclude='out' \
   --exclude='backups' \
-  -czf "$ABS_OUT/project-src.tar.gz" \
+  -czf "$BUNDLE_DIR/project-src.tar.gz" \
   -C "$PROJECT_ROOT" .
 
-if [ ! -s "$ABS_OUT/project-src.tar.gz" ]; then
+if [ ! -s "$BUNDLE_DIR/project-src.tar.gz" ]; then
   echo "[error] project-src.tar.gz was not created."
   exit 1
 fi
 
-PROJECT_SHA256="$(sha256sum "$ABS_OUT/project-src.tar.gz" | awk '{print $1}')"
-echo "  [ok] project-src.tar.gz"
+PROJECT_SHA256="$(sha256sum "$BUNDLE_DIR/project-src.tar.gz" | awk '{print $1}')"
+
+# بخش Prebuilt:
+if [ -d "$PROJECT_ROOT/prebuilt" ]; then
+  echo ""
+  echo "[export] Packaging prebuilt directory..."
+  rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
+  tar czf "$BUNDLE_DIR/prebuilt.tar.gz" -C "$PROJECT_ROOT" prebuilt
+
+  PREBUILT_SHA256="$(sha256sum "$BUNDLE_DIR/prebuilt.tar.gz" | awk '{print $1}')"
+  echo "  [ok] prebuilt.tar.gz"
+else
+  rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
+  echo ""
+  echo "[info] prebuilt directory not found; skipping."
+fi
 
 # ------------------------------------------------------------
 # Prebuilt
@@ -509,13 +526,13 @@ echo "  [ok] project-src.tar.gz"
 if [ -d "$PROJECT_ROOT/prebuilt" ]; then
   echo ""
   echo "[export] Packaging prebuilt directory..."
-  rm -f "$ABS_OUT/prebuilt.tar.gz"
-  tar czf "$ABS_OUT/prebuilt.tar.gz" -C "$PROJECT_ROOT" prebuilt
+  rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
+  tar czf "$BUNDLE_DIR/prebuilt.tar.gz" -C "$PROJECT_ROOT" prebuilt
 
-  PREBUILT_SHA256="$(sha256sum "$ABS_OUT/prebuilt.tar.gz" | awk '{print $1}')"
+  PREBUILT_SHA256="$(sha256sum "$BUNDLE_DIR/prebuilt.tar.gz" | awk '{print $1}')"
   echo "  [ok] prebuilt.tar.gz"
 else
-  rm -f "$ABS_OUT/prebuilt.tar.gz"
+  rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
   echo ""
   echo "[info] prebuilt directory not found; skipping."
 fi
@@ -526,15 +543,17 @@ fi
 echo ""
 echo "[export] Copying offline installer scripts..."
 
-rm -rf "$ABS_OUT/scripts"
-mkdir -p "$ABS_OUT/scripts"
+rm -rf "$BUNDLE_DIR/scripts"
+mkdir -p "$BUNDLE_DIR/scripts"
 
-cp "$PROJECT_ROOT/scripts/import.ps1" "$ABS_OUT/scripts/import.ps1"
+cp "$PROJECT_ROOT/scripts/import.ps1" "$BUNDLE_DIR/scripts/import.ps1"
 
 if [ ! -f "$PROJECT_ROOT/scripts/import.ps1" ]; then
   echo "[error] scripts/import.ps1 not found in project."
   exit 1
 fi
+
+echo "  [ok] import.ps1"
 
 # Generate setup-offline.bat below so the exported package always
 # contains the exact orchestrator matching this export format.
@@ -545,7 +564,7 @@ setlocal EnableExtensions DisableDelayedExpansion
 title DevBox Lite - Offline Installer
 color 0A
 
-set "PACKAGE_ROOT=%~dp0"
+set "PACKAGE_ROOT=%~dp0devbox-data\"
 set "STATE_DIR=%ProgramData%\DevBoxLite"
 set "STATE_FILE=%STATE_DIR%\offline-setup.state"
 set "TASK_NAME=DevBoxLite-OfflineSetup"
@@ -945,16 +964,16 @@ CURRENT_DATE="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
     echo "$logical_volume:${ACTUAL_VOLUMES[$logical_volume]}"
   done
   echo ""
-echo "[archives]"
+  echo "[archives]"
   echo "project-src.tar.gz:$PROJECT_SHA256"
-  if [ -f "$ABS_OUT/prebuilt.tar.gz" ]; then
+  if [ -f "$BUNDLE_DIR/prebuilt.tar.gz" ]; then
     echo "prebuilt.tar.gz:$PREBUILT_SHA256"
   fi
   for logical_volume in "${VOLUMES[@]}"; do
-    archive="$ABS_OUT/volumes/vol-${logical_volume}.tar.gz"
+    archive="$BUNDLE_DIR/volumes/vol-${logical_volume}.tar.gz"
     echo "volumes/$(basename "$archive"):$(sha256sum "$archive" | awk '{print $1}')"
   done
-} > "$ABS_OUT/manifest.txt"
+} > "$BUNDLE_DIR/manifest.txt"
 
 echo "  [ok] manifest.txt"
 
@@ -966,14 +985,14 @@ echo "[export] Final package verification..."
 
 required_files=(
   "$ABS_OUT/setup-offline.bat"
-  "$ABS_OUT/manifest.txt"
-  "$ABS_OUT/image.tar"
-  "$ABS_OUT/project-src.tar.gz"
-  "$ABS_OUT/offline-deps/$(basename "$WSL_MSI")"
-  "$ABS_OUT/offline-deps/ubuntu-24.04.4-wsl-amd64.wsl"
-  "$ABS_OUT/offline-deps/Docker Desktop Installer.exe"
-  "$ABS_OUT/offline-deps/docker-desktop.sha256"
-  "$ABS_OUT/scripts/import.ps1"
+  "$BUNDLE_DIR/manifest.txt"
+  "$BUNDLE_DIR/image.tar"
+  "$BUNDLE_DIR/project-src.tar.gz"
+  "$BUNDLE_DIR/offline-deps/$(basename "$WSL_MSI")"
+  "$BUNDLE_DIR/offline-deps/ubuntu-24.04.4-wsl-amd64.wsl"
+  "$BUNDLE_DIR/offline-deps/Docker Desktop Installer.exe"
+  "$BUNDLE_DIR/offline-deps/docker-desktop.sha256"
+  "$BUNDLE_DIR/scripts/import.ps1"
 )
 
 for f in "${required_files[@]}"; do
