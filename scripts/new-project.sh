@@ -51,31 +51,72 @@ fi
 ensure_container_running() {
     local name="$1"
     local kind="$2"
+    local max_attempts=30
+    local attempt=1
 
     if docker ps --format '{{.Names}}' | grep -q "^$name$"; then
         echo "  [skip] $kind is already running"
-        return 0
-    fi
-
-    if docker ps -a --format '{{.Names}}' | grep -q "^$name$"; then
-        echo "  [start] $kind exists, starting..."
-        if docker start "$name" >/dev/null 2>&1; then
-            echo "  [ok] $kind is running"
-            sleep 3
-            return 0
-        fi
-        echo "  [fix] $kind failed to start, recreating..."
-        docker rm -f "$name" >/dev/null 2>&1 || true
-    fi
-
-    echo "  [create] $kind not found, creating..."
-    if [ -x "$SCRIPT_DIR/db-manager.sh" ]; then
-        "$SCRIPT_DIR/db-manager.sh" create "$kind"
-        sleep 4
     else
-        echo "  [warn] db-manager.sh not available; cannot create $kind"
-        return 1
+        if docker ps -a --format '{{.Names}}' | grep -q "^$name$"; then
+            echo "  [start] $kind exists, starting..."
+
+            if docker start "$name" >/dev/null 2>&1; then
+                echo "  [ok] $kind is running"
+            else
+                echo "  [fix] $kind failed to start, recreating..."
+                docker rm -f "$name" >/dev/null 2>&1 || true
+                "$SCRIPT_DIR/db-manager.sh" create "$kind"
+            fi
+        else
+            echo "  [create] $kind not found, creating..."
+            if [ -x "$SCRIPT_DIR/db-manager.sh" ]; then
+                "$SCRIPT_DIR/db-manager.sh" create "$kind"
+            else
+                echo -e "${RED}[error] db-manager.sh not available; cannot create $kind${NC}"
+                return 1
+            fi
+        fi
     fi
+
+    echo "  [wait] Waiting for $kind to become ready..."
+
+    while [ "$attempt" -le "$max_attempts" ]; do
+        case "$kind" in
+            mysql)
+                if docker exec "$name" \
+                    mysqladmin ping -h 127.0.0.1 -u root --silent \
+                    >/dev/null 2>&1; then
+                    echo "  [ok] $kind is ready"
+                    return 0
+                fi
+                ;;
+            postgres)
+                if docker exec "$name" \
+                    pg_isready -U devbox -h 127.0.0.1 \
+                    >/dev/null 2>&1; then
+                    echo "  [ok] $kind is ready"
+                    return 0
+                fi
+                ;;
+            redis)
+                if docker exec "$name" \
+                    redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
+                    echo "  [ok] $kind is ready"
+                    return 0
+                fi
+                ;;
+            *)
+                echo "  [ok] $kind is running"
+                return 0
+                ;;
+        esac
+
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+
+    echo -e "${RED}[error] $kind did not become ready in ${max_attempts}s.${NC}"
+    return 1
 }
 
 # ── 1. Input Project Name ───────────────────────────────────
@@ -119,8 +160,18 @@ TW_FLAG="--tailwind"
 AR_FLAG="--app"
 
 if [ "$HAS_INTERNET" = "false" ]; then
-    echo -e "\n${YELLOW}[notice] Network is offline. Interactive options are skipped.${NC}"
-    echo -e "${YELLOW}         Project will be created using the pre-cached baseline template.${NC}"
+    echo -e "\n${YELLOW}[offline] Network unavailable. Using cached baseline configuration.${NC}"
+
+    if [ "$TEMPLATE" = "laravel" ]; then
+        STARTER_KIT="React"
+        DB_CHOICE="MySQL"
+        TESTING="Pest"
+        ENABLE_API="yes"
+    elif [ "$TEMPLATE" = "next-js" ]; then
+        TS_FLAG="--ts"
+        TW_FLAG="--tailwind"
+        AR_FLAG="--app"
+    fi
 else
     if [ "$TEMPLATE" = "laravel" ]; then
         echo ""
@@ -202,13 +253,13 @@ echo ""
 echo "── Summary ──"
 echo "  Name:     $PROJECT_NAME"
 echo "  Template: $TEMPLATE"
-if [ "$TEMPLATE" = "laravel" ] && [ "$HAS_INTERNET" = "true" ]; then
+if [ "$TEMPLATE" = "laravel" ]; then
     echo "  Starter:  $STARTER_KIT"
     echo "  Database: $DB_CHOICE"
     echo "  Testing:  $TESTING"
     echo "  Theme:    built-in light/dark"
     echo "  API:      $ENABLE_API"
-elif [ "$TEMPLATE" = "next-js" ] && [ "$HAS_INTERNET" = "true" ]; then
+elif [ "$TEMPLATE" = "next-js" ]; then
     echo "  TypeScript: $([ "$TS_FLAG" = "--ts" ] && echo "Yes" || echo "No")"
     echo "  Tailwind:   $([ "$TW_FLAG" = "--tailwind" ] && echo "Yes" || echo "No")"
     echo "  App Router: $([ "$AR_FLAG" = "--app" ] && echo "Yes" || echo "No")"
@@ -380,16 +431,16 @@ if [ "$TEMPLATE" = "laravel" ]; then
 
     [ ! -f "$project_dir/.env" ] && [ -f "$project_dir/.env.example" ] && cp "$project_dir/.env.example" "$project_dir/.env"
 
-    if [ "$HAS_INTERNET" = "true" ]; then
-        # Ensure runtime services selected by the user are available.
-        if [ "$DB_CHOICE" = "MySQL" ]; then
-            echo "  [db] Ensuring database service is running..."
-            ensure_container_running devbox-mysql mysql
-        elif [ "$DB_CHOICE" = "PostgreSQL" ]; then
-            echo "  [db] Ensuring database service is running..."
-            ensure_container_running devbox-postgres postgres
-        fi
+    # Ensure runtime database services are available in both online and offline modes.
+    if [ "$DB_CHOICE" = "MySQL" ]; then
+        echo "  [db] Ensuring database service is running..."
+        ensure_container_running devbox-mysql mysql
+    elif [ "$DB_CHOICE" = "PostgreSQL" ]; then
+        echo "  [db] Ensuring database service is running..."
+        ensure_container_running devbox-postgres postgres
+    fi
 
+    if [ "$HAS_INTERNET" = "true" ]; then
         # Laravel's starter kits commonly use Redis. Keep the DevBox service
         # available when the generated project references it.
         if [ -f "$project_dir/.env" ] && grep -q '^REDIS_HOST=' "$project_dir/.env" 2>/dev/null; then

@@ -98,9 +98,9 @@ create_mysql() {
         --network "$NETWORK" \
         -e MYSQL_ALLOW_EMPTY_PASSWORD=yes \
         -v devbox-mysql-data:/var/lib/mysql \
-        -p 3307:3306 \
+        -p 3306:3306 \
         mysql:8.4
-    echo "MySQL ready on port 3307 (no auth)"
+    echo "MySQL ready on port 3306 (no auth)"
 }
 
 create_postgres() {
