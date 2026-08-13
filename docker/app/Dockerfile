@@ -74,6 +74,12 @@ RUN chmod +x /tmp/install/*.sh && \
     /tmp/install/node.sh && \
     /tmp/install/bun.sh && \
     /tmp/install/php.sh && \
+    echo "Configuring PHP OPcache..." && \
+    echo "; DevBox Lite PHP configuration" > /etc/php/${PHP_VERSION}/cli/conf.d/99-devbox.ini && \
+    echo "; Disable JIT because Laravel + Xdebug are incompatible" >> /etc/php/${PHP_VERSION}/cli/conf.d/99-devbox.ini && \
+    echo "opcache.jit=off" >> /etc/php/${PHP_VERSION}/cli/conf.d/99-devbox.ini && \
+    echo "opcache.jit_buffer_size=0" >> /etc/php/${PHP_VERSION}/cli/conf.d/99-devbox.ini && \
+    echo "OPcache configuration completed" && \
     /tmp/install/composer.sh && \
     /tmp/install/laravel.sh && \
     /tmp/install/xdebug.sh && \
@@ -88,7 +94,9 @@ RUN chmod +x /tmp/install/*.sh && \
 FROM languages AS tools
 
 # Single apt-get update for all tools (scripts no longer call it individually)
-RUN apt-get update -qq
+RUN apt-get update -qq && \
+    apt-get install -y mysql-client postgresql-client && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY install/common.sh /tmp/install/common.sh
 COPY install/tools/database.sh /tmp/install/database.sh
@@ -158,11 +166,14 @@ COPY example/ /prebuilt/example/
 RUN cd /prebuilt/example/laravel && \
     composer install --no-interaction 2>/dev/null; \
     if [ -f package.json ]; then \
-        pnpm install 2>/dev/null && \
-        pnpm build 2>/dev/null; \
+    pnpm install 2>/dev/null && \
+    pnpm build 2>/dev/null; \
     fi; \
     cp .env.example .env 2>/dev/null; \
     php artisan key:generate --force 2>/dev/null; \
+    php artisan wayfinder:generate --with-form --no-interaction 2>/dev/null || true; \
+    php artisan test 2>/dev/null || true; \
+    composer lint 2>/dev/null || true; \
     echo "[build] Laravel done" && \
     cd /prebuilt/example/next-js && \
     if [ -f package.json ]; then \
