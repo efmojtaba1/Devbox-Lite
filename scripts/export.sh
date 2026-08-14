@@ -646,31 +646,111 @@ param()
 $ErrorActionPreference = 'Stop'
 
 try {
-    $wsl = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
-    $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
+    Write-Host '  Checking WSL2 Windows features...'
 
-    if ($wsl.State -eq 'Enabled' -and $vmp.State -eq 'Enabled') {
-        Write-Host '  [OK] WSL and Virtual Machine Platform are already enabled.'
-        exit 0
+    $wsl = Get-WindowsOptionalFeature `
+        -Online `
+        -FeatureName Microsoft-Windows-Subsystem-Linux
+
+    $vmp = Get-WindowsOptionalFeature `
+        -Online `
+        -FeatureName VirtualMachinePlatform
+
+    Write-Host "  WSL state                 : $($wsl.State)"
+    Write-Host "  Virtual Machine Platform : $($vmp.State)"
+
+    $restartNeeded = $false
+
+    # ------------------------------------------------------------
+    # Windows Subsystem for Linux
+    # ------------------------------------------------------------
+
+    if ($wsl.State -ne 'Enabled') {
+        Write-Host '  Enabling Windows Subsystem for Linux...'
+
+        $wslResult = Enable-WindowsOptionalFeature `
+            -Online `
+            -FeatureName Microsoft-Windows-Subsystem-Linux `
+            -All `
+            -NoRestart
+
+        if ($null -eq $wslResult) {
+            Write-Host '[ERROR] Windows did not return a result for WSL feature enablement.'
+            exit 1
+        }
+
+        if ($wslResult.State -ne 'Enabled') {
+            Write-Host "[ERROR] Failed to enable Windows Subsystem for Linux."
+            Write-Host "        Result state: $($wslResult.State)"
+            exit 1
+        }
+
+        if ($wslResult.RestartNeeded) {
+            $restartNeeded = $true
+        }
+
+        Write-Host '  [OK] Windows Subsystem for Linux enabled.'
+    }
+    else {
+        Write-Host '  [OK] Windows Subsystem for Linux is already enabled.'
+
+        if ($wsl.RestartNeeded) {
+            $restartNeeded = $true
+        }
     }
 
-    Write-Host '  Enabling Windows Subsystem for Linux...'
-    Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -All -NoRestart
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host '[ERROR] Failed to enable Windows Subsystem for Linux.'
-        exit 1
+    # ------------------------------------------------------------
+    # Virtual Machine Platform
+    # ------------------------------------------------------------
+
+    if ($vmp.State -ne 'Enabled') {
+        Write-Host '  Enabling Virtual Machine Platform...'
+
+        $vmpResult = Enable-WindowsOptionalFeature `
+            -Online `
+            -FeatureName VirtualMachinePlatform `
+            -All `
+            -NoRestart
+
+        if ($null -eq $vmpResult) {
+            Write-Host '[ERROR] Windows did not return a result for Virtual Machine Platform enablement.'
+            exit 1
+        }
+
+        if ($vmpResult.State -ne 'Enabled') {
+            Write-Host '[ERROR] Failed to enable Virtual Machine Platform.'
+            Write-Host "        Result state: $($vmpResult.State)"
+            exit 1
+        }
+
+        if ($vmpResult.RestartNeeded) {
+            $restartNeeded = $true
+        }
+
+        Write-Host '  [OK] Virtual Machine Platform enabled.'
+    }
+    else {
+        Write-Host '  [OK] Virtual Machine Platform is already enabled.'
+
+        if ($vmp.RestartNeeded) {
+            $restartNeeded = $true
+        }
     }
 
-    Write-Host '  Enabling Virtual Machine Platform...'
-    Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host '[ERROR] Failed to enable Virtual Machine Platform.'
-        exit 1
+    # ------------------------------------------------------------
+    # Final result
+    # ------------------------------------------------------------
+
+    if ($restartNeeded) {
+        Write-Host ''
+        Write-Host '  [OK] Required WSL2 Windows features are enabled.'
+        Write-Host '  [INFO] Windows restart is required before continuing.'
+        exit 3010
     }
 
-    Write-Host '  [OK] Required WSL2 Windows features were enabled.'
-    Write-Host '  [INFO] A Windows restart is required.'
-    exit 3010
+    Write-Host ''
+    Write-Host '  [OK] Required WSL2 Windows features are already enabled.'
+    exit 0
 }
 catch {
     Write-Host "[ERROR] Failed to configure WSL2 Windows features: $($_.Exception.Message)"
@@ -1157,6 +1237,10 @@ if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
     raise SystemExit('Generated validation script check failed.')
 if 'exit 3010' not in features_text or 'Enable-WindowsOptionalFeature' not in features_text:
     raise SystemExit('Generated WSL feature script check failed.')
+if '$LASTEXITCODE' in features_text:
+    raise SystemExit('Generated WSL feature script validation failed: LASTEXITCODE must not be used for PowerShell feature cmdlets.')
+if 'RestartNeeded' not in features_text:
+    raise SystemExit('Generated WSL feature script validation failed: RestartNeeded handling is missing.')
 print('  [ok] Generated setup-offline.bat structural validation passed')
 print('  [ok] Generated PowerShell validation scripts passed')
 PY
