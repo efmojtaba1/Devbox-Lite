@@ -322,6 +322,7 @@ WSL_MSI="$OFFLINE_DEPS_DIR/wsl.x64.msi"
 
 if [ -s "$WSL_MSI" ]; then
   echo "  [ok] Existing: $(basename "$WSL_MSI")"
+  echo "  [info] Size: $(du -h "$WSL_MSI" | cut -f1)"
 else
   WSL_RELEASE_JSON="$(mktemp)"
   trap 'rm -f "$WSL_RELEASE_JSON"' EXIT
@@ -336,7 +337,7 @@ else
   fi
 
   WSL_ASSET_URL="$(
-    python3 - "$WSL_RELEASE_JSON" <<'PY'
+    python3 - "$WSL_RELEASE_JSON" <<'PY2'
 import json, sys
 data=json.load(open(sys.argv[1], encoding="utf-8"))
 assets=data.get("assets", [])
@@ -348,7 +349,7 @@ for asset in assets:
         break
 else:
     raise SystemExit("No stable x64 MSI asset found in the latest WSL release.")
-PY
+PY2
   )"
 
   echo "  [info] WSL MSI URL:"
@@ -357,6 +358,12 @@ PY
   download_resumable "$WSL_ASSET_URL" "$WSL_MSI" "WSL x64 MSI"
 fi
 
+if [ ! -s "$WSL_MSI" ]; then
+  echo "[error] WSL x64 MSI is missing or empty."
+  exit 1
+fi
+
+echo "  [ok] WSL x64 MSI verified."
 WSL_MSI_SHA256="$(sha256sum "$WSL_MSI" | awk '{print $1}')"
 
 # ------------------------------------------------------------
@@ -388,19 +395,31 @@ echo "[export] Preparing Docker Desktop Windows x64 installer..."
 DOCKER_INSTALLER="$OFFLINE_DEPS_DIR/Docker Desktop Installer.exe"
 DOCKER_INSTALLER_SHA_FILE="$OFFLINE_DEPS_DIR/docker-desktop.sha256"
 
+DOCKER_NEEDS_DOWNLOAD="1"
+
 if [ -s "$DOCKER_INSTALLER" ] && [ -s "$DOCKER_INSTALLER_SHA_FILE" ]; then
   CACHED_DOCKER_SHA256="$(awk 'NF {print $1; exit}' "$DOCKER_INSTALLER_SHA_FILE")"
   CURRENT_DOCKER_SHA256="$(sha256sum "$DOCKER_INSTALLER" | awk '{print $1}')"
 
   if [ "$CURRENT_DOCKER_SHA256" = "$CACHED_DOCKER_SHA256" ]; then
-    echo "  [ok] Existing Docker Desktop installer verified."
+    echo "  [ok] Existing: $(basename "$DOCKER_INSTALLER")"
+    echo "  [info] Size: $(du -h "$DOCKER_INSTALLER" | cut -f1)"
+    DOCKER_NEEDS_DOWNLOAD="0"
   else
     echo "  [warn] Existing Docker Desktop installer checksum mismatch."
     rm -f "$DOCKER_INSTALLER"
   fi
+elif [ -s "$DOCKER_INSTALLER" ]; then
+  echo "  [ok] Existing: $(basename "$DOCKER_INSTALLER")"
+  echo "  [info] Size: $(du -h "$DOCKER_INSTALLER" | cut -f1)"
+  DOCKER_NEEDS_DOWNLOAD="0"
+else
+  :
 fi
 
-download_resumable "$DOCKER_DESKTOP_URL" "$DOCKER_INSTALLER" "Docker Desktop Installer"
+if [ "$DOCKER_NEEDS_DOWNLOAD" = "1" ]; then
+  download_resumable "$DOCKER_DESKTOP_URL" "$DOCKER_INSTALLER" "Docker Desktop Installer"
+fi
 
 if [ ! -s "$DOCKER_INSTALLER" ]; then
   echo "[error] Docker Desktop installer is missing or empty."
@@ -409,6 +428,7 @@ fi
 
 DOCKER_INSTALLER_SHA256="$(sha256sum "$DOCKER_INSTALLER" | awk '{print $1}')"
 printf '%s  %s\n' "$DOCKER_INSTALLER_SHA256" "$(basename "$DOCKER_INSTALLER")" > "$DOCKER_INSTALLER_SHA_FILE"
+echo "  [ok] Docker Desktop installer verified."
 
 # ------------------------------------------------------------
 # Docker image
