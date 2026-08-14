@@ -239,8 +239,13 @@ render_download_progress() {
     eta=$(( (total - current) / speed ))
   fi
 
-  printf '\r             %3d%% | %10s / %-10s | %10s/s | ETA %s' \
-    "$percent" \
+  local percent_text="${percent}%"
+  local percent_pad_left=$(( (5 - ${#percent_text}) / 2 ))
+  local percent_pad_right=$(( 5 - ${#percent_text} - percent_pad_left ))
+  printf '\r    | %*s%s%*s | %10s / %-10s | %10s/s | ETA %s' \
+    "$percent_pad_left" "" \
+    "$percent_text" \
+    "$percent_pad_right" "" \
     "$(format_bytes "$current")" \
     "$(format_bytes "$total")" \
     "$(format_bytes "$speed")" \
@@ -366,7 +371,7 @@ download_resumable() {
   fi
 
   echo "  [download] $label"
-  echo "             URL: $url"
+  echo "    URL: $url"
 
   if [ -s "$part" ]; then
     local bytes
