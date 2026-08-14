@@ -239,7 +239,7 @@ render_download_progress() {
     eta=$(( (total - current) / speed ))
   fi
 
-  printf '\r      %3d%% | %10s / %-10s | %10s/s | ETA %s' \
+  printf '\r             %3d%% | %10s / %-10s | %10s/s | ETA %s' \
     "$percent" \
     "$(format_bytes "$current")" \
     "$(format_bytes "$total")" \
@@ -366,7 +366,7 @@ download_resumable() {
   fi
 
   echo "  [download] $label"
-  echo "          URL: $url"
+  echo "             URL: $url"
 
   if [ -s "$part" ]; then
     local bytes
@@ -610,11 +610,17 @@ tar \
   --exclude='devbox-offline' \
   --exclude='out' \
   --exclude='backups' \
+  --exclude='prebuilt' \
   -czf "$BUNDLE_DIR/project-src.tar.gz" \
   -C "$PROJECT_ROOT" .
 
 if [ ! -s "$BUNDLE_DIR/project-src.tar.gz" ]; then
   echo "[error] project-src.tar.gz was not created."
+  exit 1
+fi
+
+if tar -tzf "$BUNDLE_DIR/project-src.tar.gz" | grep -qE '(^|/)prebuilt(/|$)'; then
+  echo "[error] project-src.tar.gz unexpectedly contains prebuilt/."
   exit 1
 fi
 
@@ -1421,6 +1427,9 @@ if len(labels) != len(label_set):
     duplicates = sorted({x for x in labels if labels.count(x) > 1})
     raise SystemExit('Generated BAT validation failed: duplicate labels: ' + ', '.join(duplicates))
 
+if 'docker_wait_loop' in bat_text and ':docker_wait_loop' not in bat_text:
+    raise SystemExit('Generated BAT validation failed: docker_wait_loop label is malformed.')
+
 missing = [x for x in required_labels if x not in label_set]
 if missing:
     raise SystemExit('Generated BAT validation failed: missing labels: ' + ', '.join(missing))
@@ -1479,6 +1488,8 @@ echo ""
 echo "[export] Generating manifest.txt..."
 
 CURRENT_DATE="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+MANIFEST_TMP="$BUNDLE_DIR/manifest.txt.tmp"
+rm -f "$MANIFEST_TMP" "$BUNDLE_DIR/manifest.txt"
 
 {
   echo "format_version:2"
@@ -1513,7 +1524,20 @@ CURRENT_DATE="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
     archive="$BUNDLE_DIR/volumes/vol-${logical_volume}.tar.gz"
     echo "volumes/$(basename "$archive"):$(sha256sum "$archive" | awk '{print $1}')"
   done
-} > "$BUNDLE_DIR/manifest.txt"
+} > "$MANIFEST_TMP"
+
+if [ ! -s "$MANIFEST_TMP" ]; then
+  echo "[error] manifest.txt could not be generated."
+  rm -f "$MANIFEST_TMP"
+  exit 1
+fi
+
+mv -f "$MANIFEST_TMP" "$BUNDLE_DIR/manifest.txt"
+
+if [ ! -s "$BUNDLE_DIR/manifest.txt" ]; then
+  echo "[error] manifest.txt is missing or empty after generation."
+  exit 1
+fi
 
 echo "  [ok] manifest.txt"
 
@@ -1539,6 +1563,10 @@ required_files=(
   "$BUNDLE_DIR/scripts/check-restart-required.ps1"
 )
 
+if [ -d "$PROJECT_ROOT/prebuilt" ]; then
+  required_files+=("$BUNDLE_DIR/prebuilt.tar.gz")
+fi
+
 for f in "${required_files[@]}"; do
   if [ ! -s "$f" ]; then
     echo "[error] Required package file missing or empty:"
@@ -1546,6 +1574,111 @@ for f in "${required_files[@]}"; do
     exit 1
   fi
 done
+
+# Verify that the manifest contains the required metadata and hashes point
+# to the actual package files. This prevents an incomplete/stale manifest
+# from reaching the destination machine.
+python3 - "$BUNDLE_DIR/manifest.txt" "$BUNDLE_DIR" "${VOLUMES[@]}" <<'PY'
+from pathlib import Path
+import hashlib
+import sys
+
+manifest = Path(sys.argv[1])
+bundle = Path(sys.argv[2])
+volumes = sys.argv[3:]
+
+text = manifest.read_text(encoding='utf-8')
+lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+required_prefixes = [
+    'format_version:',
+    'generated_at:',
+    'architecture:',
+    'wsl_distribution:',
+    'ubuntu_wsl_filename:',
+    'ubuntu_wsl_sha256:',
+    'wsl_msi_filename:',
+    'wsl_msi_sha256:',
+    'docker_desktop_version:',
+    'docker_desktop_installer_filename:',
+    'docker_desktop_installer_sha256:',
+    'docker_desktop_download_policy:',
+    'image:',
+    'image_sha256:',
+    'compose_project:',
+    'compose_file:',
+    '[volumes]',
+    '[archives]',
+    'project-src.tar.gz:',
+]
+
+for prefix in required_prefixes:
+    if not any(line.startswith(prefix) for line in lines):
+        raise SystemExit(f'Manifest validation failed: missing {prefix}')
+
+def sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open('rb') as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+entries = {}
+for line in lines:
+    if ':' not in line:
+        continue
+    key, value = line.split(':', 1)
+    if len(value) == 64 and all(c in '0123456789abcdef' for c in value.lower()):
+        entries[key] = value.lower()
+
+checks = {
+    'project-src.tar.gz': bundle / 'project-src.tar.gz',
+    'prebuilt.tar.gz': bundle / 'prebuilt.tar.gz',
+}
+
+# Metadata hashes point to the downloaded/built payloads.
+metadata_checks = {
+    'image_sha256': bundle / 'image.tar',
+    'ubuntu_wsl_sha256': bundle / 'offline-deps' / 'ubuntu-24.04.4-wsl-amd64.wsl',
+    'wsl_msi_sha256': bundle / 'offline-deps' / next(p.name for p in (bundle / 'offline-deps').glob('*.msi')),
+    'docker_desktop_installer_sha256': bundle / 'offline-deps' / 'Docker Desktop Installer.exe',
+}
+for key, path in checks.items():
+    if not path.exists():
+        if key == 'prebuilt.tar.gz' and not (bundle / 'prebuilt.tar.gz').exists():
+            continue
+        raise SystemExit(f'Manifest validation failed: referenced file missing: {key}')
+    expected = entries.get(key)
+    if expected is None:
+        raise SystemExit(f'Manifest validation failed: missing SHA256 entry: {key}')
+    actual = sha256(path)
+    if actual != expected:
+        raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
+
+for key, path in metadata_checks.items():
+    if not path.exists():
+        raise SystemExit(f'Manifest validation failed: referenced payload missing: {key}')
+    expected = entries.get(key)
+    if expected is None:
+        raise SystemExit(f'Manifest validation failed: missing metadata SHA256 entry: {key}')
+    actual = sha256(path)
+    if actual != expected:
+        raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
+
+for volume in volumes:
+    key = f'volumes/vol-{volume}.tar.gz'
+    path = bundle / 'volumes' / f'vol-{volume}.tar.gz'
+    if not path.exists():
+        raise SystemExit(f'Manifest validation failed: volume archive missing: {key}')
+    expected = entries.get(key)
+    if expected is None:
+        raise SystemExit(f'Manifest validation failed: missing volume SHA256 entry: {key}')
+    actual = sha256(path)
+    if actual != expected:
+        raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
+
+print('  [ok] manifest.txt verified')
+PY
 
 echo "  [ok] All required package files are present."
 
