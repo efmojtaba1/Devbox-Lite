@@ -540,8 +540,126 @@ fi
 
 echo "  [ok] import.ps1"
 
-# Generate setup-offline.bat below so the exported package always
-# contains the exact orchestrator matching this export format.
+# Generate Windows-side validation and feature-management scripts first.
+# Complex PowerShell logic is kept outside CMD to avoid cmd.exe parser issues.
+cat > "$BUNDLE_DIR/scripts/validate-offline.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackageRoot
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Fail([string]$Message) {
+    Write-Host "[ERROR] $Message"
+    exit 1
+}
+
+try {
+    Write-Host '  [validate] Checking Windows version...'
+    $os = Get-CimInstance Win32_OperatingSystem
+    $build = [int]$os.BuildNumber
+    $caption = [string]$os.Caption
+    $supported = (($caption -match 'Windows 10') -and ($build -ge 19045)) -or
+                 (($caption -match 'Windows 11') -and ($build -ge 22631))
+
+    if (-not $supported) {
+        Fail "Unsupported Windows version: $caption build $build. Required: Windows 10 22H2 build 19045+, or Windows 11 23H2 build 22631+."
+    }
+
+    Write-Host '  [validate] Checking 64-bit Windows...'
+    if (-not [Environment]::Is64BitOperatingSystem) {
+        Fail 'A 64-bit Windows installation is required.'
+    }
+
+    Write-Host '  [validate] Checking physical memory...'
+    $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+    if ($ram -lt 8GB) {
+        $ramGb = [math]::Round($ram / 1GB, 1)
+        Fail "At least 8 GB of RAM is required. Detected: ${ramGb} GB."
+    }
+
+    Write-Host '  [validate] Checking hardware virtualization...'
+    $virt = Get-CimInstance Win32_Processor |
+        Select-Object -First 1 -ExpandProperty VirtualizationFirmwareEnabled -ErrorAction SilentlyContinue
+
+    if ($virt -eq $false) {
+        Fail 'Hardware virtualization is disabled in BIOS/UEFI. Enable Intel VT-x or AMD-V/SVM and run setup again.'
+    }
+
+    if ($null -eq $virt) {
+        Write-Host '  [WARN] Firmware virtualization state could not be detected. Continuing.'
+    }
+
+    $required = @(
+        @{ Path = (Join-Path $PackageRoot 'offline-deps\wsl.x64.msi'); Name = 'WSL MSI' },
+        @{ Path = (Join-Path $PackageRoot 'offline-deps\ubuntu-24.04.4-wsl-amd64.wsl'); Name = 'Ubuntu 24.04 WSL package' },
+        @{ Path = (Join-Path $PackageRoot 'offline-deps\Docker Desktop Installer.exe'); Name = 'Docker Desktop installer' },
+        @{ Path = (Join-Path $PackageRoot 'image.tar'); Name = 'DevBox Docker image' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\import.ps1'); Name = 'import.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\manage-wsl-features.ps1'); Name = 'manage-wsl-features.ps1' }
+    )
+
+    foreach ($item in $required) {
+        if (-not (Test-Path -LiteralPath $item.Path -PathType Leaf)) {
+            Fail "Required offline package file was not found: $($item.Name)`n        $($item.Path)"
+        }
+    }
+
+    Write-Host '  [OK] Windows prerequisites passed.'
+    Write-Host '  [OK] Required offline package files found.'
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Validation failed: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+
+echo "  [ok] validate-offline.ps1"
+
+cat > "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" <<'PS1'
+[CmdletBinding()]
+param()
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    $wsl = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+    $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
+
+    if ($wsl.State -eq 'Enabled' -and $vmp.State -eq 'Enabled') {
+        Write-Host '  [OK] WSL and Virtual Machine Platform are already enabled.'
+        exit 0
+    }
+
+    Write-Host '  Enabling Windows Subsystem for Linux...'
+    Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -All -NoRestart
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host '[ERROR] Failed to enable Windows Subsystem for Linux.'
+        exit 1
+    }
+
+    Write-Host '  Enabling Virtual Machine Platform...'
+    Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host '[ERROR] Failed to enable Virtual Machine Platform.'
+        exit 1
+    }
+
+    Write-Host '  [OK] Required WSL2 Windows features were enabled.'
+    Write-Host '  [INFO] A Windows restart is required.'
+    exit 3010
+}
+catch {
+    Write-Host "[ERROR] Failed to configure WSL2 Windows features: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+
+echo "  [ok] manage-wsl-features.ps1"
+
 cat > "$ABS_OUT/setup-offline.bat" <<'BAT'
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
@@ -549,12 +667,17 @@ setlocal EnableExtensions DisableDelayedExpansion
 title DevBox Lite - Offline Installer
 color 0A
 
-set "PACKAGE_ROOT=%~dp0devbox-data\"
+set "PACKAGE_ROOT=%~dp0devbox-data"
 set "STATE_DIR=%ProgramData%\DevBoxLite"
 set "STATE_FILE=%STATE_DIR%\offline-setup.state"
 set "TASK_NAME=DevBoxLite-OfflineSetup"
+set "RESUME_MODE=0"
+set "STAGE=START"
+set "DEST_PATH=D:\devbox-project"
+set "WSL_MSI=%PACKAGE_ROOT%\offline-deps\wsl.x64.msi"
 
-if /I "%~1"=="/resume" goto :resume
+if /I "%~1"=="/resume" set "RESUME_MODE=1"
+if "%RESUME_MODE%"=="1" goto :resume
 
 echo ============================================================
 echo   DevBox Lite - Offline Installer
@@ -562,24 +685,18 @@ echo   WSL2 + Ubuntu 24.04 + Docker Desktop + DevBox
 echo ============================================================
 echo.
 
-net session >nul 2>&1
-if not "%errorlevel%"=="0" (
-    echo [ERROR] Administrator privileges are required.
-    echo         Right-click setup-offline.bat and choose:
-    echo         Run as administrator
-    echo.
-    pause
-    exit /b 1
-)
+call :require_admin
+if errorlevel 1 goto :fail
 
 if not exist "%STATE_DIR%" mkdir "%STATE_DIR%" >nul 2>&1
+if not exist "%STATE_DIR%" goto :state_dir_error
 
 set "DEST_PATH="
 set /p "DEST_PATH=Enter destination path for project setup [Default: D:\devbox-project]: "
 if not defined DEST_PATH set "DEST_PATH=D:\devbox-project"
 
-> "%STATE_FILE%" echo DEST_PATH=%DEST_PATH%
->>"%STATE_FILE%" echo STAGE=START
+call :save_stage START
+if errorlevel 1 goto :fail
 
 goto :main
 
@@ -589,179 +706,139 @@ echo   DevBox Lite - Resuming Offline Installation
 echo ============================================================
 echo.
 
-net session >nul 2>&1
-if not "%errorlevel%"=="0" (
-    echo [ERROR] Administrator privileges are required.
-    pause
-    exit /b 1
-)
+call :require_admin
+if errorlevel 1 goto :fail
 
-if not exist "%STATE_FILE%" (
-    echo [ERROR] Resume state was not found:
-    echo         %STATE_FILE%
-    echo.
-    echo Run setup-offline.bat normally instead.
-    pause
-    exit /b 1
-)
+if not exist "%STATE_FILE%" goto :resume_state_error
 
-for /f "usebackq tokens=1,* delims==" %%A in ("%STATE_FILE%") do (
-    if /I "%%A"=="DEST_PATH" set "DEST_PATH=%%B"
-    if /I "%%A"=="STAGE" set "STAGE=%%B"
-)
-
+for /f "usebackq delims=" %%A in ("%STATE_FILE%") do call :load_state_line "%%A"
 if not defined DEST_PATH set "DEST_PATH=D:\devbox-project"
 
+goto :main
+
 :main
-
 call :validate_package
+if errorlevel 1 goto :fail
+
+if /I "%STAGE%"=="START" goto :stage_features
+if /I "%STAGE%"=="FEATURES_ENABLED" goto :stage_wsl
+if /I "%STAGE%"=="WSL_INSTALLED" goto :stage_ubuntu
+if /I "%STAGE%"=="UBUNTU_INSTALLED" goto :stage_docker
+if /I "%STAGE%"=="DOCKER_INSTALLED" goto :stage_restore
+if /I "%STAGE%"=="RESTORED" goto :stage_verify
+
+echo [ERROR] Unknown installer stage: %STAGE%
+goto :fail
+
+:stage_features
+call :enable_wsl_features
+if errorlevel 3010 exit /b 0
+if errorlevel 1 goto :fail
+
+:stage_wsl
+call :install_wsl
+if errorlevel 1 goto :fail
+
+:stage_ubuntu
+call :install_ubuntu
+if errorlevel 1 goto :fail
+
+:stage_docker
+call :install_docker
+if errorlevel 1 goto :fail
+
+:stage_restore
+call :restore_devbox
+if errorlevel 1 goto :fail
+
+:stage_verify
+call :verify
+if errorlevel 1 goto :fail
+
+call :cleanup_success
+
+echo.
+echo ============================================================
+echo   DevBox Lite Offline Installation COMPLETED
+echo ============================================================
+echo.
+echo Project location:
+echo   %DEST_PATH%
+echo.
+echo WSL2 + Ubuntu 24.04 + Docker Desktop + DevBox are ready.
+echo.
+pause
+exit /b 0
+
+:require_admin
+net session >nul 2>&1
+if errorlevel 1 goto :not_admin
+exit /b 0
+
+:not_admin
+echo [ERROR] Administrator privileges are required.
+echo         Right-click setup-offline.bat and choose:
+echo         Run as administrator
+echo.
+pause
+exit /b 1
+
+:validate_package
 echo [1/6] Validating Windows and offline package...
-
-for /f "delims=" %%B in ('powershell.exe -NoProfile -Command "$os=Get-CimInstance Win32_OperatingSystem; $b=[int]$os.BuildNumber; $c=$os.Caption; if((($c -match 'Windows 10') -and ($b -ge 19045)) -or (($c -match 'Windows 11') -and ($b -ge 22631))){'OK'}else{'FAIL:Unsupported Windows build '+$c+' build '+$b}"') do set "WIN_CHECK=%%B"
-
-if /I not "%WIN_CHECK%"=="OK" (
-    echo [ERROR] Unsupported Windows version.
-    echo         Docker Desktop currently requires at least:
-    echo         Windows 10 22H2 build 19045, or
-    echo         Windows 11 23H2 build 22631.
-    echo         Detected: %WIN_CHECK%
-    exit /b 1
-)
-
-for /f "delims=" %%B in ('powershell.exe -NoProfile -Command "if([Environment]::Is64BitOperatingSystem){'OK'}else{'FAIL'}"') do set "ARCH_CHECK=%%B"
-
-if /I not "%ARCH_CHECK%"=="OK" (
-    echo [ERROR] A 64-bit Windows installation is required.
-    exit /b 1
-)
-
-for /f "delims=" %%B in ('powershell.exe -NoProfile -Command "$r=(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory; if($r -ge 8GB){'OK'}else{'FAIL:Less than 8GB RAM'}"') do set "RAM_CHECK=%%B"
-
-if /I not "%RAM_CHECK%"=="OK" (
-    echo [ERROR] At least 8 GB of RAM is required for the target Docker Desktop setup.
-    echo         Detected: %RAM_CHECK%
-    exit /b 1
-)
-
-for /f "delims=" %%B in ('powershell.exe -NoProfile -Command "$v=(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty VirtualizationFirmwareEnabled -ErrorAction SilentlyContinue); if($v -eq $false){'FAIL:Virtualization disabled in firmware'}else{'OK'}"') do set "VIRT_CHECK=%%B"
-
-if /I not "%VIRT_CHECK%"=="OK" (
-    echo [ERROR] Hardware virtualization is disabled in BIOS/UEFI.
-    echo         Enable Intel VT-x / AMD-V (SVM) and run setup again.
-    exit /b 1
-)
-
-set "WSL_MSI="
-for %%F in ("%PACKAGE_ROOT%offline-deps\wsl*.msi") do (
-    if exist "%%~fF" set "WSL_MSI=%%~fF"
-)
-
-if not defined WSL_MSI (
-    echo [ERROR] WSL MSI not found in offline-deps.
-    exit /b 1
-)
-
-if not exist "%PACKAGE_ROOT%offline-deps\ubuntu-24.04.4-wsl-amd64.wsl" (
-    echo [ERROR] Ubuntu 24.04 WSL package not found.
-    exit /b 1
-)
-
-if not exist "%PACKAGE_ROOT%offline-deps\Docker Desktop Installer.exe" (
-    echo [ERROR] Docker Desktop installer not found.
-    exit /b 1
-)
-
-if not exist "%PACKAGE_ROOT%image.tar" (
-    echo [ERROR] image.tar not found.
-    exit /b 1
-)
-
-if not exist "%PACKAGE_ROOT%scripts\import.ps1" (
-    echo [ERROR] scripts/import.ps1 not found.
-    exit /b 1
-)
-
-echo   [OK] Windows prerequisites.
-echo   [OK] Required offline packages found.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\validate-offline.ps1" -PackageRoot "%PACKAGE_ROOT%"
+if errorlevel 1 exit /b 1
 exit /b 0
 
 :enable_wsl_features
 echo.
 echo [2/6] Checking Windows WSL2 components...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\manage-wsl-features.ps1"
+set "FEATURE_RC=%errorlevel%"
+if "%FEATURE_RC%"=="0" goto :features_ready
+if "%FEATURE_RC%"=="3010" goto :features_restart
+echo [ERROR] Failed to configure required WSL2 Windows features.
+exit /b 1
 
-dism.exe /online /get-featureinfo /featurename:Microsoft-Windows-Subsystem-Linux > "%TEMP%\devbox-wsl-feature.txt" 2>&1
-findstr /I /C:"State : Enabled" "%TEMP%\devbox-wsl-feature.txt" >nul
-set "WSL_FEATURE_ENABLED=%errorlevel%"
+:features_ready
+call :save_stage FEATURES_ENABLED
+exit /b %errorlevel%
 
-dism.exe /online /get-featureinfo /featurename:VirtualMachinePlatform > "%TEMP%\devbox-vmp-feature.txt" 2>&1
-findstr /I /C:"State : Enabled" "%TEMP%\devbox-vmp-feature.txt" >nul
-set "VMP_FEATURE_ENABLED=%errorlevel%"
-
-if "%WSL_FEATURE_ENABLED%"=="0" if "%VMP_FEATURE_ENABLED%"=="0" (
-    echo   [OK] WSL and Virtual Machine Platform are already enabled.
-    exit /b 0
-)
-
-echo   Enabling Windows Subsystem for Linux...
-dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
-if errorlevel 1 (
-    echo [ERROR] Failed to enable Windows Subsystem for Linux.
-    exit /b 1
-)
-
-echo   Enabling Virtual Machine Platform...
-dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
-if errorlevel 1 (
-    echo [ERROR] Failed to enable Virtual Machine Platform.
-    exit /b 1
-)
-
-> "%STATE_FILE%" echo DEST_PATH=%DEST_PATH%
->>"%STATE_FILE%" echo STAGE=FEATURES_ENABLED
-
-echo.
-echo   A Windows restart is required before WSL can be installed.
-echo   The installer will resume automatically after login.
-echo.
+:features_restart
+call :save_stage FEATURES_ENABLED
+if errorlevel 1 exit /b 1
 
 schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
 schtasks /create /tn "%TASK_NAME%" /sc onlogon /rl HIGHEST /tr "\"%~f0\" /resume" /f >nul 2>&1
+if errorlevel 1 goto :resume_task_error
 
-if errorlevel 1 (
-    echo [ERROR] Could not create automatic resume task.
-    echo         Please run setup-offline.bat again after restart.
-    exit /b 1
-)
-
+echo.
+echo   Windows WSL2 components were enabled.
+echo   A restart is required before installation can continue.
+echo   The installer will resume automatically after login.
+echo.
 shutdown /r /t 10 /c "DevBox Lite Offline Setup requires a restart to continue WSL2 installation."
-exit /b 0
+exit /b 3010
 
 :install_wsl
 echo.
 echo [3/6] Installing WSL from the offline MSI...
 
 where wsl.exe >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] wsl.exe is still unavailable after enabling WSL.
-    echo         A restart may be required. Run setup-offline.bat /resume after restart.
-    exit /b 1
-)
+if errorlevel 1 goto :wsl_command_missing
 
 wsl.exe --version >nul 2>&1
-if errorlevel 1 (
-    echo   Installing WSL MSI...
-    msiexec.exe /i "%WSL_MSI%" /passive /norestart
-    if errorlevel 1 (
-        echo [ERROR] WSL MSI installation failed.
-        exit /b 1
-    )
-)
+if not errorlevel 1 goto :wsl_ready
 
+echo   Installing WSL MSI...
+msiexec.exe /i "%WSL_MSI%" /passive /norestart
+if errorlevel 1 goto :wsl_install_error
+
+:wsl_ready
 wsl.exe --set-default-version 2 >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Could not set WSL default version to 2.
-    exit /b 1
-)
+if errorlevel 1 goto :wsl_default_error
+
+call :save_stage WSL_INSTALLED
+if errorlevel 1 exit /b 1
 
 echo   [OK] WSL2 is installed and default version is 2.
 exit /b 0
@@ -769,100 +846,77 @@ exit /b 0
 :install_ubuntu
 echo.
 echo [4/6] Installing Ubuntu 24.04 offline...
-
-set "UBUNTU_WSL=%PACKAGE_ROOT%offline-deps\ubuntu-24.04.4-wsl-amd64.wsl"
+set "UBUNTU_WSL=%PACKAGE_ROOT%\offline-deps\ubuntu-24.04.4-wsl-amd64.wsl"
 
 wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04" >nul
-if "%errorlevel%"=="0" (
-    echo   [OK] Ubuntu-24.04 is already installed.
-    exit /b 0
-)
+if not errorlevel 1 goto :ubuntu_exists
 
 echo   Installing Ubuntu from:
 echo     %UBUNTU_WSL%
-
 wsl.exe --install --from-file "%UBUNTU_WSL%" --no-launch
-if errorlevel 1 (
-    echo [ERROR] Failed to install Ubuntu 24.04 from the offline .wsl file.
-    exit /b 1
-)
+if errorlevel 1 goto :ubuntu_install_error
 
+goto :ubuntu_configure
+
+:ubuntu_exists
+echo   [OK] Ubuntu-24.04 is already installed.
+
+:ubuntu_configure
 wsl.exe --set-version Ubuntu-24.04 2 >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Ubuntu-24.04 could not be set to WSL2.
-    exit /b 1
-)
-
+if errorlevel 1 goto :ubuntu_wsl2_error
 wsl.exe --set-default Ubuntu-24.04 >nul 2>&1
+if errorlevel 1 goto :ubuntu_default_error
 
-echo   [OK] Ubuntu-24.04 installed as WSL2 and set as default distro.
+call :save_stage UBUNTU_INSTALLED
+if errorlevel 1 exit /b 1
+
+echo   [OK] Ubuntu-24.04 is installed as WSL2 and set as default distro.
 exit /b 0
 
 :install_docker
 echo.
 echo [5/6] Installing Docker Desktop offline...
+set "DOCKER_EXE=%PACKAGE_ROOT%\offline-deps\Docker Desktop Installer.exe"
+set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
 
-set "DOCKER_EXE=%PACKAGE_ROOT%offline-deps\Docker Desktop Installer.exe"
-
-if exist "%ProgramFiles%\Docker\Docker\Docker Desktop.exe" (
-    echo   [OK] Docker Desktop is already installed.
-    goto :docker_start
-)
+if exist "%DOCKER_DESKTOP_EXE%" goto :docker_start
 
 echo   Installing Docker Desktop for all users...
 start /wait "" "%DOCKER_EXE%" install --accept-license --backend=wsl-2 --no-windows-containers
-if errorlevel 1 (
-    echo [ERROR] Docker Desktop installation failed.
-    exit /b 1
-)
+if errorlevel 1 goto :docker_install_error
 
 :docker_start
-echo   Starting Docker Desktop...
-
-set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
-
-if not exist "%DOCKER_DESKTOP_EXE%" (
-    echo [ERROR] Docker Desktop executable was not found.
-    exit /b 1
-)
-
+if not exist "%DOCKER_DESKTOP_EXE%" goto :docker_exe_missing
 start "" "%DOCKER_DESKTOP_EXE%"
 
 echo   Waiting for Docker Engine...
 set /a WAIT_COUNT=0
 
-:docker_wait
+docker_wait_loop:
 set /a WAIT_COUNT+=1
 timeout /t 5 /nobreak >nul
-
 docker version >nul 2>&1
-if not errorlevel 1 (
-    echo   [OK] Docker Engine is ready.
-    exit /b 0
-)
+if not errorlevel 1 goto :docker_ready
+if %WAIT_COUNT% GEQ 60 goto :docker_timeout
+goto :docker_wait_loop
 
-if %WAIT_COUNT% GEQ 60 (
-    echo [ERROR] Docker Engine did not become ready within 5 minutes.
-    echo         Open Docker Desktop and check its status.
-    exit /b 1
-)
+:docker_ready
+call :save_stage DOCKER_INSTALLED
+if errorlevel 1 exit /b 1
 
-goto :docker_wait
+echo   [OK] Docker Engine is ready.
+exit /b 0
 
 :restore_devbox
 echo.
 echo [6/6] Restoring DevBox Lite to:
 echo        %DEST_PATH%
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%scripts\import.ps1" ^
-    -InputPath "%PACKAGE_ROOT%" ^
-    -TargetProj "%DEST_PATH%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\import.ps1" -InputPath "%PACKAGE_ROOT%" -TargetProj "%DEST_PATH%"
+if errorlevel 1 goto :restore_error
 
-if errorlevel 1 (
-    echo [ERROR] DevBox restore failed.
-    exit /b 1
-)
-
+call :save_stage RESTORED
+if errorlevel 1 exit /b 1
 exit /b 0
 
 :verify
@@ -870,27 +924,14 @@ echo.
 echo [verify] Checking final installation...
 
 where wsl.exe >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] wsl.exe is not available.
-    exit /b 1
-)
-
+if errorlevel 1 goto :verify_wsl_missing
 wsl.exe -l -v 2>nul | findstr /I "Ubuntu-24.04" >nul
-if errorlevel 1 (
-    echo [ERROR] Ubuntu-24.04 is not registered.
-    exit /b 1
-)
+if errorlevel 1 goto :verify_ubuntu_missing
 
 docker version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Docker Engine is not available.
-    exit /b 1
-)
+if errorlevel 1 goto :verify_docker_missing
 
-if not exist "%DEST_PATH%\docker\compose\docker-compose.yml" (
-    echo [ERROR] DevBox Compose file was not restored.
-    exit /b 1
-)
+if not exist "%DEST_PATH%\docker\compose\docker-compose.yml" goto :verify_project_missing
 
 echo   [OK] WSL2
 echo   [OK] Ubuntu 24.04
@@ -898,24 +939,177 @@ echo   [OK] Docker Desktop / Docker Engine
 echo   [OK] DevBox project files
 exit /b 0
 
+:save_stage
+set "NEW_STAGE=%~1"
+>"%STATE_FILE%" echo DEST_PATH=%DEST_PATH%
+>>"%STATE_FILE%" echo STAGE=%NEW_STAGE%
+set "STAGE=%NEW_STAGE%"
+exit /b 0
+
+:load_state_line
+set "STATE_LINE=%~1"
+for /f "tokens=1,* delims==" %%A in ("%STATE_LINE%") do call :apply_state "%%A" "%%B"
+exit /b 0
+
+:apply_state
+if /I "%~1"=="DEST_PATH" set "DEST_PATH=%~2"
+if /I "%~1"=="STAGE" set "STAGE=%~2"
+exit /b 0
+
+:cleanup_success
+schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
+if exist "%STATE_FILE%" del /f /q "%STATE_FILE%" >nul 2>&1
+exit /b 0
+
+:state_dir_error
+echo [ERROR] Could not create state directory:
+echo         %STATE_DIR%
+goto :fail
+
+:resume_state_error
+echo [ERROR] Resume state was not found:
+echo         %STATE_FILE%
+echo Run setup-offline.bat normally instead.
+goto :fail
+
+:resume_task_error
+echo [ERROR] Could not create the automatic resume task.
+echo         After restart, run setup-offline.bat /resume manually.
+exit /b 1
+
+:wsl_command_missing
+echo [ERROR] wsl.exe is not available after enabling WSL.
+echo         Restart Windows and run setup-offline.bat /resume.
+exit /b 1
+
+:wsl_install_error
+echo [ERROR] WSL MSI installation failed.
+exit /b 1
+
+:wsl_default_error
+echo [ERROR] Could not set WSL default version to 2.
+exit /b 1
+
+:ubuntu_install_error
+echo [ERROR] Failed to install Ubuntu 24.04 from the offline .wsl file.
+exit /b 1
+
+:ubuntu_wsl2_error
+echo [ERROR] Ubuntu-24.04 could not be set to WSL2.
+exit /b 1
+
+:ubuntu_default_error
+echo [ERROR] Could not set Ubuntu-24.04 as the default WSL distribution.
+exit /b 1
+
+:docker_install_error
+echo [ERROR] Docker Desktop installation failed.
+exit /b 1
+
+:docker_exe_missing
+echo [ERROR] Docker Desktop executable was not found after installation.
+exit /b 1
+
+:docker_timeout
+echo [ERROR] Docker Engine did not become ready within 5 minutes.
+echo         Open Docker Desktop and check its status.
+exit /b 1
+
+:restore_error
+echo [ERROR] DevBox restore failed.
+exit /b 1
+
+:verify_wsl_missing
+echo [ERROR] wsl.exe is not available.
+exit /b 1
+
+:verify_ubuntu_missing
+echo [ERROR] Ubuntu-24.04 is not registered.
+exit /b 1
+
+:verify_docker_missing
+echo [ERROR] Docker Engine is not available.
+exit /b 1
+
+:verify_project_missing
+echo [ERROR] DevBox Compose file was not restored.
+exit /b 1
+
 :fail
+set "FAIL_CODE=%errorlevel%"
+if "%FAIL_CODE%"=="0" set "FAIL_CODE=1"
+
 echo.
 echo ============================================================
 echo   DevBox Lite Offline Installation FAILED
 echo ============================================================
 echo.
+echo Failed stage:
+echo   %STAGE%
+echo.
 echo State file:
 echo   %STATE_FILE%
 echo.
-echo The installer stopped at the failed step.
+echo Exit code: %FAIL_CODE%
+echo.
 echo Fix the reported problem and run setup-offline.bat again.
 echo.
 pause
-exit /b 1
+exit /b %FAIL_CODE%
 BAT
 
+# Validate generated files before package creation continues.
+python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+bat = Path(sys.argv[1])
+validate = Path(sys.argv[2])
+features = Path(sys.argv[3])
+
+bat_text = bat.read_text(encoding='utf-8')
+validate_text = validate.read_text(encoding='utf-8')
+features_text = features.read_text(encoding='utf-8')
+
+required_labels = [
+    'main', 'resume', 'require_admin', 'validate_package',
+    'enable_wsl_features', 'install_wsl', 'install_ubuntu',
+    'install_docker', 'restore_devbox', 'verify', 'save_stage',
+    'load_state_line', 'apply_state', 'cleanup_success', 'fail',
+]
+required_calls = [
+    'call :validate_package',
+    'call :enable_wsl_features',
+    'call :install_wsl',
+    'call :install_ubuntu',
+    'call :install_docker',
+    'call :restore_devbox',
+    'call :verify',
+]
+labels = set(re.findall(r'^\s*:([A-Za-z0-9_]+)\s*$', bat_text, re.M))
+missing = [x for x in required_labels if x not in labels]
+if missing:
+    raise SystemExit('Generated BAT validation failed: missing labels: ' + ', '.join(missing))
+missing = [x for x in required_calls if x not in bat_text]
+if missing:
+    raise SystemExit('Generated BAT validation failed: missing calls: ' + ', '.join(missing))
+if 'goto :eof' in bat_text.lower():
+    raise SystemExit('Generated BAT validation failed: goto :eof is not permitted.')
+if 'validate-offline.ps1' not in bat_text or 'manage-wsl-features.ps1' not in bat_text:
+    raise SystemExit('Generated BAT validation failed: required external PowerShell scripts are not referenced.')
+if re.search(r'for\s+/f[^\n]*powershell\.exe', bat_text, re.I):
+    raise SystemExit('Generated BAT validation failed: inline PowerShell for /f parser pattern detected.')
+if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
+    raise SystemExit('Generated validation script check failed.')
+if 'exit 3010' not in features_text or 'Enable-WindowsOptionalFeature' not in features_text:
+    raise SystemExit('Generated WSL feature script check failed.')
+print('  [ok] Generated setup-offline.bat structural validation passed')
+print('  [ok] Generated PowerShell validation scripts passed')
+PY
 
 echo "  [ok] setup-offline.bat"
+
 
 # ------------------------------------------------------------
 # Manifest
@@ -978,6 +1172,8 @@ required_files=(
   "$BUNDLE_DIR/offline-deps/Docker Desktop Installer.exe"
   "$BUNDLE_DIR/offline-deps/docker-desktop.sha256"
   "$BUNDLE_DIR/scripts/import.ps1"
+  "$BUNDLE_DIR/scripts/validate-offline.ps1"
+  "$BUNDLE_DIR/scripts/manage-wsl-features.ps1"
 )
 
 for f in "${required_files[@]}"; do
