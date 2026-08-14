@@ -704,6 +704,22 @@ echo   DevBox Lite - Offline Installer
 echo   WSL2 + Ubuntu 24.04 + Docker Desktop + DevBox
 echo ============================================================
 echo.
+echo [IMPORTANT] Hardware virtualization must be enabled in BIOS/UEFI.
+echo.
+echo Intel processors may use one of these names:
+echo   Intel Virtualization Technology
+echo   VT-x
+echo   Virtualization Technology
+echo.
+echo AMD processors may use one of these names:
+echo   SVM Mode
+echo   AMD-V
+echo   Secure Virtual Machine
+echo.
+echo Enable the matching option, save BIOS/UEFI changes, and restart Windows.
+echo.
+echo ============================================================
+echo.
 
 call :require_admin
 if errorlevel 1 goto :fail
@@ -715,8 +731,9 @@ set "DEST_PATH="
 set /p "DEST_PATH=Enter destination path for project setup [Default: D:\devbox-project]: "
 if not defined DEST_PATH set "DEST_PATH=D:\devbox-project"
 
-call :save_stage START
-if errorlevel 1 goto :fail
+rem A normal run always starts from START. Resume state is used only with /resume.
+set "STAGE=START"
+if exist "%STATE_FILE%" del /f /q "%STATE_FILE%" >nul 2>&1
 
 goto :main
 
@@ -738,7 +755,8 @@ goto :main
 
 :main
 call :validate_package
-if errorlevel 1 goto :fail
+set "VALIDATE_RC=%errorlevel%"
+if not "%VALIDATE_RC%"=="0" goto :fail_validate
 
 if /I "%STAGE%"=="START" goto :stage_features
 if /I "%STAGE%"=="FEATURES_ENABLED" goto :stage_wsl
@@ -748,6 +766,10 @@ if /I "%STAGE%"=="DOCKER_INSTALLED" goto :stage_restore
 if /I "%STAGE%"=="RESTORED" goto :stage_verify
 
 echo [ERROR] Unknown installer stage: %STAGE%
+goto :fail
+
+:fail_validate
+set "FAIL_CODE=%VALIDATE_RC%"
 goto :fail
 
 :stage_features
@@ -961,9 +983,18 @@ exit /b 0
 
 :save_stage
 set "NEW_STAGE=%~1"
+set "SAVE_RC=0"
 >"%STATE_FILE%" echo DEST_PATH=%DEST_PATH%
->>"%STATE_FILE%" echo STAGE=%NEW_STAGE%
+if errorlevel 1 set "SAVE_RC=1"
+if "%SAVE_RC%"=="0" (
+    >>"%STATE_FILE%" echo STAGE=%NEW_STAGE%
+    if errorlevel 1 set "SAVE_RC=1"
+)
 set "STAGE=%NEW_STAGE%"
+if not "%SAVE_RC%"=="0" (
+    echo [ERROR] Could not save installer state: %STATE_FILE%
+    exit /b %SAVE_RC%
+)
 exit /b 0
 
 :load_state_line
@@ -1056,7 +1087,7 @@ echo [ERROR] DevBox Compose file was not restored.
 exit /b 1
 
 :fail
-set "FAIL_CODE=%errorlevel%"
+if not defined FAIL_CODE set "FAIL_CODE=%errorlevel%"
 if "%FAIL_CODE%"=="0" set "FAIL_CODE=1"
 
 echo.
@@ -1118,6 +1149,8 @@ if 'goto :eof' in bat_text.lower():
     raise SystemExit('Generated BAT validation failed: goto :eof is not permitted.')
 if 'validate-offline.ps1' not in bat_text or 'manage-wsl-features.ps1' not in bat_text:
     raise SystemExit('Generated BAT validation failed: required external PowerShell scripts are not referenced.')
+if 'call :save_stage START' in bat_text:
+    raise SystemExit('Generated BAT validation failed: startup must not depend on save_stage START.')
 if re.search(r'for\s+/f[^\n]*powershell\.exe', bat_text, re.I):
     raise SystemExit('Generated BAT validation failed: inline PowerShell for /f parser pattern detected.')
 if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
