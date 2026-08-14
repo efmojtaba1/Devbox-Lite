@@ -238,8 +238,13 @@ foreach ($logical in $Volumes.Keys) {
         Fail "Empty Docker volume name for logical volume '$logical'"
     }
 
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     docker.exe volume inspect $VolumeName *> $null
-    if ($LASTEXITCODE -ne 0) {
+    $VolumeInspectExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $PreviousErrorActionPreference
+
+    if ($VolumeInspectExitCode -ne 0) {
         docker.exe volume create $VolumeName *> $null
         if ($LASTEXITCODE -ne 0) {
             Fail "Could not create Docker volume '$VolumeName'"
