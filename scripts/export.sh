@@ -239,7 +239,7 @@ render_download_progress() {
     eta=$(( (total - current) / speed ))
   fi
 
-  printf '\r             %3d%% | %10s / %-10s | %10s/s | ETA %s' \
+  printf '\r  | %3d%% | %10s / %-10s | %10s/s | ETA %s' \
     "$percent" \
     "$(format_bytes "$current")" \
     "$(format_bytes "$total")" \
@@ -312,7 +312,7 @@ download_with_windows_host() {
   [ -s "$part" ] && resume="1"
 
   echo "  [fallback] Retrying through Windows host networking..."
-  echo "             Output: $win_output"
+  echo "  Output: $win_output"
 
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
     \$ErrorActionPreference = 'Stop'
@@ -366,7 +366,7 @@ download_resumable() {
   fi
 
   echo "  [download] $label"
-  echo "             URL: $url"
+  echo "  URL: $url"
 
   if [ -s "$part" ]; then
     local bytes
