@@ -115,16 +115,34 @@ Write-Info "[restore] Compose: $ComposeProject"
 # ------------------------------------------------------------
 # Helper: verify SHA256 if the manifest contains one.
 # ------------------------------------------------------------
+function Get-Sha256($Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        Fail "File not found for checksum verification: $Path"
+    }
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            $hash = $sha256.ComputeHash($stream)
+        }
+        finally {
+            $stream.Dispose()
+        }
+    }
+    finally {
+        $sha256.Dispose()
+    }
+
+    return ([System.BitConverter]::ToString($hash) -replace '-', '').ToLowerInvariant()
+}
+
 function Verify-Sha256($Path, $Expected) {
     if (-not $Expected) {
         return
     }
 
-    if (-not (Test-Path $Path)) {
-        Fail "File not found for checksum verification: $Path"
-    }
-
-    $Actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $Actual = Get-Sha256 $Path
     $ExpectedNormalized = $Expected.ToLowerInvariant()
 
     if ($Actual -ne $ExpectedNormalized) {

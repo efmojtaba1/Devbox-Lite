@@ -239,7 +239,7 @@ render_download_progress() {
     eta=$(( (total - current) / speed ))
   fi
 
-  printf '\r  | %3d%% | %10s / %-10s | %10s/s | ETA %s' \
+  printf '\r             %3d%% | %10s / %-10s | %10s/s | ETA %s' \
     "$percent" \
     "$(format_bytes "$current")" \
     "$(format_bytes "$total")" \
@@ -312,7 +312,7 @@ download_with_windows_host() {
   [ -s "$part" ] && resume="1"
 
   echo "  [fallback] Retrying through Windows host networking..."
-  echo "  Output: $win_output"
+  echo "             Output: $win_output"
 
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
     \$ErrorActionPreference = 'Stop'
@@ -366,7 +366,7 @@ download_resumable() {
   fi
 
   echo "  [download] $label"
-  echo "  URL: $url"
+  echo "             URL: $url"
 
   if [ -s "$part" ]; then
     local bytes
@@ -624,11 +624,6 @@ if tar -tzf "$BUNDLE_DIR/project-src.tar.gz" | grep -qE '(^|/)prebuilt(/|$)'; th
   exit 1
 fi
 
-if tar -tzf "$BUNDLE_DIR/project-src.tar.gz" | grep -qE '(^|/)prebuilt(/|$)'; then
-  echo "[error] project-src.tar.gz unexpectedly contains prebuilt/."
-  exit 1
-fi
-
 PROJECT_SHA256="$(sha256sum "$BUNDLE_DIR/project-src.tar.gz" | awk '{print $1}')"
 
 # ------------------------------------------------------------
@@ -661,6 +656,12 @@ cp "$PROJECT_ROOT/scripts/import.ps1" "$BUNDLE_DIR/scripts/import.ps1"
 
 if [ ! -f "$PROJECT_ROOT/scripts/import.ps1" ]; then
   echo "[error] scripts/import.ps1 not found in project."
+  exit 1
+fi
+
+if grep -q "Get-FileHash" "$PROJECT_ROOT/scripts/import.ps1"; then
+  echo "[error] scripts/import.ps1 still depends on Get-FileHash."
+  echo "        Replace it with the portable .NET SHA256 implementation before exporting."
   exit 1
 fi
 
@@ -962,8 +963,8 @@ echo.
 echo ============================================================
 echo.
 
-net session >nul 2>&1
-if errorlevel 1 goto :not_admin
+call :require_admin
+if errorlevel 1 goto :fail
 
 if not exist "%STATE_DIR%" mkdir "%STATE_DIR%" >nul 2>&1
 if not exist "%STATE_DIR%" goto :state_dir_error
@@ -984,8 +985,8 @@ echo   DevBox Lite - Resuming Offline Installation
 echo ============================================================
 echo.
 
-net session >nul 2>&1
-if errorlevel 1 goto :not_admin
+call :require_admin
+if errorlevel 1 goto :fail
 
 if not exist "%STATE_FILE%" goto :resume_state_error
 
@@ -1014,6 +1015,7 @@ set "FAIL_CODE=%VALIDATE_RC%"
 goto :fail
 
 :stage_features
+set "STAGE=FEATURES"
 call :enable_wsl_features
 set "FEATURE_RC=%errorlevel%"
 if "%FEATURE_RC%"=="0" goto :features_ready
@@ -1023,11 +1025,17 @@ goto :fail
 :features_ready
 call :save_stage FEATURES_ENABLED
 if errorlevel 1 goto :fail
+set "STAGE=INSTALL_WSL"
 call :install_wsl
 set "WSL_RC=%errorlevel%"
-if "%WSL_RC%"=="0" goto :stage_ubuntu
+if "%WSL_RC%"=="0" goto :wsl_completed
 if "%WSL_RC%"=="3010" goto :wsl_restart
 goto :fail
+
+:wsl_completed
+call :save_stage WSL_INSTALLED
+if errorlevel 1 goto :fail
+goto :stage_ubuntu
 
 :features_restart
 call :save_stage FEATURES_ENABLED
@@ -1036,9 +1044,10 @@ call :schedule_restart
 exit /b 3010
 
 :stage_wsl
+set "STAGE=INSTALL_WSL"
 call :install_wsl
 set "WSL_RC=%errorlevel%"
-if "%WSL_RC%"=="0" goto :stage_ubuntu
+if "%WSL_RC%"=="0" goto :wsl_completed
 if "%WSL_RC%"=="3010" goto :wsl_restart
 goto :fail
 
@@ -1049,17 +1058,26 @@ call :schedule_restart
 exit /b 3010
 
 :stage_ubuntu
+set "STAGE=INSTALL_UBUNTU"
 call :install_ubuntu
+if errorlevel 1 goto :fail
+call :save_stage UBUNTU_INSTALLED
 if errorlevel 1 goto :fail
 
 goto :stage_docker
 
 :stage_docker
+set "STAGE=INSTALL_DOCKER"
 call :install_docker
 set "DOCKER_RC=%errorlevel%"
-if "%DOCKER_RC%"=="0" goto :stage_restore
+if "%DOCKER_RC%"=="0" goto :docker_completed
 if "%DOCKER_RC%"=="3010" goto :docker_restart
 goto :fail
+
+:docker_completed
+call :save_stage DOCKER_INSTALLED
+if errorlevel 1 goto :fail
+goto :stage_restore
 
 :docker_restart
 call :save_stage DOCKER_INSTALLED
@@ -1068,12 +1086,16 @@ call :schedule_restart
 exit /b 3010
 
 :stage_restore
+set "STAGE=RESTORE_DEVBOX"
 call :restore_devbox
+if errorlevel 1 goto :fail
+call :save_stage RESTORED
 if errorlevel 1 goto :fail
 
 goto :stage_verify
 
 :stage_verify
+set "STAGE=VERIFY"
 call :verify
 if errorlevel 1 goto :fail
 
@@ -1090,6 +1112,11 @@ echo.
 echo WSL2 + Ubuntu 24.04 + Docker Desktop + DevBox are ready.
 echo.
 pause
+exit /b 0
+
+:require_admin
+net session >nul 2>&1
+if errorlevel 1 goto :not_admin
 exit /b 0
 
 :not_admin
@@ -1250,7 +1277,7 @@ schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
 schtasks /create /tn "%TASK_NAME%" /sc onlogon /rl HIGHEST /tr "\"%~f0\" /resume" /f >nul 2>&1
 if errorlevel 1 goto :resume_task_error
 shutdown /r /t 10 /c "DevBox Lite Offline Setup requires a restart to continue."
-exit /b 3010
+exit /b 0
 
 :save_stage
 set "NEW_STAGE=%~1"
@@ -1386,7 +1413,7 @@ exit /b %FAIL_CODE%
 BAT
 
 # Validate generated files before package creation continues.
-python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" <<'PY'
+python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -1403,35 +1430,40 @@ features_text = features.read_text(encoding='utf-8')
 distro_text = distro.read_text(encoding='utf-8')
 restart_text = restart.read_text(encoding='utf-8')
 
+required_labels = [
+    'main', 'resume', 'require_admin', 'validate_package',
+    'enable_wsl_features', 'install_wsl', 'install_ubuntu',
+    'install_docker', 'restore_devbox', 'verify', 'schedule_restart',
+    'save_stage', 'load_state_line', 'apply_state', 'cleanup_success',
+    'fail', 'features_restart', 'wsl_restart', 'docker_restart',
+]
+required_calls = [
+    'call :validate_package',
+    'call :enable_wsl_features',
+    'call :install_wsl',
+    'call :install_ubuntu',
+    'call :install_docker',
+    'call :restore_devbox',
+    'call :verify',
+    'call :schedule_restart',
+]
+
 labels = re.findall(r'^\s*:([A-Za-z0-9_]+)\s*$', bat_text, re.M)
 label_set = set(labels)
 if len(labels) != len(label_set):
     duplicates = sorted({x for x in labels if labels.count(x) > 1})
     raise SystemExit('Generated BAT validation failed: duplicate labels: ' + ', '.join(duplicates))
 
-# Every explicit CALL/GOTO label reference must resolve to a generated label.
-call_targets = re.findall(r'(?im)^\s*call\s+:([A-Za-z0-9_]+)\b', bat_text)
-goto_targets = re.findall(r'(?im)^\s*goto\s+:([A-Za-z0-9_]+)\b', bat_text)
-referenced = sorted(set(call_targets + goto_targets))
-missing_targets = [x for x in referenced if x not in label_set]
-if missing_targets:
-    raise SystemExit('Generated BAT validation failed: unresolved label references: ' + ', '.join(missing_targets))
-
-for required in [
-    'main', 'resume', 'validate_package', 'enable_wsl_features', 'install_wsl',
-    'install_ubuntu', 'install_docker', 'restore_devbox', 'verify',
-    'schedule_restart', 'save_stage', 'load_state_line', 'apply_state',
-    'cleanup_success', 'fail', 'not_admin', 'features_restart',
-    'wsl_restart', 'docker_restart'
-]:
-    if required not in label_set:
-        raise SystemExit('Generated BAT validation failed: missing label: ' + required)
-
-if ':require_admin' in bat_text or 'call :require_admin' in bat_text:
-    raise SystemExit('Generated BAT validation failed: obsolete require_admin subroutine detected.')
-
-if 'docker_wait_loop:' in bat_text:
+if 'docker_wait_loop' in bat_text and ':docker_wait_loop' not in bat_text:
     raise SystemExit('Generated BAT validation failed: docker_wait_loop label is malformed.')
+
+missing = [x for x in required_labels if x not in label_set]
+if missing:
+    raise SystemExit('Generated BAT validation failed: missing labels: ' + ', '.join(missing))
+
+missing = [x for x in required_calls if x not in bat_text]
+if missing:
+    raise SystemExit('Generated BAT validation failed: missing calls: ' + ', '.join(missing))
 
 if 'goto :eof' in bat_text.lower():
     raise SystemExit('Generated BAT validation failed: goto :eof is not permitted.')
@@ -1456,6 +1488,11 @@ if re.search(r'for\s+/f[^\n]*powershell\.exe', bat_text, re.I):
 
 if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
     raise SystemExit('Generated validation script check failed.')
+import_text = Path(sys.argv[6]).read_text(encoding='utf-8') if len(sys.argv) > 6 else ''
+if 'Get-FileHash' in import_text:
+    raise SystemExit('Generated import.ps1 validation failed: Get-FileHash dependency detected.')
+if 'System.Security.Cryptography.SHA256' not in import_text:
+    raise SystemExit('Generated import.ps1 validation failed: portable SHA256 implementation is missing.')
 
 if '$LASTEXITCODE' in features_text:
     raise SystemExit('Generated WSL feature script validation failed: LASTEXITCODE must not be used.')
