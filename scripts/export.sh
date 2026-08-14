@@ -162,20 +162,15 @@ resolve_volume() {
 }
 
 # ------------------------------------------------------------
-# Robust resumable download helper
+# Clean resumable download helper
 # ------------------------------------------------------------
-# Uses curl's native progress meter as the single progress mechanism.
+# Reuses complete files, resumes *.part files, retries transient
+# failures, prefers IPv4, and falls back to the Windows host curl.
 #
-# Strategy:
-#   1. Reuse an existing complete file.
-#   2. Resume *.part files.
-#   3. Prefer IPv4 in WSL.
-#   4. Retry transient failures.
-#   5. If WSL receives a blocked response (for example HTTP 403),
-#      retry through the Windows host's curl.exe/network stack.
-#   6. Preserve partial files on failure.
+# Progress is rendered by this script (not curl) as one in-place line:
+#   42% | 103.8 MB / 246.9 MB | 7.31 MB/s | ETA 00:20
 #
-# No blocking HEAD request and no second progress-monitor process.
+# Existing files keep the current quiet/reuse behavior.
 # ------------------------------------------------------------
 DOWNLOAD_RETRIES="8"
 DOWNLOAD_RETRY_DELAY="5"
@@ -185,15 +180,103 @@ DOWNLOAD_SPEED_LIMIT="1024"
 DOWNLOAD_SPEED_TIME="180"
 DOWNLOAD_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36"
 
+format_bytes() {
+  local bytes="${1:-0}"
+  if [ "$bytes" -ge 1073741824 ]; then
+    awk -v b="$bytes" 'BEGIN { printf "%.1f GB", b/1073741824 }'
+  elif [ "$bytes" -ge 1048576 ]; then
+    awk -v b="$bytes" 'BEGIN { printf "%.1f MB", b/1048576 }'
+  elif [ "$bytes" -ge 1024 ]; then
+    awk -v b="$bytes" 'BEGIN { printf "%.1f KB", b/1024 }'
+  else
+    printf '%s B' "$bytes"
+  fi
+}
+
+format_seconds() {
+  local seconds="${1:-0}"
+  [ "$seconds" -lt 0 ] && seconds=0
+  printf '%02d:%02d' $((seconds / 60)) $((seconds % 60))
+}
+
+get_remote_size() {
+  local url="${1:-}"
+  curl -4 -fsSLI \
+    --retry 3 \
+    --retry-delay 2 \
+    --connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
+    --user-agent "$DOWNLOAD_USER_AGENT" \
+    "$url" 2>/dev/null |
+    awk 'BEGIN{IGNORECASE=1} /^content-length:/ { gsub(/\r/,"",$2); size=$2 } END{ if (size ~ /^[0-9]+$/) print size; else print 0 }'
+}
+
+render_download_progress() {
+  local part="${1:-}"
+  local total="${2:-0}"
+  local start_epoch="${3:-0}"
+
+  local current=0
+  local elapsed=0
+  local percent=0
+  local speed=0
+  local eta=0
+
+  if [ -f "$part" ]; then
+    current="$(stat -c '%s' "$part" 2>/dev/null || echo 0)"
+  fi
+
+  elapsed=$(( $(date +%s) - start_epoch ))
+  [ "$elapsed" -lt 1 ] && elapsed=1
+
+  if [ "$total" -gt 0 ]; then
+    percent=$((current * 100 / total))
+    [ "$percent" -gt 100 ] && percent=100
+  fi
+
+  speed=$((current / elapsed))
+
+  if [ "$speed" -gt 0 ] && [ "$total" -gt "$current" ]; then
+    eta=$(( (total - current) / speed ))
+  fi
+
+  printf '\r      %3d%% | %10s / %-10s | %10s/s | ETA %s' \
+    "$percent" \
+    "$(format_bytes "$current")" \
+    "$(format_bytes "$total")" \
+    "$(format_bytes "$speed")" \
+    "$(format_seconds "$eta")"
+}
+
+wait_for_download() {
+  local pid="${1:-}"
+  local part="${2:-}"
+  local total="${3:-0}"
+  local start_epoch="${4:-0}"
+  local rc=0
+
+  while kill -0 "$pid" >/dev/null 2>&1; do
+    render_download_progress "$part" "$total" "$start_epoch"
+    sleep 1
+  done
+
+  wait "$pid" || rc=$?
+  render_download_progress "$part" "$total" "$start_epoch"
+  printf '\n'
+  return "$rc"
+}
+
 download_with_wsl_curl() {
   local url="${1:-}"
   local part="${2:-}"
+  local total="${3:-0}"
   local resume_args=()
+  local start_epoch="$(date +%s)"
 
   [ -s "$part" ] && resume_args=(--continue-at -)
 
-  curl \
-    -4 \
+  curl -4 \
+    --silent \
+    --show-error \
     --fail \
     --location \
     --user-agent "$DOWNLOAD_USER_AGENT" \
@@ -206,14 +289,19 @@ download_with_wsl_curl() {
     --speed-limit "$DOWNLOAD_SPEED_LIMIT" \
     --speed-time "$DOWNLOAD_SPEED_TIME" \
     --output "$part" \
-    "$url"
+    "$url" >/dev/null 2>&1 &
+
+  local pid=$!
+  wait_for_download "$pid" "$part" "$total" "$start_epoch"
 }
 
 download_with_windows_host() {
   local url="${1:-}"
   local part="${2:-}"
+  local total="${3:-0}"
   local win_output=""
   local resume="0"
+  local start_epoch="$(date +%s)"
 
   command -v powershell.exe >/dev/null 2>&1 || return 127
   command -v wslpath >/dev/null 2>&1 || return 127
@@ -230,6 +318,8 @@ download_with_windows_host() {
     \$ErrorActionPreference = 'Stop'
     \$args = @(
       '-4',
+      '--silent',
+      '--show-error',
       '--fail',
       '--location',
       '--user-agent', '$DOWNLOAD_USER_AGENT',
@@ -249,7 +339,10 @@ download_with_windows_host() {
     \$args += @('--output', '$win_output', '$url')
     & curl.exe @args
     exit \$LASTEXITCODE
-  "
+  " >/dev/null 2>&1 &
+
+  local pid=$!
+  wait_for_download "$pid" "$part" "$total" "$start_epoch"
 }
 
 download_resumable() {
@@ -273,27 +366,32 @@ download_resumable() {
   fi
 
   echo "  [download] $label"
-  echo "  [info] Download URL:"
-  echo "         $url"
+  echo "          URL: $url"
 
   if [ -s "$part" ]; then
     local bytes
     bytes="$(stat -c '%s' "$part" 2>/dev/null || echo 0)"
-    echo "  [resume] Partial file detected: $((bytes / 1024 / 1024)) MB"
+    echo "  [resume] Partial file detected: $(format_bytes "$bytes")"
   fi
 
-  if download_with_wsl_curl "$url" "$part"; then
+  local total
+  total="$(get_remote_size "$url")"
+  [ -n "$total" ] || total=0
+
+  if [ "$total" -gt 0 ] && [ -s "$part" ]; then
+    total="$total"
+  fi
+
+  if download_with_wsl_curl "$url" "$part" "$total"; then
     :
   else
     local wsl_rc=$?
-    echo ""
     echo "  [warn] WSL download failed (curl exit $wsl_rc)."
 
-    if download_with_windows_host "$url" "$part"; then
+    if download_with_windows_host "$url" "$part" "$total"; then
       :
     else
       local host_rc=$?
-      echo ""
       echo "  [error] Download failed: $label"
       echo "          WSL curl exit : $wsl_rc"
       echo "          Host curl exit: $host_rc"
@@ -327,7 +425,7 @@ else
   WSL_RELEASE_JSON="$(mktemp)"
   trap 'rm -f "$WSL_RELEASE_JSON"' EXIT
 
-  if ! curl -fL --retry 3 --retry-delay 2 \
+  if ! curl -fsSL --retry 3 --retry-delay 2 \
       -H "Accept: application/vnd.github+json" \
       -H "User-Agent: DevBox-Lite-Offline-Export" \
       -o "$WSL_RELEASE_JSON" \
@@ -351,9 +449,6 @@ else:
     raise SystemExit("No stable x64 MSI asset found in the latest WSL release.")
 PY2
   )"
-
-  echo "  [info] WSL MSI URL:"
-  echo "         $WSL_ASSET_URL"
 
   download_resumable "$WSL_ASSET_URL" "$WSL_MSI" "WSL x64 MSI"
 fi
@@ -564,34 +659,85 @@ echo "  [ok] import.ps1"
 # Complex PowerShell logic is kept outside CMD to avoid cmd.exe parser issues.
 cat > "$BUNDLE_DIR/scripts/validate-offline.ps1" <<'PS1'
 [CmdletBinding()]
-param([Parameter(Mandatory = $true)][string]$PackageRoot)
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackageRoot
+)
+
 $ErrorActionPreference = 'Stop'
-function Fail([string]$Message) { Write-Host "[ERROR] $Message"; exit 1 }
+
+function Fail([string]$Message) {
+    Write-Host "[ERROR] $Message"
+    exit 1
+}
+
 try {
     Write-Host '  [validate] Checking Windows version...'
-    $os = Get-CimInstance Win32_OperatingSystem; $build=[int]$os.BuildNumber; $caption=[string]$os.Caption
-    $supported=(($caption -match 'Windows 10') -and ($build -ge 19045)) -or (($caption -match 'Windows 11') -and ($build -ge 22631))
-    if (-not $supported) { Fail "Unsupported Windows version: $caption build $build. Required: Windows 10 22H2 build 19045+, or Windows 11 23H2 build 22631+." }
-    Write-Host '  [validate] Checking 64-bit Windows...'; if (-not [Environment]::Is64BitOperatingSystem) { Fail 'A 64-bit Windows installation is required.' }
-    Write-Host '  [validate] Checking physical memory...'; $ram=(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
-    if ($ram -lt 8GB) { $ramGb=[math]::Round($ram/1GB,1); Fail "At least 8 GB of RAM is required. Detected: ${ramGb} GB." }
-    Write-Host '  [validate] Checking hardware virtualization...'; $cs=Get-CimInstance Win32_ComputerSystem; $cpu=Get-CimInstance Win32_Processor | Select-Object -First 1
-    if ($cs.HypervisorPresent -eq $true) { Write-Host '  [OK] Windows hypervisor is running; hardware virtualization is available.' }
-    elseif ($cpu.VirtualizationFirmwareEnabled -eq $true) { Write-Host '  [OK] Hardware virtualization is enabled in firmware.' }
-    elseif ($null -eq $cpu.VirtualizationFirmwareEnabled) { Write-Host '  [WARN] Firmware virtualization state could not be detected. Continuing.' }
-    else { Fail 'Hardware virtualization is not available. Enable Intel VT-x or AMD-V/SVM in BIOS/UEFI and ensure Windows virtualization features can start.' }
-    $required=@(
-      @{Path=(Join-Path $PackageRoot 'offline-deps\\wsl.x64.msi');Name='WSL MSI'},
-      @{Path=(Join-Path $PackageRoot 'offline-deps\\ubuntu-24.04.4-wsl-amd64.wsl');Name='Ubuntu 24.04 WSL package'},
-      @{Path=(Join-Path $PackageRoot 'offline-deps\\Docker Desktop Installer.exe');Name='Docker Desktop installer'},
-      @{Path=(Join-Path $PackageRoot 'image.tar');Name='DevBox Docker image'},
-      @{Path=(Join-Path $PackageRoot 'scripts\\import.ps1');Name='import.ps1'},
-      @{Path=(Join-Path $PackageRoot 'scripts\\manage-wsl-features.ps1');Name='manage-wsl-features.ps1'},
-      @{Path=(Join-Path $PackageRoot 'scripts\\check-wsl-distro.ps1');Name='check-wsl-distro.ps1'},
-      @{Path=(Join-Path $PackageRoot 'scripts\\check-restart-required.ps1');Name='check-restart-required.ps1'})
-    foreach($item in $required){if(-not(Test-Path -LiteralPath $item.Path -PathType Leaf)){Fail "Required offline package file was not found: $($item.Name)`n        $($item.Path)"}}
-    Write-Host '  [OK] Windows prerequisites passed.'; Write-Host '  [OK] Required offline package files found.'; exit 0
-} catch { Write-Host "[ERROR] Validation failed: $($_.Exception.Message)"; exit 1 }
+    $os = Get-CimInstance Win32_OperatingSystem
+    $build = [int]$os.BuildNumber
+    $caption = [string]$os.Caption
+    $supported = (($caption -match 'Windows 10') -and ($build -ge 19045)) -or
+                 (($caption -match 'Windows 11') -and ($build -ge 22631))
+
+    if (-not $supported) {
+        Fail "Unsupported Windows version: $caption build $build. Required: Windows 10 22H2 build 19045+, or Windows 11 23H2 build 22631+."
+    }
+
+    Write-Host '  [validate] Checking 64-bit Windows...'
+    if (-not [Environment]::Is64BitOperatingSystem) {
+        Fail 'A 64-bit Windows installation is required.'
+    }
+
+    Write-Host '  [validate] Checking physical memory...'
+    $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+    if ($ram -lt 8GB) {
+        $ramGb = [math]::Round($ram / 1GB, 1)
+        Fail "At least 8 GB of RAM is required. Detected: ${ramGb} GB."
+    }
+
+    Write-Host '  [validate] Checking hardware virtualization...'
+    $processor = Get-CimInstance Win32_Processor | Select-Object -First 1
+    $virtFirmware = $processor.VirtualizationFirmwareEnabled
+    $hypervisorPresent = (Get-CimInstance Win32_ComputerSystem).HypervisorPresent
+
+    if ($hypervisorPresent -eq $true) {
+        Write-Host '  [OK] Windows hypervisor is running; hardware virtualization is available.'
+    }
+    elseif ($virtFirmware -eq $true) {
+        Write-Host '  [OK] Hardware virtualization is enabled in firmware.'
+    }
+    elseif ($null -eq $virtFirmware) {
+        Write-Host '  [WARN] Firmware virtualization state could not be detected. Continuing.'
+    }
+    else {
+        Fail 'Hardware virtualization is unavailable. Enable Intel VT-x or AMD-V/SVM in BIOS/UEFI and ensure the Windows hypervisor can start.'
+    }
+
+    $required = @(
+        @{ Path = (Join-Path $PackageRoot 'offline-deps\wsl.x64.msi'); Name = 'WSL MSI' },
+        @{ Path = (Join-Path $PackageRoot 'offline-deps\ubuntu-24.04.4-wsl-amd64.wsl'); Name = 'Ubuntu 24.04 WSL package' },
+        @{ Path = (Join-Path $PackageRoot 'offline-deps\Docker Desktop Installer.exe'); Name = 'Docker Desktop installer' },
+        @{ Path = (Join-Path $PackageRoot 'image.tar'); Name = 'DevBox Docker image' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\import.ps1'); Name = 'import.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\manage-wsl-features.ps1'); Name = 'manage-wsl-features.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-distro.ps1'); Name = 'check-wsl-distro.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\check-restart-required.ps1'); Name = 'check-restart-required.ps1' }
+    )
+
+    foreach ($item in $required) {
+        if (-not (Test-Path -LiteralPath $item.Path -PathType Leaf)) {
+            Fail "Required offline package file was not found: $($item.Name)`n        $($item.Path)"
+        }
+    }
+
+    Write-Host '  [OK] Windows prerequisites passed.'
+    Write-Host '  [OK] Required offline package files found.'
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Validation failed: $($_.Exception.Message)"
+    exit 1
+}
 PS1
 
 echo "  [ok] validate-offline.ps1"
@@ -599,25 +745,115 @@ echo "  [ok] validate-offline.ps1"
 cat > "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" <<'PS1'
 [CmdletBinding()]
 param()
-$ErrorActionPreference='Stop'
-function Get-FeatureState([string]$Name){(Get-WindowsOptionalFeature -Online -FeatureName $Name).State}
-try{
- Write-Host '  Checking WSL2 Windows features...'; $wslState=Get-FeatureState 'Microsoft-Windows-Subsystem-Linux'; $vmpState=Get-FeatureState 'VirtualMachinePlatform'
- Write-Host "  WSL state                 : $wslState"; Write-Host "  Virtual Machine Platform : $vmpState"; $changed=$false
- if($wslState -ne 'Enabled'){Write-Host '  Enabling Windows Subsystem for Linux...'; Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -All -NoRestart -ErrorAction Stop|Out-Null; $wslState=Get-FeatureState 'Microsoft-Windows-Subsystem-Linux'; if($wslState -ne 'Enabled'){Write-Host "[ERROR] Windows Subsystem for Linux did not reach Enabled state. Current state: $wslState";exit 1}; Write-Host '  [OK] Windows Subsystem for Linux enabled.';$changed=$true}else{Write-Host '  [OK] Windows Subsystem for Linux is already enabled.'}
- if($vmpState -ne 'Enabled'){Write-Host '  Enabling Virtual Machine Platform...'; Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart -ErrorAction Stop|Out-Null; $vmpState=Get-FeatureState 'VirtualMachinePlatform'; if($vmpState -ne 'Enabled'){Write-Host "[ERROR] Virtual Machine Platform did not reach Enabled state. Current state: $vmpState";exit 1}; Write-Host '  [OK] Virtual Machine Platform enabled.';$changed=$true}else{Write-Host '  [OK] Virtual Machine Platform is already enabled.'}
- if($changed){Write-Host '';Write-Host '  [OK] Required WSL2 Windows features are enabled.';Write-Host '  [INFO] A Windows restart is required before continuing.';exit 3010}
- Write-Host '';Write-Host '  [OK] Required WSL2 Windows features are already enabled.';exit 0
-}catch{Write-Host "[ERROR] Failed to configure WSL2 Windows features: $($_.Exception.Message)";exit 1}
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    Write-Host '  Checking WSL2 Windows features...'
+
+    $wsl = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+    $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
+
+    Write-Host "  WSL state                 : $($wsl.State)"
+    Write-Host "  Virtual Machine Platform : $($vmp.State)"
+
+    $restartNeeded = $false
+
+    if ($wsl.State -ne 'Enabled') {
+        Write-Host '  Enabling Windows Subsystem for Linux...'
+
+        Enable-WindowsOptionalFeature `
+            -Online `
+            -FeatureName Microsoft-Windows-Subsystem-Linux `
+            -All `
+            -NoRestart `
+            -ErrorAction Stop | Out-Null
+
+        $wsl = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+
+        if ($wsl.State -ne 'Enabled') {
+            Write-Host '[ERROR] Failed to enable Windows Subsystem for Linux.'
+            Write-Host "        Current state: $($wsl.State)"
+            exit 1
+        }
+
+        Write-Host '  [OK] Windows Subsystem for Linux enabled.'
+        $restartNeeded = $true
+    }
+    else {
+        Write-Host '  [OK] Windows Subsystem for Linux is already enabled.'
+    }
+
+    if ($vmp.State -ne 'Enabled') {
+        Write-Host '  Enabling Virtual Machine Platform...'
+
+        Enable-WindowsOptionalFeature `
+            -Online `
+            -FeatureName VirtualMachinePlatform `
+            -All `
+            -NoRestart `
+            -ErrorAction Stop | Out-Null
+
+        $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
+
+        if ($vmp.State -ne 'Enabled') {
+            Write-Host '[ERROR] Failed to enable Virtual Machine Platform.'
+            Write-Host "        Current state: $($vmp.State)"
+            exit 1
+        }
+
+        Write-Host '  [OK] Virtual Machine Platform enabled.'
+        $restartNeeded = $true
+    }
+    else {
+        Write-Host '  [OK] Virtual Machine Platform is already enabled.'
+    }
+
+    if ($restartNeeded) {
+        Write-Host ''
+        Write-Host '  [OK] Required WSL2 Windows features are enabled.'
+        Write-Host '  [INFO] Windows restart is required before continuing.'
+        exit 3010
+    }
+
+    Write-Host ''
+    Write-Host '  [OK] Required WSL2 Windows features are already enabled.'
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Failed to configure WSL2 Windows features: $($_.Exception.Message)"
+    exit 1
+}
 PS1
 
 echo "  [ok] manage-wsl-features.ps1"
 
 cat > "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" <<'PS1'
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$Distribution)
-$ErrorActionPreference='Stop'
-try{$distros=@(& wsl.exe --list --quiet 2>$null|ForEach-Object{($_ -replace "`0",'').Trim()}|Where-Object{$_});foreach($distro in $distros){if($distro -ieq $Distribution){exit 0}};exit 1}catch{exit 1}
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Distribution
+)
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    $distros = @(
+        wsl.exe --list --quiet 2>$null |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+    )
+
+    if ($distros -contains $Distribution) {
+        exit 0
+    }
+
+    exit 1
+}
+catch {
+    Write-Host "[ERROR] Failed to query WSL distributions: $($_.Exception.Message)"
+    exit 1
+}
 PS1
 
 echo "  [ok] check-wsl-distro.ps1"
@@ -625,12 +861,51 @@ echo "  [ok] check-wsl-distro.ps1"
 cat > "$BUNDLE_DIR/scripts/check-restart-required.ps1" <<'PS1'
 [CmdletBinding()]
 param()
-$ErrorActionPreference='SilentlyContinue';$pending=$false
-if(Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'){$pending=$true}
-if(Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'){$pending=$true}
-$sessionManager=Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
-if($null -ne $sessionManager.PendingFileRenameOperations){$pending=$true}
-if($pending){Write-Host '  [INFO] Windows reports that a restart is required.';exit 3010};exit 0
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    $pending = $false
+
+    $keys = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending',
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
+    )
+
+    foreach ($key in $keys) {
+        if (Test-Path -LiteralPath $key) {
+            $pending = $true
+            break
+        }
+    }
+
+    if (-not $pending) {
+        try {
+            $sessionManager = Get-ItemProperty `
+                -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' `
+                -Name PendingFileRenameOperations `
+                -ErrorAction Stop
+
+            if ($null -ne $sessionManager.PendingFileRenameOperations) {
+                $pending = $true
+            }
+        }
+        catch {
+            # Property does not exist; no pending reboot from this source.
+        }
+    }
+
+    if ($pending) {
+        Write-Host '  [INFO] Windows restart is required.'
+        exit 3010
+    }
+
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Failed to check pending Windows restart: $($_.Exception.Message)"
+    exit 1
+}
 PS1
 
 echo "  [ok] check-restart-required.ps1"
@@ -729,25 +1004,63 @@ goto :fail
 
 :stage_features
 call :enable_wsl_features
-if errorlevel 3010 exit /b 0
+set "FEATURE_RC=%errorlevel%"
+if "%FEATURE_RC%"=="0" goto :features_ready
+if "%FEATURE_RC%"=="3010" goto :features_restart
+goto :fail
+
+:features_ready
+call :save_stage FEATURES_ENABLED
 if errorlevel 1 goto :fail
+call :install_wsl
+set "WSL_RC=%errorlevel%"
+if "%WSL_RC%"=="0" goto :stage_ubuntu
+if "%WSL_RC%"=="3010" goto :wsl_restart
+goto :fail
+
+:features_restart
+call :save_stage FEATURES_ENABLED
+if errorlevel 1 goto :fail
+call :schedule_restart
+exit /b 3010
 
 :stage_wsl
 call :install_wsl
+set "WSL_RC=%errorlevel%"
+if "%WSL_RC%"=="0" goto :stage_ubuntu
+if "%WSL_RC%"=="3010" goto :wsl_restart
+goto :fail
+
+:wsl_restart
+call :save_stage WSL_INSTALLED
 if errorlevel 1 goto :fail
+call :schedule_restart
+exit /b 3010
 
 :stage_ubuntu
 call :install_ubuntu
 if errorlevel 1 goto :fail
 
+goto :stage_docker
+
 :stage_docker
 call :install_docker
-if errorlevel 3010 exit /b 0
+set "DOCKER_RC=%errorlevel%"
+if "%DOCKER_RC%"=="0" goto :stage_restore
+if "%DOCKER_RC%"=="3010" goto :docker_restart
+goto :fail
+
+:docker_restart
+call :save_stage DOCKER_INSTALLED
 if errorlevel 1 goto :fail
+call :schedule_restart
+exit /b 3010
 
 :stage_restore
 call :restore_devbox
 if errorlevel 1 goto :fail
+
+goto :stage_verify
 
 :stage_verify
 call :verify
@@ -791,31 +1104,7 @@ exit /b 0
 echo.
 echo [2/6] Checking Windows WSL2 components...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\manage-wsl-features.ps1"
-set "FEATURE_RC=%errorlevel%"
-if "%FEATURE_RC%"=="0" goto :features_ready
-if "%FEATURE_RC%"=="3010" goto :features_restart
-echo [ERROR] Failed to configure required WSL2 Windows features.
-exit /b 1
-
-:features_ready
-call :save_stage FEATURES_ENABLED
 exit /b %errorlevel%
-
-:features_restart
-call :save_stage FEATURES_ENABLED
-if errorlevel 1 exit /b 1
-
-schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
-schtasks /create /tn "%TASK_NAME%" /sc onlogon /rl HIGHEST /tr "\"%~f0\" /resume" /f >nul 2>&1
-if errorlevel 1 goto :resume_task_error
-
-echo.
-echo   Windows WSL2 components were enabled.
-echo   A restart is required before installation can continue.
-echo   The installer will resume automatically after login.
-echo.
-shutdown /r /t 10 /c "DevBox Lite Offline Setup requires a restart to continue WSL2 installation."
-exit /b 3010
 
 :install_wsl
 echo.
@@ -829,14 +1118,13 @@ if not errorlevel 1 goto :wsl_ready
 
 echo   Installing WSL MSI...
 msiexec.exe /i "%WSL_MSI%" /passive /norestart
-if errorlevel 1 goto :wsl_install_error
+set "WSL_MSI_RC=%errorlevel%"
+if "%WSL_MSI_RC%"=="3010" exit /b 3010
+if not "%WSL_MSI_RC%"=="0" goto :wsl_install_error
 
 :wsl_ready
 wsl.exe --set-default-version 2 >nul 2>&1
 if errorlevel 1 goto :wsl_default_error
-
-call :save_stage WSL_INSTALLED
-if errorlevel 1 exit /b 1
 
 echo   [OK] WSL2 is installed and default version is 2.
 exit /b 0
@@ -847,20 +1135,18 @@ echo [4/6] Installing Ubuntu 24.04 offline...
 set "UBUNTU_WSL=%PACKAGE_ROOT%\offline-deps\ubuntu-24.04.4-wsl-amd64.wsl"
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
-set "UBUNTU_CHECK_RC=%errorlevel%"
-if "%UBUNTU_CHECK_RC%"=="0" goto :ubuntu_exists
-if not "%UBUNTU_CHECK_RC%"=="1" goto :ubuntu_check_error
+if not errorlevel 1 goto :ubuntu_exists
 
 echo   Installing Ubuntu from:
 echo     %UBUNTU_WSL%
 wsl.exe --install --from-file "%UBUNTU_WSL%" --no-launch
 if errorlevel 1 goto :ubuntu_install_error
 
-set /a UBUNTU_VERIFY_COUNT=0
-
+set "UBUNTU_VERIFY_COUNT=0"
 :ubuntu_verify
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
 if not errorlevel 1 goto :ubuntu_configure
+
 set /a UBUNTU_VERIFY_COUNT+=1
 if %UBUNTU_VERIFY_COUNT% GEQ 15 goto :ubuntu_registration_error
 timeout /t 2 /nobreak >nul
@@ -868,16 +1154,12 @@ goto :ubuntu_verify
 
 :ubuntu_exists
 echo   [OK] Ubuntu-24.04 is already installed.
-goto :ubuntu_configure
 
 :ubuntu_configure
 wsl.exe --set-version Ubuntu-24.04 2 >nul 2>&1
 if errorlevel 1 goto :ubuntu_wsl2_error
 wsl.exe --set-default Ubuntu-24.04 >nul 2>&1
 if errorlevel 1 goto :ubuntu_default_error
-
-call :save_stage UBUNTU_INSTALLED
-if errorlevel 1 exit /b 1
 
 echo   [OK] Ubuntu-24.04 is installed as WSL2 and set as default distro.
 exit /b 0
@@ -892,20 +1174,23 @@ if exist "%DOCKER_DESKTOP_EXE%" goto :docker_start
 
 echo   Installing Docker Desktop for all users...
 start /wait "" "%DOCKER_EXE%" install --accept-license --backend=wsl-2 --no-windows-containers
-if errorlevel 1 goto :docker_install_error
-
-call :check_restart_required
-if errorlevel 3010 goto :docker_restart_required
-if errorlevel 1 goto :docker_restart_check_error
+set "DOCKER_INSTALL_RC=%errorlevel%"
+if "%DOCKER_INSTALL_RC%"=="3010" goto :docker_installer_restart
+if not "%DOCKER_INSTALL_RC%"=="0" goto :docker_install_error
 
 :docker_start
 if not exist "%DOCKER_DESKTOP_EXE%" goto :docker_exe_missing
 start "" "%DOCKER_DESKTOP_EXE%"
 
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-restart-required.ps1"
+set "RESTART_RC=%errorlevel%"
+if "%RESTART_RC%"=="3010" exit /b 3010
+if not "%RESTART_RC%"=="0" goto :docker_install_error
+
 echo   Waiting for Docker Engine...
 set /a WAIT_COUNT=0
 
-docker_wait_loop:
+:docker_wait_loop
 set /a WAIT_COUNT+=1
 timeout /t 5 /nobreak >nul
 docker version >nul 2>&1
@@ -914,32 +1199,11 @@ if %WAIT_COUNT% GEQ 60 goto :docker_timeout
 goto :docker_wait_loop
 
 :docker_ready
-call :save_stage DOCKER_INSTALLED
-if errorlevel 1 exit /b 1
-
 echo   [OK] Docker Engine is ready.
 exit /b 0
 
-:docker_restart_required
-call :save_stage DOCKER_INSTALLED
-if errorlevel 1 exit /b 1
-schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
-schtasks /create /tn "%TASK_NAME%" /sc onlogon /rl HIGHEST /tr "\"%~f0\" /resume" /f >nul 2>&1
-if errorlevel 1 goto :resume_task_error
-echo.
-echo   Docker Desktop installation requires a Windows restart.
-echo   The installer will resume automatically after login.
-echo.
-shutdown /r /t 10 /c "DevBox Lite Offline Setup requires a restart to continue DevBox installation."
+:docker_installer_restart
 exit /b 3010
-
-:docker_restart_check_error
-echo [ERROR] Could not determine whether Windows requires a restart after Docker installation.
-exit /b 1
-
-:check_restart_required
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-restart-required.ps1"
-exit /b %errorlevel%
 
 :restore_devbox
 echo.
@@ -948,9 +1212,6 @@ echo        %DEST_PATH%
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\import.ps1" -InputPath "%PACKAGE_ROOT%" -TargetProj "%DEST_PATH%"
 if errorlevel 1 goto :restore_error
-
-call :save_stage RESTORED
-if errorlevel 1 exit /b 1
 exit /b 0
 
 :verify
@@ -959,6 +1220,7 @@ echo [verify] Checking final installation...
 
 where wsl.exe >nul 2>&1
 if errorlevel 1 goto :verify_wsl_missing
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
 if errorlevel 1 goto :verify_ubuntu_missing
 
@@ -971,6 +1233,17 @@ echo   [OK] WSL2
 echo   [OK] Ubuntu 24.04
 echo   [OK] Docker Desktop / Docker Engine
 echo   [OK] DevBox project files
+exit /b 0
+
+:schedule_restart
+echo.
+echo   Windows restart is required before installation can continue.
+echo   The installer will resume automatically after login.
+echo.
+schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
+schtasks /create /tn "%TASK_NAME%" /sc onlogon /rl HIGHEST /tr "\"%~f0\" /resume" /f >nul 2>&1
+if errorlevel 1 goto :resume_task_error
+shutdown /r /t 10 /c "DevBox Lite Offline Setup requires a restart to continue."
 exit /b 0
 
 :save_stage
@@ -1035,6 +1308,11 @@ exit /b 1
 
 :ubuntu_install_error
 echo [ERROR] Failed to install Ubuntu 24.04 from the offline .wsl file.
+exit /b 1
+
+:ubuntu_registration_error
+echo [ERROR] Ubuntu-24.04 was not registered after installation.
+echo         Check WSL status and try setup-offline.bat again.
 exit /b 1
 
 :ubuntu_wsl2_error
@@ -1110,20 +1388,21 @@ import sys
 bat = Path(sys.argv[1])
 validate = Path(sys.argv[2])
 features = Path(sys.argv[3])
-wsl_distro = Path(sys.argv[4])
-restart_check = Path(sys.argv[5])
+distro = Path(sys.argv[4])
+restart = Path(sys.argv[5])
 
 bat_text = bat.read_text(encoding='utf-8')
 validate_text = validate.read_text(encoding='utf-8')
 features_text = features.read_text(encoding='utf-8')
-wsl_distro_text = wsl_distro.read_text(encoding='utf-8')
-restart_check_text = restart_check.read_text(encoding='utf-8')
+distro_text = distro.read_text(encoding='utf-8')
+restart_text = restart.read_text(encoding='utf-8')
 
 required_labels = [
     'main', 'resume', 'require_admin', 'validate_package',
     'enable_wsl_features', 'install_wsl', 'install_ubuntu',
-    'install_docker', 'restore_devbox', 'verify', 'save_stage',
-    'load_state_line', 'apply_state', 'cleanup_success', 'fail',
+    'install_docker', 'restore_devbox', 'verify', 'schedule_restart',
+    'save_stage', 'load_state_line', 'apply_state', 'cleanup_success',
+    'fail', 'features_restart', 'wsl_restart', 'docker_restart',
 ]
 required_calls = [
     'call :validate_package',
@@ -1133,44 +1412,59 @@ required_calls = [
     'call :install_docker',
     'call :restore_devbox',
     'call :verify',
+    'call :schedule_restart',
 ]
-labels = set(re.findall(r'^\s*:([A-Za-z0-9_]+)\s*$', bat_text, re.M))
-missing = [x for x in required_labels if x not in labels]
+
+labels = re.findall(r'^\s*:([A-Za-z0-9_]+)\s*$', bat_text, re.M)
+label_set = set(labels)
+if len(labels) != len(label_set):
+    duplicates = sorted({x for x in labels if labels.count(x) > 1})
+    raise SystemExit('Generated BAT validation failed: duplicate labels: ' + ', '.join(duplicates))
+
+missing = [x for x in required_labels if x not in label_set]
 if missing:
     raise SystemExit('Generated BAT validation failed: missing labels: ' + ', '.join(missing))
+
 missing = [x for x in required_calls if x not in bat_text]
 if missing:
     raise SystemExit('Generated BAT validation failed: missing calls: ' + ', '.join(missing))
+
 if 'goto :eof' in bat_text.lower():
     raise SystemExit('Generated BAT validation failed: goto :eof is not permitted.')
+
+if 'ubuntu_registration_wait' in bat_text:
+    raise SystemExit('Generated BAT validation failed: obsolete ubuntu_registration_wait label detected.')
+
+if 'wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04"' in bat_text:
+    raise SystemExit('Generated BAT validation failed: obsolete Ubuntu findstr detection detected.')
+
 if 'validate-offline.ps1' not in bat_text or 'manage-wsl-features.ps1' not in bat_text:
-    raise SystemExit('Generated BAT validation failed: required external PowerShell scripts are not referenced.')
+    raise SystemExit('Generated BAT validation failed: required PowerShell scripts are not referenced.')
+
+if 'check-wsl-distro.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text:
+    raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
+
 if 'call :save_stage START' in bat_text:
     raise SystemExit('Generated BAT validation failed: startup must not depend on save_stage START.')
+
 if re.search(r'for\s+/f[^\n]*powershell\.exe', bat_text, re.I):
     raise SystemExit('Generated BAT validation failed: inline PowerShell for /f parser pattern detected.')
+
 if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
     raise SystemExit('Generated validation script check failed.')
-if 'exit 3010' not in features_text or 'Enable-WindowsOptionalFeature' not in features_text:
-    raise SystemExit('Generated WSL feature script check failed.')
+
 if '$LASTEXITCODE' in features_text:
-    raise SystemExit('Generated WSL feature script validation failed: LASTEXITCODE must not be used for PowerShell feature cmdlets.')
-if 'RestartNeeded' not in features_text:
-    raise SystemExit('Generated WSL feature script validation failed: RestartNeeded handling is missing.')
-if 'HypervisorPresent' not in validate_text:
-    raise SystemExit('Generated validation script check failed: HypervisorPresent handling is missing.')
-if '$LASTEXITCODE' in features_text or 'RestartNeeded' in features_text:
-    raise SystemExit('Generated WSL feature script validation failed.')
-if 'check-wsl-distro.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text:
-    raise SystemExit('Generated BAT validation failed: helper scripts are not referenced.')
-if 'ubuntu_registration_wait' in bat_text:
-    raise SystemExit('Generated BAT validation failed: legacy ubuntu_registration_wait label is still present.')
-if 'findstr /I /X \"Ubuntu-24.04\"' in bat_text:
-    raise SystemExit('Generated BAT validation failed: fragile Ubuntu findstr detection is still present.')
-if 'Ubuntu-24.04' not in wsl_distro_text or '--list --quiet' not in wsl_distro_text:
+    raise SystemExit('Generated WSL feature script validation failed: LASTEXITCODE must not be used.')
+
+if 'Get-WindowsOptionalFeature' not in features_text or 'VirtualMachinePlatform' not in features_text:
+    raise SystemExit('Generated WSL feature script validation failed: feature verification is missing.')
+
+if 'wsl.exe --list --quiet' not in distro_text:
     raise SystemExit('Generated WSL distro helper validation failed.')
-if 'RebootPending' not in restart_check_text or 'RebootRequired' not in restart_check_text:
+
+if 'RebootPending' not in restart_text and 'RebootRequired' not in restart_text:
     raise SystemExit('Generated restart helper validation failed.')
+
 print('  [ok] Generated setup-offline.bat structural validation passed')
 print('  [ok] Generated PowerShell validation scripts passed')
 PY
