@@ -1807,8 +1807,12 @@ if 'validate-offline.ps1' not in normalized_bat_text or 'manage-wsl-features.ps1
 if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
 
-install_wsl_start = normalized_bat_text.find(':install_wsl')
-install_ubuntu_start = normalized_bat_text.find(':install_ubuntu')
+def find_label_line(text, label):
+    match = re.search(rf'(?m)^:{re.escape(label)}\s*$', text)
+    return match.start() if match else -1
+
+install_wsl_start = find_label_line(normalized_bat_text, 'install_wsl')
+install_ubuntu_start = find_label_line(normalized_bat_text, 'install_ubuntu')
 if install_wsl_start == -1 or install_ubuntu_start == -1 or install_ubuntu_start <= install_wsl_start:
     raise SystemExit('Generated BAT validation failed: install_wsl/install_ubuntu sections could not be located.')
 install_wsl_text = normalized_bat_text[install_wsl_start:install_ubuntu_start]
@@ -1847,8 +1851,8 @@ if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restar
 if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wait_docker_text or 'TimeoutSeconds' not in wait_docker_text:
     raise SystemExit('Generated Docker install waiter validation failed.')
 
-install_docker_start = normalized_bat_text.find(':install_docker')
-restore_start = normalized_bat_text.find(':restore_devbox')
+install_docker_start = find_label_line(normalized_bat_text, 'install_docker')
+restore_start = find_label_line(normalized_bat_text, 'restore_devbox')
 if install_docker_start == -1 or restore_start == -1 or restore_start <= install_docker_start:
     raise SystemExit('Generated BAT validation failed: install_docker/restore_devbox sections could not be located.')
 install_docker_text = normalized_bat_text[install_docker_start:restore_start]
