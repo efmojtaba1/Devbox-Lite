@@ -1722,6 +1722,9 @@ if bat_bytes.replace(b"\r\n", b"").find(b"\n") != -1:
     raise SystemExit('Generated BAT validation failed: lone LF line ending detected.')
 
 bat_text = bat_bytes.decode('utf-8')
+# Normalize line endings for structural parsing.
+# Keep bat_bytes unchanged above so CRLF validation remains strict.
+normalized_bat_text = bat_text.replace('\r\n', '\n').replace('\r', '\n')
 validate_text = validate.read_text(encoding='utf-8')
 features_text = features.read_text(encoding='utf-8')
 distro_text = distro.read_text(encoding='utf-8')
@@ -1749,7 +1752,7 @@ required_calls = [
     'call :schedule_restart',
 ]
 
-labels = re.findall(r'^\s*:([A-Za-z0-9_]+)\s*$', bat_text, re.M)
+labels = re.findall(r'^\s*:([A-Za-z0-9_]+)\s*$', normalized_bat_text, re.M)
 label_set = set(labels)
 if len(labels) != len(label_set):
     duplicates = sorted({x for x in labels if labels.count(x) > 1})
@@ -1757,55 +1760,65 @@ if len(labels) != len(label_set):
 
 # Validate every actual CALL/GOTO label reference, not just a fixed allowlist.
 # This prevents missing-label regressions such as ensure_wsl_ready.
-call_refs = re.findall(r'\bcall\s+:([A-Za-z0-9_]+)', bat_text, re.I)
-goto_refs = re.findall(r'\bgoto\s+:([A-Za-z0-9_]+)', bat_text, re.I)
+call_refs = re.findall(r'\bcall\s+:([A-Za-z0-9_]+)', normalized_bat_text, re.I)
+goto_refs = re.findall(r'\bgoto\s+:([A-Za-z0-9_]+)', normalized_bat_text, re.I)
 referenced_labels = sorted(set(call_refs + goto_refs))
 missing_refs = [name for name in referenced_labels if name.lower() != 'eof' and name not in label_set]
 if missing_refs:
     raise SystemExit('Generated BAT validation failed: unresolved labels: ' + ', '.join(missing_refs))
 
-if 'docker_wait_loop' in bat_text and ':docker_wait_loop' not in bat_text:
+if 'docker_wait_loop' in normalized_bat_text and ':docker_wait_loop' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: docker_wait_loop label is malformed.')
 
-save_stage_block = bat_text.split(':save_stage\n', 1)[1].split(':save_stage_error\n', 1)[0]
-if 'echo DEST_PATH=' in save_stage_block and 'if errorlevel 1 goto :save_stage_error' in save_stage_block.split('>>',1)[0]:
+save_stage_marker = ':save_stage\n'
+save_stage_error_marker = ':save_stage_error\n'
+if save_stage_marker not in normalized_bat_text:
+    raise SystemExit('Generated BAT validation failed: :save_stage label not found.')
+if save_stage_error_marker not in normalized_bat_text:
+    raise SystemExit('Generated BAT validation failed: :save_stage_error label not found.')
+
+save_stage_block = (
+    normalized_bat_text.split(save_stage_marker, 1)[1]
+    .split(save_stage_error_marker, 1)[0]
+)
+if 'echo DEST_PATH=' in save_stage_block and 'if errorlevel 1 goto :save_stage_error' in save_stage_block.split('>>', 1)[0]:
     raise SystemExit('Generated BAT validation failed: save_stage must not test stale ERRORLEVEL after ECHO redirection.')
 
 missing = [x for x in required_labels if x not in label_set]
 if missing:
     raise SystemExit('Generated BAT validation failed: missing labels: ' + ', '.join(missing))
 
-missing = [x for x in required_calls if x not in bat_text]
+missing = [x for x in required_calls if x not in normalized_bat_text]
 if missing:
     raise SystemExit('Generated BAT validation failed: missing calls: ' + ', '.join(missing))
 
-if 'goto :eof' in bat_text.lower():
+if 'goto :eof' in normalized_bat_text.lower():
     raise SystemExit('Generated BAT validation failed: goto :eof is not permitted.')
 
-if 'ubuntu_registration_wait' in bat_text:
+if 'ubuntu_registration_wait' in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: obsolete ubuntu_registration_wait label detected.')
 
-if 'wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04"' in bat_text:
+if 'wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04"' in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: obsolete Ubuntu findstr detection detected.')
 
-if 'validate-offline.ps1' not in bat_text or 'manage-wsl-features.ps1' not in bat_text:
+if 'validate-offline.ps1' not in normalized_bat_text or 'manage-wsl-features.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: required PowerShell scripts are not referenced.')
 
-if 'check-wsl-distro.ps1' not in bat_text or 'check-wsl-ready.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text or 'check-docker-restart-required.ps1' not in bat_text or 'wait-docker-install.ps1' not in bat_text:
+if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
 
-install_wsl_start = bat_text.find(':install_wsl')
-install_ubuntu_start = bat_text.find(':install_ubuntu')
+install_wsl_start = normalized_bat_text.find(':install_wsl')
+install_ubuntu_start = normalized_bat_text.find(':install_ubuntu')
 if install_wsl_start == -1 or install_ubuntu_start == -1 or install_ubuntu_start <= install_wsl_start:
     raise SystemExit('Generated BAT validation failed: install_wsl/install_ubuntu sections could not be located.')
-install_wsl_text = bat_text[install_wsl_start:install_ubuntu_start]
+install_wsl_text = normalized_bat_text[install_wsl_start:install_ubuntu_start]
 if 'check-restart-required.ps1' not in install_wsl_text:
     raise SystemExit('Generated BAT validation failed: install_wsl must verify Windows pending restart state.')
 
-if 'call :save_stage START' in bat_text:
+if 'call :save_stage START' in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: startup must not depend on save_stage START.')
 
-if re.search(r'for\s+/f[^\n]*powershell\.exe', bat_text, re.I):
+if re.search(r'for\s+/f[^\n]*powershell\.exe', normalized_bat_text, re.I):
     raise SystemExit('Generated BAT validation failed: inline PowerShell for /f parser pattern detected.')
 
 if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
@@ -1834,11 +1847,11 @@ if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restar
 if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wait_docker_text or 'TimeoutSeconds' not in wait_docker_text:
     raise SystemExit('Generated Docker install waiter validation failed.')
 
-install_docker_start = bat_text.find(':install_docker')
-restore_start = bat_text.find(':restore_devbox')
+install_docker_start = normalized_bat_text.find(':install_docker')
+restore_start = normalized_bat_text.find(':restore_devbox')
 if install_docker_start == -1 or restore_start == -1 or restore_start <= install_docker_start:
     raise SystemExit('Generated BAT validation failed: install_docker/restore_devbox sections could not be located.')
-install_docker_text = bat_text[install_docker_start:restore_start]
+install_docker_text = normalized_bat_text[install_docker_start:restore_start]
 if 'start /wait' in install_docker_text.lower() and 'docker desktop installer' in install_docker_text.lower():
     raise SystemExit('Generated BAT validation failed: Docker installer must not block on start /wait.')
 if 'wait_for_docker_install' not in install_docker_text:
