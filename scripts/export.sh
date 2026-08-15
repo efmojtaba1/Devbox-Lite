@@ -738,6 +738,7 @@ try {
         @{ Path = (Join-Path $PackageRoot 'scripts\import.ps1'); Name = 'import.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\manage-wsl-features.ps1'); Name = 'manage-wsl-features.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-distro.ps1'); Name = 'check-wsl-distro.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-ready.ps1'); Name = 'check-wsl-ready.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-restart-required.ps1'); Name = 'check-restart-required.ps1' }
     )
 
@@ -874,6 +875,67 @@ catch {
 PS1
 
 echo "  [ok] check-wsl-distro.ps1"
+
+cat > "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [int]$TimeoutSeconds = 90,
+    [int]$IntervalSeconds = 3
+)
+
+$ErrorActionPreference = 'Stop'
+if ($TimeoutSeconds -lt 1) { $TimeoutSeconds = 1 }
+if ($IntervalSeconds -lt 1) { $IntervalSeconds = 1 }
+
+$deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+$lastReason = 'WSL virtualization backend is not ready.'
+
+while ((Get-Date) -lt $deadline) {
+    try {
+        $computer = Get-CimInstance Win32_ComputerSystem
+        $hypervisorPresent = [bool]$computer.HypervisorPresent
+        $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
+        $wslFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+
+        if ($vmp.State -ne 'Enabled') {
+            $lastReason = "Virtual Machine Platform state: $($vmp.State)"
+        }
+        elseif ($wslFeature.State -ne 'Enabled') {
+            $lastReason = "WSL feature state: $($wslFeature.State)"
+        }
+        elseif (-not $hypervisorPresent) {
+            $lastReason = 'Windows hypervisor is not running yet.'
+        }
+        else {
+            & wsl.exe --version *> $null
+            $versionRc = $LASTEXITCODE
+            if ($versionRc -ne 0) {
+                $lastReason = "wsl.exe --version returned exit code $versionRc."
+            }
+            else {
+                & wsl.exe --status *> $null
+                $statusRc = $LASTEXITCODE
+                if ($statusRc -eq 0) {
+                    Write-Host '  [OK] WSL virtualization backend is ready.'
+                    exit 0
+                }
+                $lastReason = "wsl.exe --status returned exit code $statusRc."
+            }
+        }
+    }
+    catch {
+        $lastReason = $_.Exception.Message
+    }
+
+    Start-Sleep -Seconds $IntervalSeconds
+}
+
+Write-Host "[ERROR] WSL virtualization backend is not ready within ${TimeoutSeconds}s."
+Write-Host "        $lastReason"
+exit 1
+PS1
+
+echo "  [ok] check-wsl-ready.ps1"
 
 cat > "$BUNDLE_DIR/scripts/check-restart-required.ps1" <<'PS1'
 [CmdletBinding()]
@@ -1164,6 +1226,10 @@ if not "%WSL_MSI_RC%"=="0" goto :wsl_install_error
 wsl.exe --set-default-version 2 >nul 2>&1
 if errorlevel 1 goto :wsl_default_error
 
+echo   Waiting for WSL virtualization backend...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-ready.ps1" -TimeoutSeconds 90 -IntervalSeconds 3
+if errorlevel 1 goto :wsl_backend_not_ready
+
 echo   [OK] WSL2 is installed and default version is 2.
 exit /b 0
 
@@ -1175,11 +1241,27 @@ set "UBUNTU_WSL=%PACKAGE_ROOT%\offline-deps\ubuntu-24.04.4-wsl-amd64.wsl"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
 if not errorlevel 1 goto :ubuntu_exists
 
+echo   Waiting for WSL virtualization backend...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-ready.ps1" -TimeoutSeconds 90 -IntervalSeconds 3
+if errorlevel 1 goto :wsl_backend_not_ready
+
 echo   Installing Ubuntu from:
 echo     %UBUNTU_WSL%
+set "UBUNTU_INSTALL_ATTEMPT=0"
+:ubuntu_install_retry
+set /a UBUNTU_INSTALL_ATTEMPT+=1
 wsl.exe --install --from-file "%UBUNTU_WSL%" --no-launch
-if errorlevel 1 goto :ubuntu_install_error
+if not errorlevel 1 goto :ubuntu_install_started
 
+if %UBUNTU_INSTALL_ATTEMPT% GEQ 3 goto :ubuntu_install_error
+
+echo   [WARN] Ubuntu installation could not start; waiting for WSL backend and retrying...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-ready.ps1" -TimeoutSeconds 30 -IntervalSeconds 3
+if errorlevel 1 goto :wsl_backend_not_ready
+timeout /t 3 /nobreak >nul
+goto :ubuntu_install_retry
+
+:ubuntu_install_started
 set "UBUNTU_VERIFY_COUNT=0"
 :ubuntu_verify
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
@@ -1377,6 +1459,11 @@ exit /b 1
 echo [ERROR] Could not set WSL default version to 2.
 exit /b 1
 
+:wsl_backend_not_ready
+echo [ERROR] WSL virtualization backend is not ready.
+echo         Restart Windows and run setup-offline.bat /resume.
+exit /b 1
+
 :ubuntu_install_error
 echo [ERROR] Failed to install Ubuntu 24.04 from the offline .wsl file.
 exit /b 1
@@ -1473,7 +1560,7 @@ required_labels = [
     'enable_wsl_features', 'install_wsl', 'install_ubuntu',
     'install_docker', 'restore_devbox', 'verify', 'schedule_restart',
     'save_stage', 'load_state_line', 'apply_state', 'cleanup_success',
-    'fail', 'features_restart', 'wsl_restart', 'docker_restart',
+    'fail', 'features_restart', 'wsl_restart', 'docker_restart', 'wsl_backend_not_ready',
 ]
 required_calls = [
     'call :validate_package',
@@ -1515,7 +1602,7 @@ if 'wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04"' in bat_text:
 if 'validate-offline.ps1' not in bat_text or 'manage-wsl-features.ps1' not in bat_text:
     raise SystemExit('Generated BAT validation failed: required PowerShell scripts are not referenced.')
 
-if 'check-wsl-distro.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text:
+if 'check-wsl-distro.ps1' not in bat_text or 'check-wsl-ready.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
 
 if 'call :save_stage START' in bat_text:
@@ -1630,6 +1717,7 @@ required_files=(
   "$BUNDLE_DIR/scripts/validate-offline.ps1"
   "$BUNDLE_DIR/scripts/manage-wsl-features.ps1"
   "$BUNDLE_DIR/scripts/check-wsl-distro.ps1"
+  "$BUNDLE_DIR/scripts/check-wsl-ready.ps1"
   "$BUNDLE_DIR/scripts/check-restart-required.ps1"
 )
 
