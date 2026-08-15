@@ -1275,6 +1275,13 @@ if not "%WSL_MSI_RC%"=="0" goto :wsl_install_error
 wsl.exe --set-default-version 2 >nul 2>&1
 if errorlevel 1 goto :wsl_default_error
 
+rem WSL MSI may return success while Windows still has a pending reboot.
+rem Detect the actual Windows restart state instead of relying only on MSI 3010.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-restart-required.ps1"
+set "WSL_RESTART_RC=%errorlevel%"
+if "%WSL_RESTART_RC%"=="3010" exit /b 3010
+if not "%WSL_RESTART_RC%"=="0" goto :wsl_install_error
+
 echo   [OK] WSL2 is installed and default version is 2.
 exit /b 0
 
@@ -1649,6 +1656,14 @@ if 'validate-offline.ps1' not in bat_text or 'manage-wsl-features.ps1' not in ba
 
 if 'check-wsl-distro.ps1' not in bat_text or 'check-wsl-ready.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text or 'check-docker-restart-required.ps1' not in bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
+
+install_wsl_start = bat_text.find(':install_wsl')
+install_ubuntu_start = bat_text.find(':install_ubuntu')
+if install_wsl_start == -1 or install_ubuntu_start == -1 or install_ubuntu_start <= install_wsl_start:
+    raise SystemExit('Generated BAT validation failed: install_wsl/install_ubuntu sections could not be located.')
+install_wsl_text = bat_text[install_wsl_start:install_ubuntu_start]
+if 'check-restart-required.ps1' not in install_wsl_text:
+    raise SystemExit('Generated BAT validation failed: install_wsl must verify Windows pending restart state.')
 
 if 'call :save_stage START' in bat_text:
     raise SystemExit('Generated BAT validation failed: startup must not depend on save_stage START.')
