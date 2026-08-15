@@ -1286,18 +1286,51 @@ exit /b 0
 
 :save_stage
 set "NEW_STAGE=%~1"
-set "SAVE_RC=0"
->"%STATE_FILE%" echo DEST_PATH=%DEST_PATH%
-if errorlevel 1 set "SAVE_RC=1"
-if "%SAVE_RC%"=="0" (
-    >>"%STATE_FILE%" echo STAGE=%NEW_STAGE%
-    if errorlevel 1 set "SAVE_RC=1"
+set "STATE_TMP=%STATE_FILE%.tmp"
+
+rem Build the state file in a temporary file first.
+rem Do not rely on the previous ERRORLEVEL left by a 3010 return code.
+del /f /q "%STATE_TMP%" >nul 2>&1
+>"%STATE_TMP%" echo DEST_PATH=%DEST_PATH%
+>>"%STATE_TMP%" echo STAGE=%NEW_STAGE%
+
+rem Verify the temporary state file was created and contains both records.
+if not exist "%STATE_TMP%" (
+    echo [ERROR] Could not create installer state file:
+    echo         %STATE_TMP%
+    exit /b 1
 )
+
+findstr /B /L /C:"DEST_PATH=" "%STATE_TMP%" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Installer state validation failed: DEST_PATH is missing.
+    del /f /q "%STATE_TMP%" >nul 2>&1
+    exit /b 1
+)
+
+findstr /B /L /C:"STAGE=%NEW_STAGE%" "%STATE_TMP%" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Installer state validation failed: STAGE is missing.
+    del /f /q "%STATE_TMP%" >nul 2>&1
+    exit /b 1
+)
+
+rem Replace the previous state atomically on the same filesystem.
+move /Y "%STATE_TMP%" "%STATE_FILE%" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Could not finalize installer state:
+    echo         %STATE_FILE%
+    del /f /q "%STATE_TMP%" >nul 2>&1
+    exit /b 1
+)
+
+if not exist "%STATE_FILE%" (
+    echo [ERROR] Installer state file was not created:
+    echo         %STATE_FILE%
+    exit /b 1
+)
+
 set "STAGE=%NEW_STAGE%"
-if not "%SAVE_RC%"=="0" (
-    echo [ERROR] Could not save installer state: %STATE_FILE%
-    exit /b %SAVE_RC%
-)
 exit /b 0
 
 :load_state_line
