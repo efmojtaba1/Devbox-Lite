@@ -1697,6 +1697,14 @@ from pathlib import Path
 import re
 import sys
 
+EXPECTED_VALIDATOR_ARGS = 9
+actual_validator_args = len(sys.argv) - 1
+if actual_validator_args != EXPECTED_VALIDATOR_ARGS:
+    raise SystemExit(
+        'Generated BAT validation failed: expected '
+        f'{EXPECTED_VALIDATOR_ARGS} validator arguments, got {actual_validator_args}.'
+    )
+
 bat = Path(sys.argv[1])
 validate = Path(sys.argv[2])
 features = Path(sys.argv[3])
@@ -1705,6 +1713,7 @@ ready = Path(sys.argv[5])
 restart = Path(sys.argv[6])
 docker_restart = Path(sys.argv[7])
 wait_docker = Path(sys.argv[8])
+import_ps1 = Path(sys.argv[9])
 
 bat_bytes = bat.read_bytes()
 if b"\r\n" not in bat_bytes:
@@ -1720,6 +1729,7 @@ ready_text = ready.read_text(encoding='utf-8')
 restart_text = restart.read_text(encoding='utf-8')
 docker_restart_text = docker_restart.read_text(encoding='utf-8')
 wait_docker_text = wait_docker.read_text(encoding='utf-8')
+import_text = import_ps1.read_text(encoding='utf-8')
 
 required_labels = [
     'main', 'resume', 'require_admin', 'validate_package',
