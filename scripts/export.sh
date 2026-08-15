@@ -739,7 +739,8 @@ try {
         @{ Path = (Join-Path $PackageRoot 'scripts\manage-wsl-features.ps1'); Name = 'manage-wsl-features.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-distro.ps1'); Name = 'check-wsl-distro.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-ready.ps1'); Name = 'check-wsl-ready.ps1' },
-        @{ Path = (Join-Path $PackageRoot 'scripts\check-restart-required.ps1'); Name = 'check-restart-required.ps1' }
+        @{ Path = (Join-Path $PackageRoot 'scripts\check-restart-required.ps1'); Name = 'check-restart-required.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\check-docker-restart-required.ps1'); Name = 'check-docker-restart-required.ps1' }
     )
 
     foreach ($item in $required) {
@@ -880,59 +881,49 @@ cat > "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" <<'PS1'
 [CmdletBinding()]
 param(
     [int]$TimeoutSeconds = 90,
-    [int]$IntervalSeconds = 3
+    [int]$PollSeconds = 3
 )
 
 $ErrorActionPreference = 'Stop'
-if ($TimeoutSeconds -lt 1) { $TimeoutSeconds = 1 }
-if ($IntervalSeconds -lt 1) { $IntervalSeconds = 1 }
 
-$deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-$lastReason = 'WSL virtualization backend is not ready.'
+try {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastReason = 'Waiting for WSL virtualization backend.'
 
-while ((Get-Date) -lt $deadline) {
-    try {
+    do {
         $computer = Get-CimInstance Win32_ComputerSystem
-        $hypervisorPresent = [bool]$computer.HypervisorPresent
+        $hypervisor = $computer.HypervisorPresent -eq $true
+        $wsl = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
         $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
-        $wslFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
 
-        if ($vmp.State -ne 'Enabled') {
-            $lastReason = "Virtual Machine Platform state: $($vmp.State)"
+        if ($wsl.State -ne 'Enabled' -or $vmp.State -ne 'Enabled') {
+            $lastReason = 'Required Windows WSL2 features are not enabled yet.'
         }
-        elseif ($wslFeature.State -ne 'Enabled') {
-            $lastReason = "WSL feature state: $($wslFeature.State)"
-        }
-        elseif (-not $hypervisorPresent) {
+        elseif (-not $hypervisor) {
             $lastReason = 'Windows hypervisor is not running yet.'
         }
         else {
-            & wsl.exe --version *> $null
-            $versionRc = $LASTEXITCODE
-            if ($versionRc -ne 0) {
-                $lastReason = "wsl.exe --version returned exit code $versionRc."
+            wsl.exe --status *> $null
+            if ($LASTEXITCODE -eq 0) {
+                wsl.exe --version *> $null
+                if ($LASTEXITCODE -eq 0) { exit 0 }
+                $lastReason = 'WSL command is available but version query is not ready yet.'
             }
             else {
-                & wsl.exe --status *> $null
-                $statusRc = $LASTEXITCODE
-                if ($statusRc -eq 0) {
-                    Write-Host '  [OK] WSL virtualization backend is ready.'
-                    exit 0
-                }
-                $lastReason = "wsl.exe --status returned exit code $statusRc."
+                $lastReason = 'WSL service is not ready yet.'
             }
         }
-    }
-    catch {
-        $lastReason = $_.Exception.Message
-    }
+        Start-Sleep -Seconds $PollSeconds
+    } while ((Get-Date) -lt $deadline)
 
-    Start-Sleep -Seconds $IntervalSeconds
+    Write-Host "  [WARN] $lastReason"
+    Write-Host '  [INFO] WSL virtualization backend is not ready after waiting.'
+    exit 3010
 }
-
-Write-Host "[ERROR] WSL virtualization backend is not ready within ${TimeoutSeconds}s."
-Write-Host "        $lastReason"
-exit 1
+catch {
+    Write-Host "[ERROR] Failed to check WSL readiness: $($_.Exception.Message)"
+    exit 1
+}
 PS1
 
 echo "  [ok] check-wsl-ready.ps1"
@@ -988,6 +979,51 @@ catch {
 PS1
 
 echo "  [ok] check-restart-required.ps1"
+
+cat > "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('Begin','Check')]
+    [string]$Mode,
+    [Parameter(Mandatory = $true)]
+    [string]$StatePath
+)
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    function Get-HyperVState {
+        try { return (Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V).State }
+        catch { return 'Unknown' }
+    }
+
+    if ($Mode -eq 'Begin') {
+        $dir = Split-Path -Parent $StatePath
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+        Set-Content -LiteralPath $StatePath -Value (Get-HyperVState) -Encoding ASCII
+        exit 0
+    }
+
+    if (-not (Test-Path -LiteralPath $StatePath)) { exit 0 }
+    $before = (Get-Content -LiteralPath $StatePath -ErrorAction Stop | Select-Object -First 1).Trim()
+    $after = Get-HyperVState
+
+    if ($before -ne 'Enabled' -and $after -eq 'Enabled') {
+        Write-Host '  [INFO] Docker Desktop enabled Microsoft-Hyper-V during installation.'
+        Write-Host '  [INFO] Windows restart is required before continuing.'
+        exit 3010
+    }
+
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Failed to check Docker restart requirement: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+
+echo "  [ok] check-docker-restart-required.ps1"
 
 cat > "$ABS_OUT/setup-offline.bat" <<'BAT'
 @echo off
@@ -1096,7 +1132,7 @@ set "STAGE=INSTALL_WSL"
 call :install_wsl
 set "WSL_RC=%errorlevel%"
 if "%WSL_RC%"=="0" goto :wsl_completed
-if "%WSL_RC%"=="3010" goto :wsl_restart
+if "%WSL_RC%"=="3010" goto :wsl_msi_restart
 goto :fail
 
 :wsl_completed
@@ -1115,10 +1151,10 @@ set "STAGE=INSTALL_WSL"
 call :install_wsl
 set "WSL_RC=%errorlevel%"
 if "%WSL_RC%"=="0" goto :wsl_completed
-if "%WSL_RC%"=="3010" goto :wsl_restart
+if "%WSL_RC%"=="3010" goto :wsl_msi_restart
 goto :fail
 
-:wsl_restart
+:wsl_msi_restart
 call :save_stage WSL_INSTALLED
 if errorlevel 1 goto :fail
 call :schedule_restart
@@ -1126,6 +1162,19 @@ exit /b 3010
 
 :stage_ubuntu
 set "STAGE=INSTALL_UBUNTU"
+call :ensure_wsl_ready
+set "READY_RC=%errorlevel%"
+if "%READY_RC%"=="0" goto :ubuntu_install_continue
+if "%READY_RC%"=="3010" goto :ubuntu_readiness_restart
+goto :fail
+
+:ubuntu_readiness_restart
+call :save_stage WSL_INSTALLED
+if errorlevel 1 goto :fail
+call :schedule_restart
+exit /b 3010
+
+:ubuntu_install_continue
 call :install_ubuntu
 if errorlevel 1 goto :fail
 call :save_stage UBUNTU_INSTALLED
@@ -1226,12 +1275,12 @@ if not "%WSL_MSI_RC%"=="0" goto :wsl_install_error
 wsl.exe --set-default-version 2 >nul 2>&1
 if errorlevel 1 goto :wsl_default_error
 
-echo   Waiting for WSL virtualization backend...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-ready.ps1" -TimeoutSeconds 90 -IntervalSeconds 3
-if errorlevel 1 goto :wsl_backend_not_ready
-
 echo   [OK] WSL2 is installed and default version is 2.
 exit /b 0
+
+:ensure_wsl_ready
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-ready.ps1" -TimeoutSeconds 90 -PollSeconds 3
+exit /b %errorlevel%
 
 :install_ubuntu
 echo.
@@ -1241,27 +1290,11 @@ set "UBUNTU_WSL=%PACKAGE_ROOT%\offline-deps\ubuntu-24.04.4-wsl-amd64.wsl"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
 if not errorlevel 1 goto :ubuntu_exists
 
-echo   Waiting for WSL virtualization backend...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-ready.ps1" -TimeoutSeconds 90 -IntervalSeconds 3
-if errorlevel 1 goto :wsl_backend_not_ready
-
 echo   Installing Ubuntu from:
 echo     %UBUNTU_WSL%
-set "UBUNTU_INSTALL_ATTEMPT=0"
-:ubuntu_install_retry
-set /a UBUNTU_INSTALL_ATTEMPT+=1
 wsl.exe --install --from-file "%UBUNTU_WSL%" --no-launch
-if not errorlevel 1 goto :ubuntu_install_started
+if errorlevel 1 goto :ubuntu_install_error
 
-if %UBUNTU_INSTALL_ATTEMPT% GEQ 3 goto :ubuntu_install_error
-
-echo   [WARN] Ubuntu installation could not start; waiting for WSL backend and retrying...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-ready.ps1" -TimeoutSeconds 30 -IntervalSeconds 3
-if errorlevel 1 goto :wsl_backend_not_ready
-timeout /t 3 /nobreak >nul
-goto :ubuntu_install_retry
-
-:ubuntu_install_started
 set "UBUNTU_VERIFY_COUNT=0"
 :ubuntu_verify
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
@@ -1289,14 +1322,23 @@ echo.
 echo [5/6] Installing Docker Desktop offline...
 set "DOCKER_EXE=%PACKAGE_ROOT%\offline-deps\Docker Desktop Installer.exe"
 set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
+set "DOCKER_RESTART_STATE=%STATE_DIR%\docker-hyperv.state"
 
 if exist "%DOCKER_DESKTOP_EXE%" goto :docker_start
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-docker-restart-required.ps1" -Mode Begin -StatePath "%DOCKER_RESTART_STATE%"
+if errorlevel 1 goto :docker_install_error
 
 echo   Installing Docker Desktop for all users...
 start /wait "" "%DOCKER_EXE%" install --accept-license --backend=wsl-2 --no-windows-containers
 set "DOCKER_INSTALL_RC=%errorlevel%"
 if "%DOCKER_INSTALL_RC%"=="3010" goto :docker_installer_restart
 if not "%DOCKER_INSTALL_RC%"=="0" goto :docker_install_error
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-docker-restart-required.ps1" -Mode Check -StatePath "%DOCKER_RESTART_STATE%"
+set "DOCKER_RESTART_RC=%errorlevel%"
+if "%DOCKER_RESTART_RC%"=="3010" exit /b 3010
+if not "%DOCKER_RESTART_RC%"=="0" goto :docker_install_error
 
 :docker_start
 if not exist "%DOCKER_DESKTOP_EXE%" goto :docker_exe_missing
@@ -1360,60 +1402,52 @@ echo.
 echo   Windows restart is required before installation can continue.
 echo   The installer will resume automatically after login.
 echo.
+
+set "RESUME_WRAPPER=%STATE_DIR%\resume-offline-setup.cmd"
+>"%RESUME_WRAPPER%" echo @echo off
+>>"%RESUME_WRAPPER%" echo call "%~f0" /resume
+
+if not exist "%RESUME_WRAPPER%" goto :resume_task_error
+
 schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
-schtasks /create /tn "%TASK_NAME%" /sc onlogon /rl HIGHEST /tr "\"%~f0\" /resume" /f >nul 2>&1
+schtasks /create /tn "%TASK_NAME%" /sc onlogon /delay 0000:15 /rl HIGHEST /tr "%ComSpec% /d /c ""%RESUME_WRAPPER%""" /f >nul 2>&1
 if errorlevel 1 goto :resume_task_error
+
+schtasks /query /tn "%TASK_NAME%" >nul 2>&1
+if errorlevel 1 goto :resume_task_error
+
+echo   [OK] Automatic resume task created and verified.
+echo   [INFO] Windows will restart in 10 seconds.
 shutdown /r /t 10 /c "DevBox Lite Offline Setup requires a restart to continue."
+if errorlevel 1 goto :restart_schedule_error
 exit /b 0
 
 :save_stage
 set "NEW_STAGE=%~1"
 set "STATE_TMP=%STATE_FILE%.tmp"
 
-rem Build the state file in a temporary file first.
-rem Do not rely on the previous ERRORLEVEL left by a 3010 return code.
-del /f /q "%STATE_TMP%" >nul 2>&1
 >"%STATE_TMP%" echo DEST_PATH=%DEST_PATH%
+if errorlevel 1 goto :save_stage_error
 >>"%STATE_TMP%" echo STAGE=%NEW_STAGE%
+if errorlevel 1 goto :save_stage_error
 
-rem Verify the temporary state file was created and contains both records.
-if not exist "%STATE_TMP%" (
-    echo [ERROR] Could not create installer state file:
-    echo         %STATE_TMP%
-    exit /b 1
-)
+if not exist "%STATE_TMP%" goto :save_stage_error
+findstr /B /C:"DEST_PATH=" "%STATE_TMP%" >nul 2>&1
+if errorlevel 1 goto :save_stage_error
+findstr /B /C:"STAGE=%NEW_STAGE%" "%STATE_TMP%" >nul 2>&1
+if errorlevel 1 goto :save_stage_error
 
-findstr /B /L /C:"DEST_PATH=" "%STATE_TMP%" >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Installer state validation failed: DEST_PATH is missing.
-    del /f /q "%STATE_TMP%" >nul 2>&1
-    exit /b 1
-)
-
-findstr /B /L /C:"STAGE=%NEW_STAGE%" "%STATE_TMP%" >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Installer state validation failed: STAGE is missing.
-    del /f /q "%STATE_TMP%" >nul 2>&1
-    exit /b 1
-)
-
-rem Replace the previous state atomically on the same filesystem.
 move /Y "%STATE_TMP%" "%STATE_FILE%" >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Could not finalize installer state:
-    echo         %STATE_FILE%
-    del /f /q "%STATE_TMP%" >nul 2>&1
-    exit /b 1
-)
-
-if not exist "%STATE_FILE%" (
-    echo [ERROR] Installer state file was not created:
-    echo         %STATE_FILE%
-    exit /b 1
-)
+if errorlevel 1 goto :save_stage_error
+if not exist "%STATE_FILE%" goto :save_stage_error
 
 set "STAGE=%NEW_STAGE%"
 exit /b 0
+
+:save_stage_error
+del /f /q "%STATE_TMP%" >nul 2>&1
+echo [ERROR] Could not save installer state: %STATE_FILE%
+exit /b 1
 
 :load_state_line
 set "STATE_LINE=%~1"
@@ -1428,6 +1462,8 @@ exit /b 0
 :cleanup_success
 schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
 if exist "%STATE_FILE%" del /f /q "%STATE_FILE%" >nul 2>&1
+if exist "%STATE_DIR%\resume-offline-setup.cmd" del /f /q "%STATE_DIR%\resume-offline-setup.cmd" >nul 2>&1
+if exist "%STATE_DIR%\docker-hyperv.state" del /f /q "%STATE_DIR%\docker-hyperv.state" >nul 2>&1
 exit /b 0
 
 :state_dir_error
@@ -1442,8 +1478,13 @@ echo Run setup-offline.bat normally instead.
 goto :fail
 
 :resume_task_error
-echo [ERROR] Could not create the automatic resume task.
+echo [ERROR] Could not create or verify the automatic resume task.
 echo         After restart, run setup-offline.bat /resume manually.
+exit /b 1
+
+:restart_schedule_error
+echo [ERROR] Windows restart could not be scheduled.
+echo         Run setup-offline.bat /resume after restarting manually.
 exit /b 1
 
 :wsl_command_missing
@@ -1457,11 +1498,6 @@ exit /b 1
 
 :wsl_default_error
 echo [ERROR] Could not set WSL default version to 2.
-exit /b 1
-
-:wsl_backend_not_ready
-echo [ERROR] WSL virtualization backend is not ready.
-echo         Restart Windows and run setup-offline.bat /resume.
 exit /b 1
 
 :ubuntu_install_error
@@ -1538,7 +1574,7 @@ exit /b %FAIL_CODE%
 BAT
 
 # Validate generated files before package creation continues.
-python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
+python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -1547,20 +1583,24 @@ bat = Path(sys.argv[1])
 validate = Path(sys.argv[2])
 features = Path(sys.argv[3])
 distro = Path(sys.argv[4])
-restart = Path(sys.argv[5])
+ready = Path(sys.argv[5])
+restart = Path(sys.argv[6])
+docker_restart = Path(sys.argv[7])
 
 bat_text = bat.read_text(encoding='utf-8')
 validate_text = validate.read_text(encoding='utf-8')
 features_text = features.read_text(encoding='utf-8')
 distro_text = distro.read_text(encoding='utf-8')
+ready_text = ready.read_text(encoding='utf-8')
 restart_text = restart.read_text(encoding='utf-8')
+docker_restart_text = docker_restart.read_text(encoding='utf-8')
 
 required_labels = [
     'main', 'resume', 'require_admin', 'validate_package',
     'enable_wsl_features', 'install_wsl', 'install_ubuntu',
     'install_docker', 'restore_devbox', 'verify', 'schedule_restart',
-    'save_stage', 'load_state_line', 'apply_state', 'cleanup_success',
-    'fail', 'features_restart', 'wsl_restart', 'docker_restart', 'wsl_backend_not_ready',
+    'save_stage', 'load_state_line', 'apply_state', 'cleanup_success', 'save_stage_error', 'resume_task_error', 'restart_schedule_error',
+    'fail', 'features_restart', 'wsl_msi_restart', 'docker_restart', 'ubuntu_readiness_restart',
 ]
 required_calls = [
     'call :validate_package',
@@ -1602,7 +1642,7 @@ if 'wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04"' in bat_text:
 if 'validate-offline.ps1' not in bat_text or 'manage-wsl-features.ps1' not in bat_text:
     raise SystemExit('Generated BAT validation failed: required PowerShell scripts are not referenced.')
 
-if 'check-wsl-distro.ps1' not in bat_text or 'check-wsl-ready.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text:
+if 'check-wsl-distro.ps1' not in bat_text or 'check-wsl-ready.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text or 'check-docker-restart-required.ps1' not in bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
 
 if 'call :save_stage START' in bat_text:
@@ -1613,7 +1653,7 @@ if re.search(r'for\s+/f[^\n]*powershell\.exe', bat_text, re.I):
 
 if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
     raise SystemExit('Generated validation script check failed.')
-import_text = Path(sys.argv[6]).read_text(encoding='utf-8') if len(sys.argv) > 6 else ''
+import_text = Path(sys.argv[8]).read_text(encoding='utf-8') if len(sys.argv) > 8 else ''
 if 'Get-FileHash' in import_text:
     raise SystemExit('Generated import.ps1 validation failed: Get-FileHash dependency detected.')
 if 'System.Security.Cryptography.SHA256' not in import_text:
@@ -1627,6 +1667,12 @@ if 'Get-WindowsOptionalFeature' not in features_text or 'VirtualMachinePlatform'
 
 if 'wsl.exe --list --quiet' not in distro_text:
     raise SystemExit('Generated WSL distro helper validation failed.')
+
+if 'wsl.exe --status' not in ready_text or 'HypervisorPresent' not in ready_text:
+    raise SystemExit('Generated WSL readiness helper validation failed.')
+
+if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restart_text:
+    raise SystemExit('Generated Docker restart helper validation failed.')
 
 if 'RebootPending' not in restart_text and 'RebootRequired' not in restart_text:
     raise SystemExit('Generated restart helper validation failed.')
@@ -1719,6 +1765,7 @@ required_files=(
   "$BUNDLE_DIR/scripts/check-wsl-distro.ps1"
   "$BUNDLE_DIR/scripts/check-wsl-ready.ps1"
   "$BUNDLE_DIR/scripts/check-restart-required.ps1"
+  "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1"
 )
 
 if [ -d "$PROJECT_ROOT/prebuilt" ]; then
@@ -1736,13 +1783,15 @@ done
 # Verify that the manifest contains the required metadata and hashes point
 # to the actual package files. This prevents an incomplete/stale manifest
 # from reaching the destination machine.
-# Parse manifest structure with Python, but perform large-file SHA256 checks
-# with the native sha256sum utility to keep memory usage minimal and stable.
-python3 - "$BUNDLE_DIR/manifest.txt" <<'PY'
+python3 - "$BUNDLE_DIR/manifest.txt" "$BUNDLE_DIR" "${VOLUMES[@]}" <<'PY'
 from pathlib import Path
+import hashlib
 import sys
 
 manifest = Path(sys.argv[1])
+bundle = Path(sys.argv[2])
+volumes = sys.argv[3:]
+
 text = manifest.read_text(encoding='utf-8')
 lines = [line.strip() for line in text.splitlines() if line.strip()]
 
@@ -1771,59 +1820,70 @@ required_prefixes = [
 for prefix in required_prefixes:
     if not any(line.startswith(prefix) for line in lines):
         raise SystemExit(f'Manifest validation failed: missing {prefix}')
+
+def sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open('rb') as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+entries = {}
+for line in lines:
+    if ':' not in line:
+        continue
+    key, value = line.split(':', 1)
+    if len(value) == 64 and all(c in '0123456789abcdef' for c in value.lower()):
+        entries[key] = value.lower()
+
+checks = {
+    'project-src.tar.gz': bundle / 'project-src.tar.gz',
+    'prebuilt.tar.gz': bundle / 'prebuilt.tar.gz',
+}
+
+# Metadata hashes point to the downloaded/built payloads.
+metadata_checks = {
+    'image_sha256': bundle / 'image.tar',
+    'ubuntu_wsl_sha256': bundle / 'offline-deps' / 'ubuntu-24.04.4-wsl-amd64.wsl',
+    'wsl_msi_sha256': bundle / 'offline-deps' / next(p.name for p in (bundle / 'offline-deps').glob('*.msi')),
+    'docker_desktop_installer_sha256': bundle / 'offline-deps' / 'Docker Desktop Installer.exe',
+}
+for key, path in checks.items():
+    if not path.exists():
+        if key == 'prebuilt.tar.gz' and not (bundle / 'prebuilt.tar.gz').exists():
+            continue
+        raise SystemExit(f'Manifest validation failed: referenced file missing: {key}')
+    expected = entries.get(key)
+    if expected is None:
+        raise SystemExit(f'Manifest validation failed: missing SHA256 entry: {key}')
+    actual = sha256(path)
+    if actual != expected:
+        raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
+
+for key, path in metadata_checks.items():
+    if not path.exists():
+        raise SystemExit(f'Manifest validation failed: referenced payload missing: {key}')
+    expected = entries.get(key)
+    if expected is None:
+        raise SystemExit(f'Manifest validation failed: missing metadata SHA256 entry: {key}')
+    actual = sha256(path)
+    if actual != expected:
+        raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
+
+for volume in volumes:
+    key = f'volumes/vol-{volume}.tar.gz'
+    path = bundle / 'volumes' / f'vol-{volume}.tar.gz'
+    if not path.exists():
+        raise SystemExit(f'Manifest validation failed: volume archive missing: {key}')
+    expected = entries.get(key)
+    if expected is None:
+        raise SystemExit(f'Manifest validation failed: missing volume SHA256 entry: {key}')
+    actual = sha256(path)
+    if actual != expected:
+        raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
+
+print('  [ok] manifest.txt verified')
 PY
-
-manifest_value() {
-  local key="$1"
-  awk -F: -v target="$key" '$1 == target {sub(/^[^:]*:/, ""); print; exit}' "$BUNDLE_DIR/manifest.txt"
-}
-
-verify_manifest_sha256() {
-  local key="$1"
-  local path="$2"
-  local expected actual
-
-  if [ ! -s "$path" ]; then
-    echo "[error] Manifest validation failed: referenced file missing or empty: $path"
-    return 1
-  fi
-
-  expected="$(manifest_value "$key")"
-  if [[ ! "$expected" =~ ^[0-9a-fA-F]{64}$ ]]; then
-    echo "[error] Manifest validation failed: missing/invalid SHA256 entry: $key"
-    return 1
-  fi
-
-  actual="$(sha256sum "$path" | awk '{print $1}')"
-  if [ "$actual" != "${expected,,}" ]; then
-    echo "[error] Manifest validation failed: SHA256 mismatch for $key"
-    echo "        Expected: ${expected,,}"
-    echo "        Actual  : $actual"
-    return 1
-  fi
-
-  return 0
-}
-
-# Verify archive hashes using sha256sum. This avoids large Python allocations
-# and is safer for multi-hundred-megabyte or multi-gigabyte package files.
-verify_manifest_sha256 "project-src.tar.gz" "$BUNDLE_DIR/project-src.tar.gz" || exit 1
-
-if [ -f "$BUNDLE_DIR/prebuilt.tar.gz" ]; then
-  verify_manifest_sha256 "prebuilt.tar.gz" "$BUNDLE_DIR/prebuilt.tar.gz" || exit 1
-fi
-
-verify_manifest_sha256 "image_sha256" "$BUNDLE_DIR/image.tar" || exit 1
-verify_manifest_sha256 "ubuntu_wsl_sha256" "$BUNDLE_DIR/offline-deps/ubuntu-24.04.4-wsl-amd64.wsl" || exit 1
-verify_manifest_sha256 "wsl_msi_sha256" "$BUNDLE_DIR/offline-deps/$(basename "$WSL_MSI")" || exit 1
-verify_manifest_sha256 "docker_desktop_installer_sha256" "$BUNDLE_DIR/offline-deps/Docker Desktop Installer.exe" || exit 1
-
-for logical_volume in "${VOLUMES[@]}"; do
-  archive="$BUNDLE_DIR/volumes/vol-${logical_volume}.tar.gz"
-  verify_manifest_sha256 "volumes/vol-${logical_volume}.tar.gz" "$archive" || exit 1
-done
-
-echo "  [ok] manifest.txt verified"
 
 echo "  [ok] All required package files are present."
 
