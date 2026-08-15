@@ -1704,6 +1704,7 @@ distro = Path(sys.argv[4])
 ready = Path(sys.argv[5])
 restart = Path(sys.argv[6])
 docker_restart = Path(sys.argv[7])
+wait_docker = Path(sys.argv[8])
 
 bat_bytes = bat.read_bytes()
 if b"\r\n" not in bat_bytes:
