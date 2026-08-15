@@ -1426,12 +1426,13 @@ exit /b 0
 set "NEW_STAGE=%~1"
 set "STATE_TMP=%STATE_FILE%.tmp"
 
+rem Do not rely on ERRORLEVEL immediately after ECHO redirection.
+rem CMD can preserve the previous stage return code (for example 3010).
+if exist "%STATE_TMP%" del /f /q "%STATE_TMP%" >nul 2>&1
 >"%STATE_TMP%" echo DEST_PATH=%DEST_PATH%
-if errorlevel 1 goto :save_stage_error
->>"%STATE_TMP%" echo STAGE=%NEW_STAGE%
-if errorlevel 1 goto :save_stage_error
-
 if not exist "%STATE_TMP%" goto :save_stage_error
+>>"%STATE_TMP%" echo STAGE=%NEW_STAGE%
+
 findstr /B /C:"DEST_PATH=" "%STATE_TMP%" >nul 2>&1
 if errorlevel 1 goto :save_stage_error
 findstr /B /C:"STAGE=%NEW_STAGE%" "%STATE_TMP%" >nul 2>&1
@@ -1621,6 +1622,10 @@ if len(labels) != len(label_set):
 
 if 'docker_wait_loop' in bat_text and ':docker_wait_loop' not in bat_text:
     raise SystemExit('Generated BAT validation failed: docker_wait_loop label is malformed.')
+
+save_stage_block = bat_text.split(':save_stage\n', 1)[1].split(':save_stage_error\n', 1)[0]
+if 'echo DEST_PATH=' in save_stage_block and 'if errorlevel 1 goto :save_stage_error' in save_stage_block.split('>>',1)[0]:
+    raise SystemExit('Generated BAT validation failed: save_stage must not test stale ERRORLEVEL after ECHO redirection.')
 
 missing = [x for x in required_labels if x not in label_set]
 if missing:
