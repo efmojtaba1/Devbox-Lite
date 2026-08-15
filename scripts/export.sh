@@ -1581,6 +1581,33 @@ pause
 exit /b %FAIL_CODE%
 BAT
 
+# ------------------------------------------------------------
+# Normalize generated Windows batch file to CRLF line endings.
+# cmd.exe can fail to resolve CALL/GOTO labels in LF-only batch
+# files, especially when labels are used across subroutines.
+# The generated installer is consumed by Windows, so enforce CRLF.
+# ------------------------------------------------------------
+python3 - "$ABS_OUT/setup-offline.bat" <<'PY_EOL'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+data = path.read_bytes()
+
+# Normalize all existing line endings, then write canonical Windows CRLF.
+data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+path.write_bytes(data.replace(b"\n", b"\r\n"))
+
+# Verify there are no lone LF line endings.
+check = path.read_bytes()
+if check.replace(b"\r\n", b"").find(b"\n") != -1:
+    raise SystemExit(
+        "Generated BAT line-ending validation failed: lone LF line ending detected."
+    )
+
+print("  [ok] setup-offline.bat normalized to Windows CRLF line endings")
+PY_EOL
+
 # Validate generated files before package creation continues.
 python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
 from pathlib import Path
@@ -1595,7 +1622,13 @@ ready = Path(sys.argv[5])
 restart = Path(sys.argv[6])
 docker_restart = Path(sys.argv[7])
 
-bat_text = bat.read_text(encoding='utf-8')
+bat_bytes = bat.read_bytes()
+if b"\r\n" not in bat_bytes:
+    raise SystemExit('Generated BAT validation failed: setup-offline.bat must use CRLF line endings.')
+if bat_bytes.replace(b"\r\n", b"").find(b"\n") != -1:
+    raise SystemExit('Generated BAT validation failed: lone LF line ending detected.')
+
+bat_text = bat_bytes.decode('utf-8')
 validate_text = validate.read_text(encoding='utf-8')
 features_text = features.read_text(encoding='utf-8')
 distro_text = distro.read_text(encoding='utf-8')
@@ -1626,6 +1659,15 @@ label_set = set(labels)
 if len(labels) != len(label_set):
     duplicates = sorted({x for x in labels if labels.count(x) > 1})
     raise SystemExit('Generated BAT validation failed: duplicate labels: ' + ', '.join(duplicates))
+
+# Validate every actual CALL/GOTO label reference, not just a fixed allowlist.
+# This prevents missing-label regressions such as ensure_wsl_ready.
+call_refs = re.findall(r'\bcall\s+:([A-Za-z0-9_]+)', bat_text, re.I)
+goto_refs = re.findall(r'\bgoto\s+:([A-Za-z0-9_]+)', bat_text, re.I)
+referenced_labels = sorted(set(call_refs + goto_refs))
+missing_refs = [name for name in referenced_labels if name.lower() != 'eof' and name not in label_set]
+if missing_refs:
+    raise SystemExit('Generated BAT validation failed: unresolved labels: ' + ', '.join(missing_refs))
 
 if 'docker_wait_loop' in bat_text and ':docker_wait_loop' not in bat_text:
     raise SystemExit('Generated BAT validation failed: docker_wait_loop label is malformed.')
