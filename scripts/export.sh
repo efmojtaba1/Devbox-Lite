@@ -1736,15 +1736,13 @@ done
 # Verify that the manifest contains the required metadata and hashes point
 # to the actual package files. This prevents an incomplete/stale manifest
 # from reaching the destination machine.
-python3 - "$BUNDLE_DIR/manifest.txt" "$BUNDLE_DIR" "${VOLUMES[@]}" <<'PY'
+# Parse manifest structure with Python, but perform large-file SHA256 checks
+# with the native sha256sum utility to keep memory usage minimal and stable.
+python3 - "$BUNDLE_DIR/manifest.txt" <<'PY'
 from pathlib import Path
-import hashlib
 import sys
 
 manifest = Path(sys.argv[1])
-bundle = Path(sys.argv[2])
-volumes = sys.argv[3:]
-
 text = manifest.read_text(encoding='utf-8')
 lines = [line.strip() for line in text.splitlines() if line.strip()]
 
@@ -1773,70 +1771,59 @@ required_prefixes = [
 for prefix in required_prefixes:
     if not any(line.startswith(prefix) for line in lines):
         raise SystemExit(f'Manifest validation failed: missing {prefix}')
-
-def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open('rb') as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b''):
-            h.update(chunk)
-    return h.hexdigest()
-
-entries = {}
-for line in lines:
-    if ':' not in line:
-        continue
-    key, value = line.split(':', 1)
-    if len(value) == 64 and all(c in '0123456789abcdef' for c in value.lower()):
-        entries[key] = value.lower()
-
-checks = {
-    'project-src.tar.gz': bundle / 'project-src.tar.gz',
-    'prebuilt.tar.gz': bundle / 'prebuilt.tar.gz',
-}
-
-# Metadata hashes point to the downloaded/built payloads.
-metadata_checks = {
-    'image_sha256': bundle / 'image.tar',
-    'ubuntu_wsl_sha256': bundle / 'offline-deps' / 'ubuntu-24.04.4-wsl-amd64.wsl',
-    'wsl_msi_sha256': bundle / 'offline-deps' / next(p.name for p in (bundle / 'offline-deps').glob('*.msi')),
-    'docker_desktop_installer_sha256': bundle / 'offline-deps' / 'Docker Desktop Installer.exe',
-}
-for key, path in checks.items():
-    if not path.exists():
-        if key == 'prebuilt.tar.gz' and not (bundle / 'prebuilt.tar.gz').exists():
-            continue
-        raise SystemExit(f'Manifest validation failed: referenced file missing: {key}')
-    expected = entries.get(key)
-    if expected is None:
-        raise SystemExit(f'Manifest validation failed: missing SHA256 entry: {key}')
-    actual = sha256(path)
-    if actual != expected:
-        raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
-
-for key, path in metadata_checks.items():
-    if not path.exists():
-        raise SystemExit(f'Manifest validation failed: referenced payload missing: {key}')
-    expected = entries.get(key)
-    if expected is None:
-        raise SystemExit(f'Manifest validation failed: missing metadata SHA256 entry: {key}')
-    actual = sha256(path)
-    if actual != expected:
-        raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
-
-for volume in volumes:
-    key = f'volumes/vol-{volume}.tar.gz'
-    path = bundle / 'volumes' / f'vol-{volume}.tar.gz'
-    if not path.exists():
-        raise SystemExit(f'Manifest validation failed: volume archive missing: {key}')
-    expected = entries.get(key)
-    if expected is None:
-        raise SystemExit(f'Manifest validation failed: missing volume SHA256 entry: {key}')
-    actual = sha256(path)
-    if actual != expected:
-        raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
-
-print('  [ok] manifest.txt verified')
 PY
+
+manifest_value() {
+  local key="$1"
+  awk -F: -v target="$key" '$1 == target {sub(/^[^:]*:/, ""); print; exit}' "$BUNDLE_DIR/manifest.txt"
+}
+
+verify_manifest_sha256() {
+  local key="$1"
+  local path="$2"
+  local expected actual
+
+  if [ ! -s "$path" ]; then
+    echo "[error] Manifest validation failed: referenced file missing or empty: $path"
+    return 1
+  fi
+
+  expected="$(manifest_value "$key")"
+  if [[ ! "$expected" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    echo "[error] Manifest validation failed: missing/invalid SHA256 entry: $key"
+    return 1
+  fi
+
+  actual="$(sha256sum "$path" | awk '{print $1}')"
+  if [ "$actual" != "${expected,,}" ]; then
+    echo "[error] Manifest validation failed: SHA256 mismatch for $key"
+    echo "        Expected: ${expected,,}"
+    echo "        Actual  : $actual"
+    return 1
+  fi
+
+  return 0
+}
+
+# Verify archive hashes using sha256sum. This avoids large Python allocations
+# and is safer for multi-hundred-megabyte or multi-gigabyte package files.
+verify_manifest_sha256 "project-src.tar.gz" "$BUNDLE_DIR/project-src.tar.gz" || exit 1
+
+if [ -f "$BUNDLE_DIR/prebuilt.tar.gz" ]; then
+  verify_manifest_sha256 "prebuilt.tar.gz" "$BUNDLE_DIR/prebuilt.tar.gz" || exit 1
+fi
+
+verify_manifest_sha256 "image_sha256" "$BUNDLE_DIR/image.tar" || exit 1
+verify_manifest_sha256 "ubuntu_wsl_sha256" "$BUNDLE_DIR/offline-deps/ubuntu-24.04.4-wsl-amd64.wsl" || exit 1
+verify_manifest_sha256 "wsl_msi_sha256" "$BUNDLE_DIR/offline-deps/$(basename "$WSL_MSI")" || exit 1
+verify_manifest_sha256 "docker_desktop_installer_sha256" "$BUNDLE_DIR/offline-deps/Docker Desktop Installer.exe" || exit 1
+
+for logical_volume in "${VOLUMES[@]}"; do
+  archive="$BUNDLE_DIR/volumes/vol-${logical_volume}.tar.gz"
+  verify_manifest_sha256 "volumes/vol-${logical_volume}.tar.gz" "$archive" || exit 1
+done
+
+echo "  [ok] manifest.txt verified"
 
 echo "  [ok] All required package files are present."
 
