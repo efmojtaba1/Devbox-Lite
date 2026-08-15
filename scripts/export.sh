@@ -740,7 +740,8 @@ try {
         @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-distro.ps1'); Name = 'check-wsl-distro.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-ready.ps1'); Name = 'check-wsl-ready.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-restart-required.ps1'); Name = 'check-restart-required.ps1' },
-        @{ Path = (Join-Path $PackageRoot 'scripts\check-docker-restart-required.ps1'); Name = 'check-docker-restart-required.ps1' }
+        @{ Path = (Join-Path $PackageRoot 'scripts\check-docker-restart-required.ps1'); Name = 'check-docker-restart-required.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\wait-docker-install.ps1'); Name = 'wait-docker-install.ps1' }
     )
 
     foreach ($item in $required) {
@@ -1024,6 +1025,85 @@ catch {
 PS1
 
 echo "  [ok] check-docker-restart-required.ps1"
+
+cat > "$BUNDLE_DIR/scripts/wait-docker-install.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$InstallerPath,
+    [Parameter(Mandatory = $true)]
+    [string]$LogPath,
+    [int]$TimeoutSeconds = 900,
+    [int]$PollSeconds = 2
+)
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
+        throw "Docker Desktop installer not found: $InstallerPath"
+    }
+
+    $logDir = Split-Path -Parent $LogPath
+    if (-not (Test-Path -LiteralPath $logDir)) {
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    }
+
+    if (Test-Path -LiteralPath $LogPath) {
+        Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host '  Starting Docker Desktop installer...'
+    $process = Start-Process -FilePath $InstallerPath `
+        -ArgumentList @('install','--accept-license','--backend=wsl-2','--no-windows-containers') `
+        -PassThru
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+    Write-Host '  Waiting for Docker Desktop installation to complete...'
+
+    do {
+        if (Test-Path -LiteralPath $LogPath -PathType Leaf) {
+            $tail = Get-Content -LiteralPath $LogPath -Tail 100 -ErrorAction SilentlyContinue
+
+            if ($tail -match 'Installation succeeded') {
+                Write-Host '  [OK] Docker Desktop installation completed.'
+
+                if ($process -and -not $process.HasExited) {
+                    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                }
+
+                exit 0
+            }
+
+            if ($tail -match '(?i)Installation failed|fatal error') {
+                Write-Host '  [ERROR] Docker Desktop installer reported a failure.'
+                exit 1
+            }
+        }
+
+        if ($process.HasExited -and -not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
+            Start-Sleep -Seconds 2
+        }
+
+        Start-Sleep -Seconds $PollSeconds
+    } while ((Get-Date) -lt $deadline)
+
+    Write-Host "  [ERROR] Docker Desktop installation did not complete within $TimeoutSeconds seconds."
+    Write-Host "          Installer log: $LogPath"
+
+    if ($process -and -not $process.HasExited) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    }
+
+    exit 1
+}
+catch {
+    Write-Host "[ERROR] Failed while installing Docker Desktop: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] wait-docker-install.ps1"
 
 cat > "$ABS_OUT/setup-offline.bat" <<'BAT'
 @echo off
@@ -1330,22 +1410,25 @@ echo [5/6] Installing Docker Desktop offline...
 set "DOCKER_EXE=%PACKAGE_ROOT%\offline-deps\Docker Desktop Installer.exe"
 set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
 set "DOCKER_RESTART_STATE=%STATE_DIR%\docker-hyperv.state"
+set "DOCKER_INSTALL_LOG=%ProgramData%\DockerDesktop\install-log-admin.txt"
 
 if exist "%DOCKER_DESKTOP_EXE%" goto :docker_start
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-docker-restart-required.ps1" -Mode Begin -StatePath "%DOCKER_RESTART_STATE%"
 if errorlevel 1 goto :docker_install_error
 
-echo   Installing Docker Desktop for all users...
-start /wait "" "%DOCKER_EXE%" install --accept-license --backend=wsl-2 --no-windows-containers
-set "DOCKER_INSTALL_RC=%errorlevel%"
-if "%DOCKER_INSTALL_RC%"=="3010" goto :docker_installer_restart
-if not "%DOCKER_INSTALL_RC%"=="0" goto :docker_install_error
+call :wait_for_docker_install
+set "DOCKER_WAIT_RC=%errorlevel%"
+if not "%DOCKER_WAIT_RC%"=="0" goto :docker_install_error
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-docker-restart-required.ps1" -Mode Check -StatePath "%DOCKER_RESTART_STATE%"
 set "DOCKER_RESTART_RC=%errorlevel%"
 if "%DOCKER_RESTART_RC%"=="3010" exit /b 3010
 if not "%DOCKER_RESTART_RC%"=="0" goto :docker_install_error
+
+:wait_for_docker_install
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\wait-docker-install.ps1" -InstallerPath "%DOCKER_EXE%" -LogPath "%DOCKER_INSTALL_LOG%" -TimeoutSeconds 900 -PollSeconds 2
+exit /b %errorlevel%
 
 :docker_start
 if not exist "%DOCKER_DESKTOP_EXE%" goto :docker_exe_missing
@@ -1609,7 +1692,7 @@ print("  [ok] setup-offline.bat normalized to Windows CRLF line endings")
 PY_EOL
 
 # Validate generated files before package creation continues.
-python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
+python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -1635,6 +1718,7 @@ distro_text = distro.read_text(encoding='utf-8')
 ready_text = ready.read_text(encoding='utf-8')
 restart_text = restart.read_text(encoding='utf-8')
 docker_restart_text = docker_restart.read_text(encoding='utf-8')
+wait_docker_text = wait_docker.read_text(encoding='utf-8')
 
 required_labels = [
     'main', 'resume', 'require_admin', 'validate_package',
@@ -1696,7 +1780,7 @@ if 'wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04"' in bat_text:
 if 'validate-offline.ps1' not in bat_text or 'manage-wsl-features.ps1' not in bat_text:
     raise SystemExit('Generated BAT validation failed: required PowerShell scripts are not referenced.')
 
-if 'check-wsl-distro.ps1' not in bat_text or 'check-wsl-ready.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text or 'check-docker-restart-required.ps1' not in bat_text:
+if 'check-wsl-distro.ps1' not in bat_text or 'check-wsl-ready.ps1' not in bat_text or 'check-restart-required.ps1' not in bat_text or 'check-docker-restart-required.ps1' not in bat_text or 'wait-docker-install.ps1' not in bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
 
 install_wsl_start = bat_text.find(':install_wsl')
@@ -1715,7 +1799,7 @@ if re.search(r'for\s+/f[^\n]*powershell\.exe', bat_text, re.I):
 
 if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
     raise SystemExit('Generated validation script check failed.')
-import_text = Path(sys.argv[8]).read_text(encoding='utf-8') if len(sys.argv) > 8 else ''
+import_text = Path(sys.argv[9]).read_text(encoding='utf-8') if len(sys.argv) > 9 else ''
 if 'Get-FileHash' in import_text:
     raise SystemExit('Generated import.ps1 validation failed: Get-FileHash dependency detected.')
 if 'System.Security.Cryptography.SHA256' not in import_text:
@@ -1735,6 +1819,19 @@ if 'wsl.exe --status' not in ready_text or 'HypervisorPresent' not in ready_text
 
 if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restart_text:
     raise SystemExit('Generated Docker restart helper validation failed.')
+
+if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wait_docker_text or 'TimeoutSeconds' not in wait_docker_text:
+    raise SystemExit('Generated Docker install waiter validation failed.')
+
+install_docker_start = bat_text.find(':install_docker')
+restore_start = bat_text.find(':restore_devbox')
+if install_docker_start == -1 or restore_start == -1 or restore_start <= install_docker_start:
+    raise SystemExit('Generated BAT validation failed: install_docker/restore_devbox sections could not be located.')
+install_docker_text = bat_text[install_docker_start:restore_start]
+if 'start /wait' in install_docker_text.lower() and 'docker desktop installer' in install_docker_text.lower():
+    raise SystemExit('Generated BAT validation failed: Docker installer must not block on start /wait.')
+if 'wait_for_docker_install' not in install_docker_text:
+    raise SystemExit('Generated BAT validation failed: Docker installation waiter is not used.')
 
 if 'RebootPending' not in restart_text and 'RebootRequired' not in restart_text:
     raise SystemExit('Generated restart helper validation failed.')
@@ -1828,6 +1925,7 @@ required_files=(
   "$BUNDLE_DIR/scripts/check-wsl-ready.ps1"
   "$BUNDLE_DIR/scripts/check-restart-required.ps1"
   "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1"
+  "$BUNDLE_DIR/scripts/wait-docker-install.ps1"
 )
 
 if [ -d "$PROJECT_ROOT/prebuilt" ]; then
