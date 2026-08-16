@@ -705,38 +705,6 @@ done
 # Project source
 # ------------------------------------------------------------
 echo ""
-echo "[export] Normalizing project ownership..."
-CURRENT_USER="$(id -un)"
-CURRENT_GROUP="$(id -gn)"
-
-if [ -z "$CURRENT_USER" ] || [ -z "$CURRENT_GROUP" ]; then
-  echo "[error] Could not determine the current export user/group."
-  exit 1
-fi
-
-if [ ! -d "$PROJECT_ROOT" ]; then
-  echo "[error] Project root not found: $PROJECT_ROOT"
-  exit 1
-fi
-
-if ! command -v sudo >/dev/null 2>&1; then
-  echo "[error] sudo is required to normalize project ownership."
-  exit 1
-fi
-
-echo "  [info] User  : $CURRENT_USER"
-echo "  [info] Group : $CURRENT_GROUP"
-echo "  [info] Root  : $PROJECT_ROOT"
-
-if ! sudo chown -R "$CURRENT_USER:$CURRENT_GROUP" "$PROJECT_ROOT"; then
-  echo "[error] Failed to normalize ownership for: $PROJECT_ROOT"
-  echo "        Fix the ownership/permissions and run export again."
-  exit 1
-fi
-
-echo "  [ok] Project ownership normalized."
-
-echo ""
 echo "[export] Packaging project source code..."
 
 rm -f "$BUNDLE_DIR/project-src.tar.gz"
@@ -2398,8 +2366,14 @@ if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wa
 if 'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or 'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or 'Get-NormalWslUser' not in initialize_wsl_user_text:
     raise SystemExit('Generated Ubuntu first-run helper validation failed.')
 
-if 'systemd=true' not in install_engine_sh_text or 'wsl-engine' not in install_engine_sh_text or 'docker-compose-plugin' not in install_engine_sh_text or 'devbox-docker.sock' not in install_engine_sh_text:
+if (
+    'systemd=true' not in install_engine_sh_text
+    or 'wsl-engine' not in install_engine_sh_text
+    or 'devbox-docker.sock' not in install_engine_sh_text
+    or 'apt-get install -y --no-download --no-install-recommends' not in install_engine_sh_text
+):
     raise SystemExit('Generated WSL Docker Engine installer validation failed.')
+
 if 'wsl-engine' not in install_engine_ps1_text or 'install-wsl-docker-engine.sh' not in install_engine_ps1_text:
     raise SystemExit('Generated WSL Docker Engine PowerShell helper validation failed.')
 if 'project-src.tar.gz' not in restore_wsl_project_text or 'projects/DevBox-Lite' not in restore_wsl_project_text or 'getent passwd' not in restore_wsl_project_text or 'chown -R' not in restore_wsl_project_text:
