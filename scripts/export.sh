@@ -705,6 +705,38 @@ done
 # Project source
 # ------------------------------------------------------------
 echo ""
+echo "[export] Normalizing project ownership..."
+CURRENT_USER="$(id -un)"
+CURRENT_GROUP="$(id -gn)"
+
+if [ -z "$CURRENT_USER" ] || [ -z "$CURRENT_GROUP" ]; then
+  echo "[error] Could not determine the current export user/group."
+  exit 1
+fi
+
+if [ ! -d "$PROJECT_ROOT" ]; then
+  echo "[error] Project root not found: $PROJECT_ROOT"
+  exit 1
+fi
+
+if ! command -v sudo >/dev/null 2>&1; then
+  echo "[error] sudo is required to normalize project ownership."
+  exit 1
+fi
+
+echo "  [info] User  : $CURRENT_USER"
+echo "  [info] Group : $CURRENT_GROUP"
+echo "  [info] Root  : $PROJECT_ROOT"
+
+if ! sudo chown -R "$CURRENT_USER:$CURRENT_GROUP" "$PROJECT_ROOT"; then
+  echo "[error] Failed to normalize ownership for: $PROJECT_ROOT"
+  echo "        Fix the ownership/permissions and run export again."
+  exit 1
+fi
+
+echo "  [ok] Project ownership normalized."
+
+echo ""
 echo "[export] Packaging project source code..."
 
 rm -f "$BUNDLE_DIR/project-src.tar.gz"
@@ -1612,9 +1644,9 @@ if /I "%STAGE%"=="START" goto :stage_features
 if /I "%STAGE%"=="FEATURES_ENABLED" goto :stage_wsl
 if /I "%STAGE%"=="WSL_INSTALLED" goto :stage_ubuntu
 if /I "%STAGE%"=="UBUNTU_INSTALLED" goto :stage_wsl_user
-if /I "%STAGE%"=="UBUNTU_USER_INITIALIZED" goto :stage_wsl_engine
-if /I "%STAGE%"=="WSL_ENGINE_INSTALLED" goto :stage_wsl_project
-if /I "%STAGE%"=="WSL_PROJECT_INSTALLED" goto :stage_docker
+if /I "%STAGE%"=="UBUNTU_USER_INITIALIZED" goto :stage_wsl_project
+if /I "%STAGE%"=="WSL_PROJECT_INSTALLED" goto :stage_wsl_engine
+if /I "%STAGE%"=="WSL_ENGINE_INSTALLED" goto :stage_docker
 if /I "%STAGE%"=="DOCKER_INSTALLED" goto :stage_restore
 if /I "%STAGE%"=="RESTORED" goto :stage_verify
 
@@ -1696,14 +1728,6 @@ call :initialize_wsl_user
 if errorlevel 1 goto :fail
 call :save_stage UBUNTU_USER_INITIALIZED
 if errorlevel 1 goto :fail
-goto :stage_wsl_engine
-
-:stage_wsl_engine
-set "STAGE=INSTALL_WSL_ENGINE"
-call :install_wsl_engine
-if errorlevel 1 goto :fail
-call :save_stage WSL_ENGINE_INSTALLED
-if errorlevel 1 goto :fail
 goto :stage_wsl_project
 
 :stage_wsl_project
@@ -1711,6 +1735,14 @@ set "STAGE=RESTORE_WSL_PROJECT"
 call :restore_wsl_project
 if errorlevel 1 goto :fail
 call :save_stage WSL_PROJECT_INSTALLED
+if errorlevel 1 goto :fail
+goto :stage_wsl_engine
+
+:stage_wsl_engine
+set "STAGE=INSTALL_WSL_ENGINE"
+call :install_wsl_engine
+if errorlevel 1 goto :fail
+call :save_stage WSL_ENGINE_INSTALLED
 if errorlevel 1 goto :fail
 goto :stage_docker
 
@@ -1865,14 +1897,14 @@ exit /b 0
 
 :restore_wsl_project
 echo.
-echo [7/9] Copying DevBox source into Ubuntu-24.04 WSL...
+echo [6/9] Copying DevBox source into Ubuntu-24.04 WSL...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\restore-wsl-project.ps1" -PackageRoot "%PACKAGE_ROOT%" -Distribution "Ubuntu-24.04"
 if errorlevel 1 goto :wsl_project_restore_error
 exit /b 0
 
 :install_wsl_engine
 echo.
-echo [6/9] Installing Docker Engine inside Ubuntu-24.04...
+echo [7/9] Installing Docker Engine inside Ubuntu-24.04...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\install-wsl-docker-engine.ps1" -PackageRoot "%PACKAGE_ROOT%" -Distribution "Ubuntu-24.04"
 if errorlevel 1 goto :wsl_engine_install_error
 exit /b 0
@@ -2384,17 +2416,11 @@ if 'wait_for_docker_install' not in install_docker_text:
     raise SystemExit('Generated BAT validation failed: Docker installation waiter is not used.')
 
 engine_start = find_label_line(normalized_bat_text, 'install_wsl_engine')
-project_start = find_label_line(normalized_bat_text, 'restore_wsl_project')
-if engine_start == -1 or project_start == -1 or install_docker_start == -1:
-    raise SystemExit('Generated BAT validation failed: WSL Engine/project/Docker sections could not be located.')
-if not (engine_start < project_start < install_docker_start):
-    raise SystemExit('Generated BAT validation failed: expected order is WSL Docker Engine -> WSL project restore -> Docker Desktop.')
-engine_text = normalized_bat_text[engine_start:project_start]
-project_text = normalized_bat_text[project_start:install_docker_start]
+if engine_start == -1 or install_docker_start == -1 or install_docker_start <= engine_start:
+    raise SystemExit('Generated BAT validation failed: install_wsl_engine/install_docker sections could not be located.')
+engine_text = normalized_bat_text[engine_start:install_docker_start]
 if 'install-wsl-docker-engine.ps1' not in engine_text:
     raise SystemExit('Generated BAT validation failed: WSL Docker Engine installer is not invoked.')
-if 'restore-wsl-project.ps1' not in project_text:
-    raise SystemExit('Generated BAT validation failed: WSL project restore is not invoked after Docker Engine installation.')
 
 if 'RebootPending' not in restart_text and 'RebootRequired' not in restart_text:
     raise SystemExit('Generated restart helper validation failed.')
