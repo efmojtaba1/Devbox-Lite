@@ -557,9 +557,25 @@ DOCKER_ENGINE_META="$DOCKER_ENGINE_DIR/packages.txt"
 mkdir -p "$DOCKER_ENGINE_DEB_DIR/partial"
 
 if [ -s "$DOCKER_ENGINE_META" ] && compgen -G "$DOCKER_ENGINE_DEB_DIR/*.deb" > /dev/null; then
-  echo "  [ok] Existing Docker Engine package bundle"
-  echo "  [info] Packages: $(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -name '*.deb' -type f | wc -l)"
+  EXISTING_ENGINE_DEB_COUNT="$(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' | wc -l)"
+  EXISTING_ENGINE_META_COUNT="$(awk -F'|' 'NF == 5 { count++ } END { print count+0 }' "$DOCKER_ENGINE_META")"
+
+  if [ "$EXISTING_ENGINE_DEB_COUNT" -gt 0 ] && [ "$EXISTING_ENGINE_DEB_COUNT" -eq "$EXISTING_ENGINE_META_COUNT" ]; then
+    echo "  [ok] Existing Docker Engine package bundle"
+    echo "  [info] Packages: $EXISTING_ENGINE_DEB_COUNT"
+  else
+    echo "  [warn] Existing Docker Engine package bundle is inconsistent. Rebuilding..."
+    echo "  [info] .deb files      : $EXISTING_ENGINE_DEB_COUNT"
+    echo "  [info] metadata entries: $EXISTING_ENGINE_META_COUNT"
+    rm -rf "$DOCKER_ENGINE_DIR"
+    mkdir -p "$DOCKER_ENGINE_DEB_DIR/partial"
+  fi
 else
+  rm -rf "$DOCKER_ENGINE_DIR"
+  mkdir -p "$DOCKER_ENGINE_DEB_DIR/partial"
+fi
+
+if [ ! -s "$DOCKER_ENGINE_META" ] || [ "$(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 0 ]; then
   command -v sudo >/dev/null 2>&1 || {
     echo "[error] sudo is required on the export machine to resolve Ubuntu/Docker Engine package dependencies."
     exit 1
@@ -2366,14 +2382,8 @@ if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wa
 if 'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or 'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or 'Get-NormalWslUser' not in initialize_wsl_user_text:
     raise SystemExit('Generated Ubuntu first-run helper validation failed.')
 
-if (
-    'systemd=true' not in install_engine_sh_text
-    or 'wsl-engine' not in install_engine_sh_text
-    or 'devbox-docker.sock' not in install_engine_sh_text
-    or 'apt-get install -y --no-download --no-install-recommends' not in install_engine_sh_text
-):
+if 'systemd=true' not in install_engine_sh_text or 'wsl-engine' not in install_engine_sh_text or 'docker-compose-plugin' not in install_engine_sh_text or 'devbox-docker.sock' not in install_engine_sh_text:
     raise SystemExit('Generated WSL Docker Engine installer validation failed.')
-
 if 'wsl-engine' not in install_engine_ps1_text or 'install-wsl-docker-engine.sh' not in install_engine_ps1_text:
     raise SystemExit('Generated WSL Docker Engine PowerShell helper validation failed.')
 if 'project-src.tar.gz' not in restore_wsl_project_text or 'projects/DevBox-Lite' not in restore_wsl_project_text or 'getent passwd' not in restore_wsl_project_text or 'chown -R' not in restore_wsl_project_text:
@@ -2633,10 +2643,20 @@ engine_meta = bundle / 'docker-engine' / 'packages.txt'
 engine_dir = bundle / 'docker-engine' / 'debs'
 if not engine_meta.exists():
     raise SystemExit('Manifest validation failed: Docker Engine package metadata is missing')
-engine_count = sum(1 for line in engine_meta.read_text(encoding='utf-8').splitlines() if '|' in line)
+engine_meta_count = sum(1 for line in engine_meta.read_text(encoding='utf-8').splitlines() if line.count('|') == 4)
+engine_file_count = len(list(engine_dir.glob('*.deb')))
 expected_count = entries.get('docker-engine-package-count')
-if expected_count is None or int(expected_count) != engine_count:
-    raise SystemExit('Manifest validation failed: Docker Engine package count mismatch')
+if expected_count is None:
+    raise SystemExit('Manifest validation failed: Docker Engine package count is missing')
+try:
+    expected_count = int(expected_count)
+except ValueError:
+    raise SystemExit('Manifest validation failed: Docker Engine package count is invalid')
+if expected_count != engine_meta_count or expected_count != engine_file_count:
+    raise SystemExit(
+        'Manifest validation failed: Docker Engine package count mismatch '
+        f'(manifest={expected_count}, metadata={engine_meta_count}, files={engine_file_count})'
+    )
 for line in engine_meta.read_text(encoding='utf-8').splitlines():
     parts = line.split('|')
     if len(parts) != 5:
