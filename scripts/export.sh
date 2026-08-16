@@ -1319,15 +1319,23 @@ try {
         throw "Project source archive not found: $projectTarWin"
     }
 
-    $projectTarWsl = (& wsl.exe wslpath -u $projectTarWin).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $projectTarWsl) {
-        throw 'Could not convert project source archive path to WSL path.'
-    }
+    # Do not pass the raw Windows path directly to wsl.exe.
+    # Native argument translation can strip backslashes (for example
+    # C:\Users\Vahid\... -> C:UsersVahid...). Encode the path first
+    # and decode it inside Ubuntu before calling wslpath.
+    $projectTarWinBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($projectTarWin))
 
     $restoreScript = @'
 set -euo pipefail
-archive="$1"
+archive_win_b64="$1"
 distro="$2"
+
+archive_win="$(printf '%s' "$archive_win_b64" | base64 -d)"
+archive="$(wslpath -u "$archive_win")"
+if [ -z "${archive:-}" ] || [ ! -f "$archive" ]; then
+  echo "[error] Could not resolve project source archive inside WSL: $archive_win"
+  exit 4
+fi
 
 TARGET_USER=""
 if [ -f /etc/wsl.conf ]; then
@@ -1373,7 +1381,7 @@ printf '  [info] Windows UNC: \\\\wsl.localhost\\%s%s\n' "$distro" "${TARGET_DIR
 '@
 
     $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($restoreScript))
-    $command = "echo '$encoded' | base64 -d | bash -s -- '$projectTarWsl' '$Distribution'"
+    $command = "echo '$encoded' | base64 -d | bash -s -- '$projectTarWinBase64' '$Distribution'"
 
     Write-Host '  [wsl] Restoring project source inside Ubuntu-24.04...'
     & wsl.exe -d $Distribution -u root -- bash -lc $command
