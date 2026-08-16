@@ -844,7 +844,9 @@ try {
         @{ Path = (Join-Path $PackageRoot 'scripts\check-restart-required.ps1'); Name = 'check-restart-required.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-docker-restart-required.ps1'); Name = 'check-docker-restart-required.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\wait-docker-install.ps1'); Name = 'wait-docker-install.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\initialize-wsl-user.ps1'); Name = 'initialize-wsl-user.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.ps1'); Name = 'install-wsl-docker-engine.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\restore-wsl-project.ps1'); Name = 'restore-wsl-project.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.sh'); Name = 'install-wsl-docker-engine.sh' }
     )
 
@@ -1209,6 +1211,151 @@ catch {
 PS1
 echo "  [ok] wait-docker-install.ps1"
 
+cat > "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Distribution = 'Ubuntu-24.04'
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Get-NormalWslUser {
+    param([string]$Distro)
+
+    $command = 'getent passwd | awk -F: ''$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}'''
+    $result = & wsl.exe -d $Distro -u root -- bash -lc $command 2>$null
+    if ($LASTEXITCODE -ne 0) { return '' }
+    $line = $result | Select-Object -First 1
+    if ($null -eq $line) { return '' }
+    return $line.ToString().Trim()
+}
+
+try {
+    $existingUser = Get-NormalWslUser -Distro $Distribution
+    if ($existingUser) {
+        Write-Host "  [OK] Ubuntu user is already initialized: $existingUser"
+        exit 0
+    }
+
+    Write-Host ''
+    Write-Host '  Ubuntu-24.04 requires first-run account setup.'
+    Write-Host '  The Ubuntu terminal will open now.'
+    Write-Host '  Create the Linux username and password when prompted.'
+    Write-Host '  The password is used only by Ubuntu and is never stored by DevBox Lite.'
+    Write-Host ''
+    Write-Host '  [wsl] Starting Ubuntu first-run...'
+    Write-Host ''
+
+    & wsl.exe -d $Distribution
+    $firstRunRc = $LASTEXITCODE
+
+    $existingUser = Get-NormalWslUser -Distro $Distribution
+    if (-not $existingUser) {
+        if ($firstRunRc -ne 0) {
+            throw "Ubuntu first-run exited with code $firstRunRc before creating a normal Linux user."
+        }
+        throw 'Ubuntu first-run completed without creating a normal Linux user account.'
+    }
+
+    Write-Host "  [OK] Ubuntu first-run completed: $existingUser"
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Ubuntu first-run initialization failed: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] initialize-wsl-user.ps1"
+
+cat > "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackageRoot,
+    [string]$Distribution = 'Ubuntu-24.04'
+)
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    $projectTarWin = Join-Path $PackageRoot 'project-src.tar.gz'
+    if (-not (Test-Path -LiteralPath $projectTarWin -PathType Leaf)) {
+        throw "Project source archive not found: $projectTarWin"
+    }
+
+    $projectTarWsl = (& wsl.exe wslpath -u $projectTarWin).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $projectTarWsl) {
+        throw 'Could not convert project source archive path to WSL path.'
+    }
+
+    $restoreScript = @'
+set -euo pipefail
+archive="$1"
+distro="$2"
+
+TARGET_USER=""
+if [ -f /etc/wsl.conf ]; then
+  TARGET_USER="$(awk '
+    BEGIN { section="" }
+    /^\[user\][[:space:]]*$/ { section="user"; next }
+    /^\[/ { section="" }
+    section == "user" && $0 ~ /^[[:space:]]*default[[:space:]]*=/ { sub(/^[[:space:]]*default[[:space:]]*=[[:space:]]*/, ""); gsub(/[[:space:]]/, ""); print; exit }
+  ' /etc/wsl.conf)"
+fi
+
+if [ -n "${TARGET_USER:-}" ]; then
+  getent passwd "$TARGET_USER" >/dev/null 2>&1 || TARGET_USER=""
+fi
+
+if [ -z "${TARGET_USER:-}" ]; then
+  TARGET_USER="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')"
+fi
+
+if [ -z "${TARGET_USER:-}" ]; then
+  echo "[error] No normal Ubuntu user account was found (UID 1000+)."
+  echo "        Launch Ubuntu once to create the user, then run setup-offline again."
+  exit 2
+fi
+
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+if [ -z "${TARGET_HOME:-}" ] || [ ! -d "$TARGET_HOME" ]; then
+  echo "[error] Could not resolve home directory for WSL user: $TARGET_USER"
+  exit 3
+fi
+
+TARGET_DIR="$TARGET_HOME/projects/DevBox-Lite"
+mkdir -p "$TARGET_HOME/projects"
+rm -rf "$TARGET_DIR"
+mkdir -p "$TARGET_DIR"
+
+tar -xzf "$archive" -C "$TARGET_DIR"
+chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_DIR"
+
+printf '  [ok] WSL project source restored: %s\n' "$TARGET_DIR"
+printf '  [info] WSL user: %s\n' "$TARGET_USER"
+printf '  [info] Windows UNC: \\\\wsl.localhost\\%s%s\n' "$distro" "${TARGET_DIR//\//\\}"
+'@
+
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($restoreScript))
+    $command = "echo '$encoded' | base64 -d | bash -s -- '$projectTarWsl' '$Distribution'"
+
+    Write-Host '  [wsl] Restoring project source inside Ubuntu-24.04...'
+    & wsl.exe -d $Distribution -u root -- bash -lc $command
+    if ($LASTEXITCODE -ne 0) {
+        throw "WSL project restore exited with code $LASTEXITCODE."
+    }
+
+    Write-Host '  [OK] Project source restored inside the WSL home directory.'
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Failed to restore project source inside WSL: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] restore-wsl-project.ps1"
+
 cat > "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1241,6 +1388,13 @@ if ! apt-get install -y --no-download --no-install-recommends "$DEB_DIR"/*.deb >
   }
 fi
 
+# A normal user must already exist because Ubuntu first-run is handled before this stage.
+TARGET_USER="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')"
+if [ -z "${TARGET_USER:-}" ]; then
+  echo "[error] No normal Ubuntu user exists. Complete Ubuntu first-run before installing Docker Engine."
+  exit 2
+fi
+
 # WSL supports systemd, but it must be explicitly enabled in the distro config.
 WSL_CONF=/etc/wsl.conf
 if [ ! -f "$WSL_CONF" ]; then
@@ -1257,6 +1411,16 @@ elif ! grep -qE '^systemd[[:space:]]*=[[:space:]]*true[[:space:]]*$' "$WSL_CONF"
   else
     printf '%s\n' '' '[boot]' 'systemd=true' >> "$WSL_CONF"
   fi
+fi
+
+# Make the Ubuntu first-run account the default WSL user.
+if ! grep -qE '^\[user\][[:space:]]*$' "$WSL_CONF"; then
+  printf '%s\n' '' '[user]' >> "$WSL_CONF"
+fi
+if grep -qE '^[[:space:]]*default[[:space:]]*=' "$WSL_CONF"; then
+  sed -i -E "s/^[[:space:]]*default[[:space:]]*=.*$/default=$TARGET_USER/" "$WSL_CONF"
+else
+  printf '%s\n' "default=$TARGET_USER" >> "$WSL_CONF"
 fi
 
 # The Docker Desktop WSL integration may own /var/run/docker.sock.
@@ -1281,7 +1445,6 @@ systemctl restart containerd >/dev/null 2>&1 || true
 systemctl restart docker >/dev/null 2>&1 || systemctl start docker
 
 # Configure a dedicated Docker context for the local WSL daemon.
-TARGET_USER="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')"
 if [ -n "${TARGET_USER:-}" ]; then
   usermod -aG docker "$TARGET_USER" || true
   TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
@@ -1448,8 +1611,10 @@ if not "%VALIDATE_RC%"=="0" goto :fail_validate
 if /I "%STAGE%"=="START" goto :stage_features
 if /I "%STAGE%"=="FEATURES_ENABLED" goto :stage_wsl
 if /I "%STAGE%"=="WSL_INSTALLED" goto :stage_ubuntu
-if /I "%STAGE%"=="UBUNTU_INSTALLED" goto :stage_wsl_engine
-if /I "%STAGE%"=="WSL_ENGINE_INSTALLED" goto :stage_docker
+if /I "%STAGE%"=="UBUNTU_INSTALLED" goto :stage_wsl_user
+if /I "%STAGE%"=="UBUNTU_USER_INITIALIZED" goto :stage_wsl_engine
+if /I "%STAGE%"=="WSL_ENGINE_INSTALLED" goto :stage_wsl_project
+if /I "%STAGE%"=="WSL_PROJECT_INSTALLED" goto :stage_docker
 if /I "%STAGE%"=="DOCKER_INSTALLED" goto :stage_restore
 if /I "%STAGE%"=="RESTORED" goto :stage_verify
 
@@ -1523,6 +1688,14 @@ if errorlevel 1 goto :fail
 call :save_stage UBUNTU_INSTALLED
 if errorlevel 1 goto :fail
 
+goto :stage_wsl_user
+
+:stage_wsl_user
+set "STAGE=INITIALIZE_UBUNTU_USER"
+call :initialize_wsl_user
+if errorlevel 1 goto :fail
+call :save_stage UBUNTU_USER_INITIALIZED
+if errorlevel 1 goto :fail
 goto :stage_wsl_engine
 
 :stage_wsl_engine
@@ -1530,6 +1703,14 @@ set "STAGE=INSTALL_WSL_ENGINE"
 call :install_wsl_engine
 if errorlevel 1 goto :fail
 call :save_stage WSL_ENGINE_INSTALLED
+if errorlevel 1 goto :fail
+goto :stage_wsl_project
+
+:stage_wsl_project
+set "STAGE=RESTORE_WSL_PROJECT"
+call :restore_wsl_project
+if errorlevel 1 goto :fail
+call :save_stage WSL_PROJECT_INSTALLED
 if errorlevel 1 goto :fail
 goto :stage_docker
 
@@ -1595,20 +1776,20 @@ pause
 exit /b 1
 
 :validate_package
-echo [1/6] Validating Windows and offline package...
+echo [1/9] Validating Windows and offline package...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\validate-offline.ps1" -PackageRoot "%PACKAGE_ROOT%"
 if errorlevel 1 exit /b 1
 exit /b 0
 
 :enable_wsl_features
 echo.
-echo [2/6] Checking Windows WSL2 components...
+echo [2/9] Checking Windows WSL2 components...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\manage-wsl-features.ps1"
 exit /b %errorlevel%
 
 :install_wsl
 echo.
-echo [3/6] Installing WSL from the offline MSI...
+echo [3/9] Installing WSL from the offline MSI...
 
 where wsl.exe >nul 2>&1
 if errorlevel 1 goto :wsl_command_missing
@@ -1642,7 +1823,7 @@ exit /b %errorlevel%
 
 :install_ubuntu
 echo.
-echo [4/6] Installing Ubuntu 24.04 offline...
+echo [4/9] Installing Ubuntu 24.04 offline...
 set "UBUNTU_WSL=%PACKAGE_ROOT%\offline-deps\ubuntu-24.04.4-wsl-amd64.wsl"
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
@@ -1675,16 +1856,30 @@ if errorlevel 1 goto :ubuntu_default_error
 echo   [OK] Ubuntu-24.04 is installed as WSL2 and set as default distro.
 exit /b 0
 
+:initialize_wsl_user
+echo.
+echo [5/9] Initializing Ubuntu-24.04 first-run user...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Distribution "Ubuntu-24.04"
+if errorlevel 1 goto :wsl_user_init_error
+exit /b 0
+
+:restore_wsl_project
+echo.
+echo [7/9] Copying DevBox source into Ubuntu-24.04 WSL...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\restore-wsl-project.ps1" -PackageRoot "%PACKAGE_ROOT%" -Distribution "Ubuntu-24.04"
+if errorlevel 1 goto :wsl_project_restore_error
+exit /b 0
+
 :install_wsl_engine
 echo.
-echo [5/7] Installing Docker Engine inside Ubuntu-24.04...
+echo [6/9] Installing Docker Engine inside Ubuntu-24.04...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\install-wsl-docker-engine.ps1" -PackageRoot "%PACKAGE_ROOT%" -Distribution "Ubuntu-24.04"
 if errorlevel 1 goto :wsl_engine_install_error
 exit /b 0
 
 :install_docker
 echo.
-echo [6/7] Installing Docker Desktop offline...
+echo [8/9] Installing Docker Desktop offline...
 set "DOCKER_EXE=%PACKAGE_ROOT%\offline-deps\Docker Desktop Installer.exe"
 set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
 set "DOCKER_RESTART_STATE=%STATE_DIR%\docker-hyperv.state"
@@ -1737,7 +1932,7 @@ exit /b 3010
 
 :restore_devbox
 echo.
-echo [7/7] Restoring DevBox Lite to:
+echo [9/9] Restoring DevBox Lite to:
 echo        %DEST_PATH%
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\import.ps1" -InputPath "%PACKAGE_ROOT%" -TargetProj "%DEST_PATH%"
@@ -1756,6 +1951,9 @@ if errorlevel 1 goto :verify_ubuntu_missing
 
 wsl.exe -d Ubuntu-24.04 -u root -- bash -lc "DOCKER_HOST=unix:///run/devbox-docker.sock docker version >/dev/null 2>&1 && DOCKER_HOST=unix:///run/devbox-docker.sock docker compose version >/dev/null 2>&1"
 if errorlevel 1 goto :verify_wsl_engine_missing
+
+wsl.exe -d Ubuntu-24.04 -u root -- bash -lc "TARGET_USER=; if [ -f /etc/wsl.conf ]; then TARGET_USER=\"$(awk 'BEGIN { section=\"\" } /^\[user\][[:space:]]*$/ { section=\"user\"; next } /^\[/ { section=\"\" } section == \"user\" && $0 ~ /^[[:space:]]*default[[:space:]]*=/ { sub(/^[[:space:]]*default[[:space:]]*=[[:space:]]*/, \"\"); gsub(/[[:space:]]/, \"\"); print; exit }' /etc/wsl.conf)\"; fi; if [ -z \"$TARGET_USER\" ]; then TARGET_USER=\"$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')\"; fi; TARGET_HOME=\"$(getent passwd \"$TARGET_USER\" | cut -d: -f6)\"; test -f \"$TARGET_HOME/projects/DevBox-Lite/docker/compose/docker-compose.yml\""
+if errorlevel 1 goto :verify_wsl_project_missing
 
 docker version >nul 2>&1
 if errorlevel 1 goto :verify_docker_missing
@@ -1890,6 +2088,15 @@ exit /b 1
 echo [ERROR] Could not set Ubuntu-24.04 as the default WSL distribution.
 exit /b 1
 
+:wsl_user_init_error
+echo [ERROR] Ubuntu first-run user initialization failed.
+echo         Launch Ubuntu-24.04, create the Linux user, and run setup-offline.bat again.
+exit /b 1
+
+:wsl_project_restore_error
+echo [ERROR] Failed to restore project source inside Ubuntu-24.04 WSL.
+exit /b 1
+
 :wsl_engine_install_error
 echo [ERROR] Docker Engine installation inside Ubuntu-24.04 failed.
 exit /b 1
@@ -1921,6 +2128,10 @@ exit /b 1
 
 :verify_wsl_engine_missing
 echo [ERROR] Docker Engine inside Ubuntu-24.04 is not available on wsl-engine.
+exit /b 1
+
+:verify_wsl_project_missing
+echo [ERROR] DevBox source was not restored inside Ubuntu-24.04 WSL.
 exit /b 1
 
 :verify_docker_missing
@@ -1982,12 +2193,12 @@ print("  [ok] setup-offline.bat normalized to Windows CRLF line endings")
 PY_EOL
 
 # Validate generated files before package creation continues.
-python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
+python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-EXPECTED_VALIDATOR_ARGS = 11
+EXPECTED_VALIDATOR_ARGS = 13
 actual_validator_args = len(sys.argv) - 1
 if actual_validator_args != EXPECTED_VALIDATOR_ARGS:
     raise SystemExit(
@@ -2003,9 +2214,11 @@ ready = Path(sys.argv[5])
 restart = Path(sys.argv[6])
 docker_restart = Path(sys.argv[7])
 wait_docker = Path(sys.argv[8])
-install_engine_ps1 = Path(sys.argv[9])
-install_engine_sh = Path(sys.argv[10])
-import_ps1 = Path(sys.argv[11])
+initialize_wsl_user = Path(sys.argv[9])
+install_engine_ps1 = Path(sys.argv[10])
+install_engine_sh = Path(sys.argv[11])
+restore_wsl_project = Path(sys.argv[12])
+import_ps1 = Path(sys.argv[13])
 
 bat_bytes = bat.read_bytes()
 if b"\r\n" not in bat_bytes:
@@ -2024,14 +2237,16 @@ ready_text = ready.read_text(encoding='utf-8')
 restart_text = restart.read_text(encoding='utf-8')
 docker_restart_text = docker_restart.read_text(encoding='utf-8')
 wait_docker_text = wait_docker.read_text(encoding='utf-8')
+initialize_wsl_user_text = initialize_wsl_user.read_text(encoding='utf-8')
 install_engine_ps1_text = install_engine_ps1.read_text(encoding='utf-8')
 install_engine_sh_text = install_engine_sh.read_text(encoding='utf-8')
+restore_wsl_project_text = restore_wsl_project.read_text(encoding='utf-8')
 import_text = import_ps1.read_text(encoding='utf-8')
 
 required_labels = [
     'main', 'resume', 'require_admin', 'validate_package',
     'enable_wsl_features', 'install_wsl', 'install_ubuntu',
-    'install_docker', 'install_wsl_engine', 'restore_devbox', 'verify', 'verify_wsl_engine_missing', 'schedule_restart',
+    'install_docker', 'initialize_wsl_user', 'install_wsl_engine', 'restore_wsl_project', 'restore_devbox', 'verify', 'verify_wsl_engine_missing', 'verify_wsl_project_missing', 'schedule_restart',
     'save_stage', 'load_state_line', 'apply_state', 'cleanup_success', 'save_stage_error', 'resume_task_error', 'restart_schedule_error',
     'fail', 'features_restart', 'wsl_msi_restart', 'docker_restart', 'ubuntu_readiness_restart',
 ]
@@ -2041,7 +2256,9 @@ required_calls = [
     'call :install_wsl',
     'call :install_ubuntu',
     'call :install_docker',
+    'call :initialize_wsl_user',
     'call :install_wsl_engine',
+    'call :restore_wsl_project',
     'call :restore_devbox',
     'call :verify',
     'call :schedule_restart',
@@ -2099,7 +2316,7 @@ if 'wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04"' in normalized_bat_text:
 if 'validate-offline.ps1' not in normalized_bat_text or 'manage-wsl-features.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: required PowerShell scripts are not referenced.')
 
-if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text or 'install-wsl-docker-engine.ps1' not in normalized_bat_text:
+if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text or 'initialize-wsl-user.ps1' not in normalized_bat_text or 'install-wsl-docker-engine.ps1' not in normalized_bat_text or 'restore-wsl-project.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
 
 def find_label_line(text, label):
@@ -2146,10 +2363,15 @@ if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restar
 if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wait_docker_text or 'TimeoutSeconds' not in wait_docker_text:
     raise SystemExit('Generated Docker install waiter validation failed.')
 
+if 'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or 'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or 'Get-NormalWslUser' not in initialize_wsl_user_text:
+    raise SystemExit('Generated Ubuntu first-run helper validation failed.')
+
 if 'systemd=true' not in install_engine_sh_text or 'wsl-engine' not in install_engine_sh_text or 'docker-compose-plugin' not in install_engine_sh_text or 'devbox-docker.sock' not in install_engine_sh_text:
     raise SystemExit('Generated WSL Docker Engine installer validation failed.')
 if 'wsl-engine' not in install_engine_ps1_text or 'install-wsl-docker-engine.sh' not in install_engine_ps1_text:
     raise SystemExit('Generated WSL Docker Engine PowerShell helper validation failed.')
+if 'project-src.tar.gz' not in restore_wsl_project_text or 'projects/DevBox-Lite' not in restore_wsl_project_text or 'getent passwd' not in restore_wsl_project_text or 'chown -R' not in restore_wsl_project_text:
+    raise SystemExit('Generated WSL project restore helper validation failed.')
 
 install_docker_start = find_label_line(normalized_bat_text, 'install_docker')
 restore_start = find_label_line(normalized_bat_text, 'restore_devbox')
@@ -2162,11 +2384,17 @@ if 'wait_for_docker_install' not in install_docker_text:
     raise SystemExit('Generated BAT validation failed: Docker installation waiter is not used.')
 
 engine_start = find_label_line(normalized_bat_text, 'install_wsl_engine')
-if engine_start == -1 or install_docker_start == -1 or install_docker_start <= engine_start:
-    raise SystemExit('Generated BAT validation failed: install_wsl_engine/install_docker sections could not be located.')
-engine_text = normalized_bat_text[engine_start:install_docker_start]
+project_start = find_label_line(normalized_bat_text, 'restore_wsl_project')
+if engine_start == -1 or project_start == -1 or install_docker_start == -1:
+    raise SystemExit('Generated BAT validation failed: WSL Engine/project/Docker sections could not be located.')
+if not (engine_start < project_start < install_docker_start):
+    raise SystemExit('Generated BAT validation failed: expected order is WSL Docker Engine -> WSL project restore -> Docker Desktop.')
+engine_text = normalized_bat_text[engine_start:project_start]
+project_text = normalized_bat_text[project_start:install_docker_start]
 if 'install-wsl-docker-engine.ps1' not in engine_text:
     raise SystemExit('Generated BAT validation failed: WSL Docker Engine installer is not invoked.')
+if 'restore-wsl-project.ps1' not in project_text:
+    raise SystemExit('Generated BAT validation failed: WSL project restore is not invoked after Docker Engine installation.')
 
 if 'RebootPending' not in restart_text and 'RebootRequired' not in restart_text:
     raise SystemExit('Generated restart helper validation failed.')
@@ -2270,8 +2498,10 @@ required_files=(
   "$BUNDLE_DIR/scripts/check-restart-required.ps1"
   "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1"
   "$BUNDLE_DIR/scripts/wait-docker-install.ps1"
+  "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1"
   "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1"
   "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh"
+  "$BUNDLE_DIR/scripts/restore-wsl-project.ps1"
   "$BUNDLE_DIR/docker-engine/packages.txt"
 )
 
