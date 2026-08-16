@@ -1223,29 +1223,12 @@ $ErrorActionPreference = 'Stop'
 function Get-NormalWslUser {
     param([string]$Distro)
 
-    $result = & wsl.exe -d $Distro -u root -- getent passwd 2>$null
+    $command = 'getent passwd | awk -F: ''$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}'''
+    $result = & wsl.exe -d $Distro -u root -- bash -lc $command 2>$null
     if ($LASTEXITCODE -ne 0) { return '' }
-
-    foreach ($line in $result) {
-        if ($null -eq $line) { continue }
-        $text = $line.ToString().Trim()
-        if (-not $text) { continue }
-
-        $fields = $text.Split(':')
-        if ($fields.Count -lt 7) { continue }
-
-        $uid = 0
-        if (-not [int]::TryParse($fields[2], [ref]$uid)) { continue }
-        if ($uid -lt 1000 -or $uid -ge 60000) { continue }
-
-        $shell = $fields[6].Trim()
-        if ($shell -match '/(nologin|false)$') { continue }
-
-        $username = $fields[0].Trim()
-        if ($username) { return $username }
-    }
-
-    return ''
+    $line = $result | Select-Object -First 1
+    if ($null -eq $line) { return '' }
+    return $line.ToString().Trim()
 }
 
 try {
@@ -1257,41 +1240,23 @@ try {
 
     Write-Host ''
     Write-Host '  Ubuntu-24.04 requires first-run account setup.'
-    Write-Host '  A separate Ubuntu window will open now.'
+    Write-Host '  The Ubuntu terminal will open now.'
     Write-Host '  Create the Linux username and password when prompted.'
     Write-Host '  The password is used only by Ubuntu and is never stored by DevBox Lite.'
     Write-Host ''
-    Write-Host '  [wsl] Starting Ubuntu first-run in a separate window...'
+    Write-Host '  [wsl] Starting Ubuntu first-run...'
     Write-Host ''
 
-    $process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('-d', $Distribution) -PassThru
-    $deadline = (Get-Date).AddSeconds(900)
-    $existingUser = ''
+    & wsl.exe -d $Distribution
+    $firstRunRc = $LASTEXITCODE
 
-    do {
-        Start-Sleep -Seconds 2
-        $existingUser = Get-NormalWslUser -Distro $Distribution
-
-        if ($existingUser) {
-            Write-Host "  [OK] Ubuntu user created: $existingUser"
-            break
-        }
-
-        if ($process.HasExited -and ((Get-Date) -lt $deadline)) {
-            Start-Sleep -Seconds 1
-        }
-    } while ((Get-Date) -lt $deadline)
-
+    $existingUser = Get-NormalWslUser -Distro $Distribution
     if (-not $existingUser) {
-        if ($process.HasExited) {
-            throw "Ubuntu first-run process exited with code $($process.ExitCode) before a normal Linux user was created."
+        if ($firstRunRc -ne 0) {
+            throw "Ubuntu first-run exited with code $firstRunRc before creating a normal Linux user."
         }
-        throw 'Timed out waiting for Ubuntu first-run account setup (900 seconds).'
+        throw 'Ubuntu first-run completed without creating a normal Linux user account.'
     }
-
-    Write-Host '  [wsl] Account detected. Closing the temporary first-run session...'
-    wsl.exe --terminate $Distribution *> $null
-    Start-Sleep -Seconds 2
 
     Write-Host "  [OK] Ubuntu first-run completed: $existingUser"
     exit 0
@@ -1319,23 +1284,15 @@ try {
         throw "Project source archive not found: $projectTarWin"
     }
 
-    # Do not pass the raw Windows path directly to wsl.exe.
-    # Native argument translation can strip backslashes (for example
-    # C:\Users\Vahid\... -> C:UsersVahid...). Encode the path first
-    # and decode it inside Ubuntu before calling wslpath.
-    $projectTarWinBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($projectTarWin))
+    $projectTarWsl = (& wsl.exe wslpath -u $projectTarWin).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $projectTarWsl) {
+        throw 'Could not convert project source archive path to WSL path.'
+    }
 
     $restoreScript = @'
 set -euo pipefail
-archive_win_b64="$1"
+archive="$1"
 distro="$2"
-
-archive_win="$(printf '%s' "$archive_win_b64" | base64 -d)"
-archive="$(wslpath -u "$archive_win")"
-if [ -z "${archive:-}" ] || [ ! -f "$archive" ]; then
-  echo "[error] Could not resolve project source archive inside WSL: $archive_win"
-  exit 4
-fi
 
 TARGET_USER=""
 if [ -f /etc/wsl.conf ]; then
@@ -1381,7 +1338,7 @@ printf '  [info] Windows UNC: \\\\wsl.localhost\\%s%s\n' "$distro" "${TARGET_DIR
 '@
 
     $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($restoreScript))
-    $command = "echo '$encoded' | base64 -d | bash -s -- '$projectTarWinBase64' '$Distribution'"
+    $command = "echo '$encoded' | base64 -d | bash -s -- '$projectTarWsl' '$Distribution'"
 
     Write-Host '  [wsl] Restoring project source inside Ubuntu-24.04...'
     & wsl.exe -d $Distribution -u root -- bash -lc $command
@@ -1533,19 +1490,40 @@ try {
     if (-not (Test-Path -LiteralPath $scriptWin -PathType Leaf)) { throw "WSL Docker Engine installer not found: $scriptWin" }
     if (-not (Test-Path -LiteralPath $debWin -PathType Container)) { throw "Docker Engine package directory not found: $debWin" }
 
-    $scriptWsl = (& wsl.exe wslpath -u $scriptWin).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $scriptWsl) { throw 'Could not convert WSL Docker Engine installer path.' }
-    $debWsl = (& wsl.exe wslpath -u $debWin).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $debWsl) { throw 'Could not convert Docker Engine package path.' }
+    # Do not pass raw Windows paths through wsl.exe command-line parsing.
+    # Backslashes can be stripped before wslpath sees them (for example
+    # C:\Users\Vahid\... becoming C:UsersVahid...). Encode the paths first
+    # and decode them inside WSL, then run wslpath there.
+    $scriptWinB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($scriptWin))
+    $debWinB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($debWin))
+
+    $pathBridge = @'
+set -euo pipefail
+script_win="$(printf '%s' "$1" | base64 -d)"
+deb_win="$(printf '%s' "$2" | base64 -d)"
+script_wsl="$(wslpath -u "$script_win")"
+deb_wsl="$(wslpath -u "$deb_win")"
+if [ -z "${script_wsl:-}" ] || [ ! -f "$script_wsl" ]; then
+  echo "[error] Could not resolve Docker Engine installer path inside WSL: $script_win"
+  exit 11
+fi
+if [ -z "${deb_wsl:-}" ] || [ ! -d "$deb_wsl" ]; then
+  echo "[error] Could not resolve Docker Engine package directory inside WSL: $deb_win"
+  exit 12
+fi
+bash "$script_wsl" "$deb_wsl"
+'@
 
     function Invoke-EngineInstall {
-        param([string]$ScriptPath, [string]$DebPath)
-        & wsl.exe -d $Distribution -u root -- bash -lc "bash '$ScriptPath' '$DebPath'"
+        param([string]$ScriptB64, [string]$DebB64)
+        $bridgeB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pathBridge))
+        $command = "echo '$bridgeB64' | base64 -d | bash -s -- '$ScriptB64' '$DebB64'"
+        & wsl.exe -d $Distribution -u root -- bash -lc $command
         return $LASTEXITCODE
     }
 
     Write-Host '  [wsl-engine] Installing Docker Engine inside Ubuntu-24.04...'
-    $rc = Invoke-EngineInstall -ScriptPath $scriptWsl -DebPath $debWsl
+    $rc = Invoke-EngineInstall -ScriptB64 $scriptWinB64 -DebB64 $debWinB64
 
     if ($rc -eq 10) {
         Write-Host '  [wsl-engine] Restarting Ubuntu-24.04 to activate systemd...'
@@ -1556,7 +1534,7 @@ try {
         & wsl.exe -d $Distribution -u root -- true
         if ($LASTEXITCODE -ne 0) { throw 'Could not restart Ubuntu-24.04 after enabling systemd.' }
 
-        $rc = Invoke-EngineInstall -ScriptPath $scriptWsl -DebPath $debWsl
+        $rc = Invoke-EngineInstall -ScriptB64 $scriptWinB64 -DebB64 $debWinB64
     }
 
     if ($rc -ne 0) { throw "WSL Docker Engine installer exited with code $rc." }
@@ -2406,21 +2384,20 @@ if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restar
 if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wait_docker_text or 'TimeoutSeconds' not in wait_docker_text:
     raise SystemExit('Generated Docker install waiter validation failed.')
 
-if ('Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or
-        'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or
-        'Start-Process' not in initialize_wsl_user_text or
-        'getent passwd' not in initialize_wsl_user_text or
-        'wsl.exe --terminate' not in initialize_wsl_user_text or
-        '900' not in initialize_wsl_user_text):
-    raise SystemExit('Generated Ubuntu first-run helper validation failed: non-blocking first-run flow is incomplete.')
+if 'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or 'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or 'Get-NormalWslUser' not in initialize_wsl_user_text:
+    raise SystemExit('Generated Ubuntu first-run helper validation failed.')
 
 if ('systemd=true' not in install_engine_sh_text or
         'wsl-engine' not in install_engine_sh_text or
         'devbox-docker.sock' not in install_engine_sh_text or
         'apt-get install -y --no-download --no-install-recommends' not in install_engine_sh_text):
     raise SystemExit('Generated WSL Docker Engine installer validation failed: offline package install mechanism is incomplete.')
-if 'wsl-engine' not in install_engine_ps1_text or 'install-wsl-docker-engine.sh' not in install_engine_ps1_text:
-    raise SystemExit('Generated WSL Docker Engine PowerShell helper validation failed.')
+if ('wsl-engine' not in install_engine_ps1_text or
+        'install-wsl-docker-engine.sh' not in install_engine_ps1_text or
+        'ToBase64String' not in install_engine_ps1_text or
+        'wslpath -u' not in install_engine_ps1_text or
+        'base64 -d' not in install_engine_ps1_text):
+    raise SystemExit('Generated WSL Docker Engine PowerShell helper validation failed: Windows-to-WSL path bridge is incomplete.')
 if 'project-src.tar.gz' not in restore_wsl_project_text or 'projects/DevBox-Lite' not in restore_wsl_project_text or 'getent passwd' not in restore_wsl_project_text or 'chown -R' not in restore_wsl_project_text:
     raise SystemExit('Generated WSL project restore helper validation failed.')
 
