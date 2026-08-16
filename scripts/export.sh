@@ -1223,25 +1223,26 @@ $ErrorActionPreference = 'Stop'
 function Get-NormalWslUser {
     param([string]$Distro)
 
-    $command = 'getent passwd'
-    $result = & wsl.exe -d $Distro -u root -- bash -lc $command 2>$null
+    $result = & wsl.exe -d $Distro -u root -- getent passwd 2>$null
     if ($LASTEXITCODE -ne 0) { return '' }
 
     foreach ($line in $result) {
-        $fields = $line.ToString().Split(':')
+        if ($null -eq $line) { continue }
+        $text = $line.ToString().Trim()
+        if (-not $text) { continue }
+
+        $fields = $text.Split(':')
         if ($fields.Count -lt 7) { continue }
 
-        $username = $fields[0].Trim()
-        $uidText = $fields[2].Trim()
-        $shell = $fields[6].Trim()
-
         $uid = 0
-        if (-not [int]::TryParse($uidText, [ref]$uid)) { continue }
+        if (-not [int]::TryParse($fields[2], [ref]$uid)) { continue }
         if ($uid -lt 1000 -or $uid -ge 60000) { continue }
-        if ([string]::IsNullOrWhiteSpace($username)) { continue }
-        if ($shell -match '(?i)(nologin|false)$') { continue }
 
-        return $username
+        $shell = $fields[6].Trim()
+        if ($shell -match '/(nologin|false)$') { continue }
+
+        $username = $fields[0].Trim()
+        if ($username) { return $username }
     }
 
     return ''
@@ -1256,23 +1257,41 @@ try {
 
     Write-Host ''
     Write-Host '  Ubuntu-24.04 requires first-run account setup.'
-    Write-Host '  The Ubuntu terminal will open now.'
+    Write-Host '  A separate Ubuntu window will open now.'
     Write-Host '  Create the Linux username and password when prompted.'
     Write-Host '  The password is used only by Ubuntu and is never stored by DevBox Lite.'
     Write-Host ''
-    Write-Host '  [wsl] Starting Ubuntu first-run...'
+    Write-Host '  [wsl] Starting Ubuntu first-run in a separate window...'
     Write-Host ''
 
-    & wsl.exe -d $Distribution
-    $firstRunRc = $LASTEXITCODE
+    $process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('-d', $Distribution) -PassThru
+    $deadline = (Get-Date).AddSeconds(900)
+    $existingUser = ''
 
-    $existingUser = Get-NormalWslUser -Distro $Distribution
-    if (-not $existingUser) {
-        if ($firstRunRc -ne 0) {
-            throw "Ubuntu first-run exited with code $firstRunRc before creating a normal Linux user."
+    do {
+        Start-Sleep -Seconds 2
+        $existingUser = Get-NormalWslUser -Distro $Distribution
+
+        if ($existingUser) {
+            Write-Host "  [OK] Ubuntu user created: $existingUser"
+            break
         }
-        throw 'Ubuntu first-run completed without creating a normal Linux user account.'
+
+        if ($process.HasExited -and ((Get-Date) -lt $deadline)) {
+            Start-Sleep -Seconds 1
+        }
+    } while ((Get-Date) -lt $deadline)
+
+    if (-not $existingUser) {
+        if ($process.HasExited) {
+            throw "Ubuntu first-run process exited with code $($process.ExitCode) before a normal Linux user was created."
+        }
+        throw 'Timed out waiting for Ubuntu first-run account setup (900 seconds).'
     }
+
+    Write-Host '  [wsl] Account detected. Closing the temporary first-run session...'
+    wsl.exe --terminate $Distribution *> $null
+    Start-Sleep -Seconds 2
 
     Write-Host "  [OK] Ubuntu first-run completed: $existingUser"
     exit 0
@@ -1991,18 +2010,12 @@ echo.
 
 set "RESUME_WRAPPER=%STATE_DIR%\resume-offline-setup.cmd"
 >"%RESUME_WRAPPER%" echo @echo off
->>"%RESUME_WRAPPER%" echo set "RESUME_LOG=%STATE_DIR%\resume-offline-setup.log"
->>"%RESUME_WRAPPER%" echo ^>^>"%%RESUME_LOG%%" echo [%%date%% %%time%%] Automatic resume task started.
 >>"%RESUME_WRAPPER%" echo call "%~f0" /resume
->>"%RESUME_WRAPPER%" echo ^>^>"%%RESUME_LOG%%" echo [%%date%% %%time%%] Automatic resume task exited with code %%errorlevel%%.
 
 if not exist "%RESUME_WRAPPER%" goto :resume_task_error
 
-set "RESUME_LOG=%STATE_DIR%\resume-offline-setup.log"
->>"%RESUME_LOG%" echo [%date% %time%] Scheduling automatic resume task. Stage=%STAGE% DEST_PATH=%DEST_PATH%
-
 schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
-schtasks /create /tn "%TASK_NAME%" /sc onlogon /delay 0000:15 /rl HIGHEST /it /tr "%ComSpec% /d /c ""%RESUME_WRAPPER%""" /f >nul 2>&1
+schtasks /create /tn "%TASK_NAME%" /sc onlogon /delay 0000:15 /rl HIGHEST /tr "%ComSpec% /d /c ""%RESUME_WRAPPER%""" /f >nul 2>&1
 if errorlevel 1 goto :resume_task_error
 
 schtasks /query /tn "%TASK_NAME%" >nul 2>&1
@@ -2385,8 +2398,13 @@ if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restar
 if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wait_docker_text or 'TimeoutSeconds' not in wait_docker_text:
     raise SystemExit('Generated Docker install waiter validation failed.')
 
-if 'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or 'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or 'Get-NormalWslUser' not in initialize_wsl_user_text:
-    raise SystemExit('Generated Ubuntu first-run helper validation failed.')
+if ('Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or
+        'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or
+        'Start-Process' not in initialize_wsl_user_text or
+        'getent passwd' not in initialize_wsl_user_text or
+        'wsl.exe --terminate' not in initialize_wsl_user_text or
+        '900' not in initialize_wsl_user_text):
+    raise SystemExit('Generated Ubuntu first-run helper validation failed: non-blocking first-run flow is incomplete.')
 
 if ('systemd=true' not in install_engine_sh_text or
         'wsl-engine' not in install_engine_sh_text or
