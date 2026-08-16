@@ -17,6 +17,8 @@ set -euo pipefail
 #   - prebuilt directory
 #   - setup-offline.bat
 #   - scripts/import.ps1
+#   - offline Docker Engine .deb packages for Ubuntu WSL
+#   - Ubuntu Mono font packages for offline WSL use
 #
 # Internet is required only on the EXPORT machine when the
 # official WSL / Ubuntu / Docker installers are not already
@@ -33,6 +35,19 @@ UBUNTU_WSL_SHA256="9b2f7730dc68227dd04a9f3e5eab86ad85caf556b8606ad94f1f29ff5c4fd
 # Docker's official stable Windows x64 installer endpoint.
 DOCKER_DESKTOP_VERSION="latest"
 DOCKER_DESKTOP_URL="https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe?utm_source=docker&utm_medium=webreferral&utm_campaign=docs-driven-download-win-amd64"
+
+# Ubuntu-side offline Docker Engine packages.
+DOCKER_ENGINE_REPO="https://download.docker.com/linux/ubuntu"
+DOCKER_ENGINE_GPG_URL="$DOCKER_ENGINE_REPO/gpg"
+DOCKER_ENGINE_PACKAGES=(
+  docker-ce
+  docker-ce-cli
+  containerd.io
+  docker-buildx-plugin
+  docker-compose-plugin
+  fonts-ubuntu
+  fonts-ubuntu-console
+)
 echo " DevBox Lite - Full Offline Export"
 echo "========================================="
 
@@ -531,6 +546,93 @@ printf '%s  %s\n' "$DOCKER_INSTALLER_SHA256" "$(basename "$DOCKER_INSTALLER")" >
 echo "  [ok] Docker Desktop installer verified."
 
 # ------------------------------------------------------------
+# Offline Docker Engine + Ubuntu Mono packages for Ubuntu WSL
+# ------------------------------------------------------------
+echo ""
+echo "[export] Preparing offline Docker Engine for Ubuntu WSL..."
+
+DOCKER_ENGINE_DIR="$BUNDLE_DIR/docker-engine"
+DOCKER_ENGINE_DEB_DIR="$DOCKER_ENGINE_DIR/debs"
+DOCKER_ENGINE_META="$DOCKER_ENGINE_DIR/packages.txt"
+mkdir -p "$DOCKER_ENGINE_DEB_DIR/partial"
+
+if [ -s "$DOCKER_ENGINE_META" ] && compgen -G "$DOCKER_ENGINE_DEB_DIR/*.deb" > /dev/null; then
+  echo "  [ok] Existing Docker Engine package bundle"
+  echo "  [info] Packages: $(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -name '*.deb' -type f | wc -l)"
+else
+  command -v sudo >/dev/null 2>&1 || {
+    echo "[error] sudo is required on the export machine to resolve Ubuntu/Docker Engine package dependencies."
+    exit 1
+  }
+
+  APT_TMP_DIR="$(mktemp -d)"
+  DOCKER_SOURCE_FILE="/etc/apt/sources.list.d/devbox-lite-docker-engine.sources"
+  DOCKER_KEY_FILE="/etc/apt/keyrings/devbox-lite-docker-engine.asc"
+
+  cleanup_docker_engine_apt() {
+    sudo rm -f "$DOCKER_SOURCE_FILE" "$DOCKER_KEY_FILE" >/dev/null 2>&1 || true
+    rm -rf "$APT_TMP_DIR" >/dev/null 2>&1 || true
+  }
+  trap cleanup_docker_engine_apt EXIT
+
+  if ! sudo test -f "$DOCKER_KEY_FILE"; then
+    sudo install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL --retry 3 --retry-delay 2 "$DOCKER_ENGINE_GPG_URL" | sudo tee "$DOCKER_KEY_FILE" >/dev/null
+    sudo chmod a+r "$DOCKER_KEY_FILE"
+  fi
+
+  if ! sudo test -f "$DOCKER_SOURCE_FILE"; then
+    sudo tee "$DOCKER_SOURCE_FILE" >/dev/null <<EOF
+Types: deb
+URIs: $DOCKER_ENGINE_REPO
+Suites: noble
+Components: stable
+Architectures: amd64
+Signed-By: $DOCKER_KEY_FILE
+EOF
+  fi
+
+  echo "  [info] Resolving Docker Engine packages and offline dependencies..."
+  sudo apt-get update -qq
+  sudo apt-get \
+    -y \
+    --download-only \
+    --no-install-recommends \
+    -o Dir::Cache::archives="$DOCKER_ENGINE_DEB_DIR/" \
+    --reinstall \
+    install "${DOCKER_ENGINE_PACKAGES[@]}"
+
+  mapfile -t ENGINE_DEBS < <(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' | sort)
+  if [ "${#ENGINE_DEBS[@]}" -eq 0 ]; then
+    echo "[error] No Docker Engine .deb packages were downloaded."
+    exit 1
+  fi
+
+  rm -rf "$DOCKER_ENGINE_DEB_DIR/partial"
+  {
+    echo "format_version:1"
+    echo "architecture:amd64"
+    echo "ubuntu_release:24.04"
+    echo "docker_repo:$DOCKER_ENGINE_REPO"
+    echo "packages:${#ENGINE_DEBS[@]}"
+    echo ""
+    for deb in "${ENGINE_DEBS[@]}"; do
+      pkg_name="$(dpkg-deb -f "$deb" Package)"
+      pkg_version="$(dpkg-deb -f "$deb" Version)"
+      pkg_arch="$(dpkg-deb -f "$deb" Architecture)"
+      pkg_sha="$(sha256sum "$deb" | awk '{print $1}')"
+      echo "$pkg_name|$pkg_version|$pkg_arch|$(basename "$deb")|$pkg_sha"
+    done
+  } > "$DOCKER_ENGINE_META"
+
+  cleanup_docker_engine_apt
+  trap - EXIT
+
+  echo "  [ok] Docker Engine package bundle prepared"
+  echo "  [info] Packages: ${#ENGINE_DEBS[@]}"
+fi
+
+# ------------------------------------------------------------
 # Docker image
 # ------------------------------------------------------------
 echo ""
@@ -741,7 +843,9 @@ try {
         @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-ready.ps1'); Name = 'check-wsl-ready.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-restart-required.ps1'); Name = 'check-restart-required.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-docker-restart-required.ps1'); Name = 'check-docker-restart-required.ps1' },
-        @{ Path = (Join-Path $PackageRoot 'scripts\wait-docker-install.ps1'); Name = 'wait-docker-install.ps1' }
+        @{ Path = (Join-Path $PackageRoot 'scripts\wait-docker-install.ps1'); Name = 'wait-docker-install.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.ps1'); Name = 'install-wsl-docker-engine.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.sh'); Name = 'install-wsl-docker-engine.sh' }
     )
 
     foreach ($item in $required) {
@@ -1105,6 +1209,164 @@ catch {
 PS1
 echo "  [ok] wait-docker-install.ps1"
 
+cat > "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEB_DIR="${1:-}"
+
+if [ -z "$DEB_DIR" ] || [ ! -d "$DEB_DIR" ]; then
+  echo "[error] Docker Engine package directory not found: $DEB_DIR"
+  exit 1
+fi
+
+if ! compgen -G "$DEB_DIR/*.deb" >/dev/null; then
+  echo "[error] No offline Docker Engine .deb packages found in: $DEB_DIR"
+  exit 1
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+
+echo "  [wsl-engine] Installing offline Docker Engine and Ubuntu Mono packages..."
+
+if ! apt-get install -y --no-download --no-install-recommends "$DEB_DIR"/*.deb >/tmp/devbox-docker-engine-apt.log 2>&1; then
+  echo "  [wsl-engine] apt local install did not complete cleanly; retrying with dpkg..."
+  dpkg -i "$DEB_DIR"/*.deb >/tmp/devbox-docker-engine-dpkg.log 2>&1 || true
+  dpkg --configure -a >/tmp/devbox-docker-engine-configure.log 2>&1 || {
+    echo "[error] Offline Docker Engine package configuration failed."
+    cat /tmp/devbox-docker-engine-apt.log 2>/dev/null || true
+    cat /tmp/devbox-docker-engine-dpkg.log 2>/dev/null || true
+    cat /tmp/devbox-docker-engine-configure.log 2>/dev/null || true
+    exit 1
+  }
+fi
+
+# WSL supports systemd, but it must be explicitly enabled in the distro config.
+WSL_CONF=/etc/wsl.conf
+if [ ! -f "$WSL_CONF" ]; then
+  printf '%s\n' '[boot]' 'systemd=true' > "$WSL_CONF"
+elif ! grep -qE '^systemd[[:space:]]*=[[:space:]]*true[[:space:]]*$' "$WSL_CONF"; then
+  if grep -qE '^\[boot\][[:space:]]*$' "$WSL_CONF"; then
+    awk '
+      BEGIN { done=0 }
+      /^\[boot\][[:space:]]*$/ { print; if (!done) { print "systemd=true"; done=1 } ; next }
+      { print }
+      END { if (!done) print "systemd=true" }
+    ' "$WSL_CONF" > "${WSL_CONF}.tmp"
+    mv -f "${WSL_CONF}.tmp" "$WSL_CONF"
+  else
+    printf '%s\n' '' '[boot]' 'systemd=true' >> "$WSL_CONF"
+  fi
+fi
+
+# The Docker Desktop WSL integration may own /var/run/docker.sock.
+# Use a dedicated local Engine socket so both daemons can coexist safely.
+mkdir -p /etc/systemd/system/docker.service.d
+cat > /etc/systemd/system/docker.service.d/10-devbox-wsl-engine.conf <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock --host=unix:///run/devbox-docker.sock
+EOF
+
+# If systemd is not active yet, the Windows-side helper will restart only
+# the Ubuntu distro (not Windows) and run this script again.
+if [ ! -d /run/systemd/system ]; then
+  echo "  [wsl-engine] systemd has been enabled; restarting Ubuntu-24.04 is required."
+  exit 10
+fi
+
+systemctl daemon-reload
+systemctl enable docker >/dev/null
+systemctl restart containerd >/dev/null 2>&1 || true
+systemctl restart docker >/dev/null 2>&1 || systemctl start docker
+
+# Configure a dedicated Docker context for the local WSL daemon.
+TARGET_USER="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')"
+if [ -n "${TARGET_USER:-}" ]; then
+  usermod -aG docker "$TARGET_USER" || true
+  TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+  if [ -n "$TARGET_HOME" ]; then
+    install -d -m 0755 "$TARGET_HOME/.docker"
+    chown "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME/.docker"
+    runuser -u "$TARGET_USER" -- docker context inspect wsl-engine >/dev/null 2>&1 || \
+      runuser -u "$TARGET_USER" -- docker context create wsl-engine --docker "host=unix:///run/devbox-docker.sock" >/dev/null
+    runuser -u "$TARGET_USER" -- docker context update wsl-engine --docker "host=unix:///run/devbox-docker.sock" >/dev/null 2>&1 || true
+    runuser -u "$TARGET_USER" -- docker context use wsl-engine >/dev/null
+    chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME/.docker"
+  fi
+fi
+
+# Root verification keeps the installer independent of the user's login shell.
+DOCKER_HOST=unix:///run/devbox-docker.sock docker version >/dev/null
+DOCKER_HOST=unix:///run/devbox-docker.sock docker compose version >/dev/null
+
+fc-cache -f >/dev/null 2>&1 || true
+
+echo "  [wsl-engine] Docker Engine is ready on unix:///run/devbox-docker.sock"
+echo "  [wsl-engine] Docker Compose plugin is available."
+echo "  [wsl-engine] Ubuntu Mono fonts are installed."
+exit 0
+SH
+chmod +x "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh"
+echo "  [ok] install-wsl-docker-engine.sh"
+
+cat > "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackageRoot,
+    [string]$Distribution = 'Ubuntu-24.04'
+)
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    $scriptWin = Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.sh'
+    $debWin = Join-Path $PackageRoot 'docker-engine\debs'
+
+    if (-not (Test-Path -LiteralPath $scriptWin -PathType Leaf)) { throw "WSL Docker Engine installer not found: $scriptWin" }
+    if (-not (Test-Path -LiteralPath $debWin -PathType Container)) { throw "Docker Engine package directory not found: $debWin" }
+
+    $scriptWsl = (& wsl.exe wslpath -u $scriptWin).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $scriptWsl) { throw 'Could not convert WSL Docker Engine installer path.' }
+    $debWsl = (& wsl.exe wslpath -u $debWin).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $debWsl) { throw 'Could not convert Docker Engine package path.' }
+
+    function Invoke-EngineInstall {
+        param([string]$ScriptPath, [string]$DebPath)
+        & wsl.exe -d $Distribution -u root -- bash -lc "bash '$ScriptPath' '$DebPath'"
+        return $LASTEXITCODE
+    }
+
+    Write-Host '  [wsl-engine] Installing Docker Engine inside Ubuntu-24.04...'
+    $rc = Invoke-EngineInstall -ScriptPath $scriptWsl -DebPath $debWsl
+
+    if ($rc -eq 10) {
+        Write-Host '  [wsl-engine] Restarting Ubuntu-24.04 to activate systemd...'
+        & wsl.exe --terminate $Distribution
+        if ($LASTEXITCODE -ne 0) { throw 'Could not terminate Ubuntu-24.04 for systemd activation.' }
+
+        Start-Sleep -Seconds 2
+        & wsl.exe -d $Distribution -u root -- true
+        if ($LASTEXITCODE -ne 0) { throw 'Could not restart Ubuntu-24.04 after enabling systemd.' }
+
+        $rc = Invoke-EngineInstall -ScriptPath $scriptWsl -DebPath $debWsl
+    }
+
+    if ($rc -ne 0) { throw "WSL Docker Engine installer exited with code $rc." }
+
+    Write-Host '  [OK] Docker Engine is installed inside Ubuntu-24.04.'
+    Write-Host '  [OK] Ubuntu Mono fonts are installed.'
+    Write-Host '  [OK] Local WSL Docker context: wsl-engine'
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Failed to install Docker Engine inside WSL: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] install-wsl-docker-engine.ps1"
+
 cat > "$ABS_OUT/setup-offline.bat" <<'BAT'
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
@@ -1186,7 +1448,8 @@ if not "%VALIDATE_RC%"=="0" goto :fail_validate
 if /I "%STAGE%"=="START" goto :stage_features
 if /I "%STAGE%"=="FEATURES_ENABLED" goto :stage_wsl
 if /I "%STAGE%"=="WSL_INSTALLED" goto :stage_ubuntu
-if /I "%STAGE%"=="UBUNTU_INSTALLED" goto :stage_docker
+if /I "%STAGE%"=="UBUNTU_INSTALLED" goto :stage_wsl_engine
+if /I "%STAGE%"=="WSL_ENGINE_INSTALLED" goto :stage_docker
 if /I "%STAGE%"=="DOCKER_INSTALLED" goto :stage_restore
 if /I "%STAGE%"=="RESTORED" goto :stage_verify
 
@@ -1260,6 +1523,14 @@ if errorlevel 1 goto :fail
 call :save_stage UBUNTU_INSTALLED
 if errorlevel 1 goto :fail
 
+goto :stage_wsl_engine
+
+:stage_wsl_engine
+set "STAGE=INSTALL_WSL_ENGINE"
+call :install_wsl_engine
+if errorlevel 1 goto :fail
+call :save_stage WSL_ENGINE_INSTALLED
+if errorlevel 1 goto :fail
 goto :stage_docker
 
 :stage_docker
@@ -1404,9 +1675,16 @@ if errorlevel 1 goto :ubuntu_default_error
 echo   [OK] Ubuntu-24.04 is installed as WSL2 and set as default distro.
 exit /b 0
 
+:install_wsl_engine
+echo.
+echo [5/7] Installing Docker Engine inside Ubuntu-24.04...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\install-wsl-docker-engine.ps1" -PackageRoot "%PACKAGE_ROOT%" -Distribution "Ubuntu-24.04"
+if errorlevel 1 goto :wsl_engine_install_error
+exit /b 0
+
 :install_docker
 echo.
-echo [5/6] Installing Docker Desktop offline...
+echo [6/7] Installing Docker Desktop offline...
 set "DOCKER_EXE=%PACKAGE_ROOT%\offline-deps\Docker Desktop Installer.exe"
 set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
 set "DOCKER_RESTART_STATE=%STATE_DIR%\docker-hyperv.state"
@@ -1459,7 +1737,7 @@ exit /b 3010
 
 :restore_devbox
 echo.
-echo [6/6] Restoring DevBox Lite to:
+echo [7/7] Restoring DevBox Lite to:
 echo        %DEST_PATH%
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\import.ps1" -InputPath "%PACKAGE_ROOT%" -TargetProj "%DEST_PATH%"
@@ -1476,6 +1754,9 @@ if errorlevel 1 goto :verify_wsl_missing
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
 if errorlevel 1 goto :verify_ubuntu_missing
 
+wsl.exe -d Ubuntu-24.04 -u root -- bash -lc "DOCKER_HOST=unix:///run/devbox-docker.sock docker version >/dev/null 2>&1 && DOCKER_HOST=unix:///run/devbox-docker.sock docker compose version >/dev/null 2>&1"
+if errorlevel 1 goto :verify_wsl_engine_missing
+
 docker version >nul 2>&1
 if errorlevel 1 goto :verify_docker_missing
 
@@ -1483,6 +1764,7 @@ if not exist "%DEST_PATH%\docker\compose\docker-compose.yml" goto :verify_projec
 
 echo   [OK] WSL2
 echo   [OK] Ubuntu 24.04
+echo   [OK] Docker Engine inside WSL (wsl-engine)
 echo   [OK] Docker Desktop / Docker Engine
 echo   [OK] DevBox project files
 exit /b 0
@@ -1608,6 +1890,10 @@ exit /b 1
 echo [ERROR] Could not set Ubuntu-24.04 as the default WSL distribution.
 exit /b 1
 
+:wsl_engine_install_error
+echo [ERROR] Docker Engine installation inside Ubuntu-24.04 failed.
+exit /b 1
+
 :docker_install_error
 echo [ERROR] Docker Desktop installation failed.
 exit /b 1
@@ -1631,6 +1917,10 @@ exit /b 1
 
 :verify_ubuntu_missing
 echo [ERROR] Ubuntu-24.04 is not registered.
+exit /b 1
+
+:verify_wsl_engine_missing
+echo [ERROR] Docker Engine inside Ubuntu-24.04 is not available on wsl-engine.
 exit /b 1
 
 :verify_docker_missing
@@ -1692,12 +1982,12 @@ print("  [ok] setup-offline.bat normalized to Windows CRLF line endings")
 PY_EOL
 
 # Validate generated files before package creation continues.
-python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
+python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-EXPECTED_VALIDATOR_ARGS = 9
+EXPECTED_VALIDATOR_ARGS = 11
 actual_validator_args = len(sys.argv) - 1
 if actual_validator_args != EXPECTED_VALIDATOR_ARGS:
     raise SystemExit(
@@ -1713,7 +2003,9 @@ ready = Path(sys.argv[5])
 restart = Path(sys.argv[6])
 docker_restart = Path(sys.argv[7])
 wait_docker = Path(sys.argv[8])
-import_ps1 = Path(sys.argv[9])
+install_engine_ps1 = Path(sys.argv[9])
+install_engine_sh = Path(sys.argv[10])
+import_ps1 = Path(sys.argv[11])
 
 bat_bytes = bat.read_bytes()
 if b"\r\n" not in bat_bytes:
@@ -1732,12 +2024,14 @@ ready_text = ready.read_text(encoding='utf-8')
 restart_text = restart.read_text(encoding='utf-8')
 docker_restart_text = docker_restart.read_text(encoding='utf-8')
 wait_docker_text = wait_docker.read_text(encoding='utf-8')
+install_engine_ps1_text = install_engine_ps1.read_text(encoding='utf-8')
+install_engine_sh_text = install_engine_sh.read_text(encoding='utf-8')
 import_text = import_ps1.read_text(encoding='utf-8')
 
 required_labels = [
     'main', 'resume', 'require_admin', 'validate_package',
     'enable_wsl_features', 'install_wsl', 'install_ubuntu',
-    'install_docker', 'restore_devbox', 'verify', 'schedule_restart',
+    'install_docker', 'install_wsl_engine', 'restore_devbox', 'verify', 'verify_wsl_engine_missing', 'schedule_restart',
     'save_stage', 'load_state_line', 'apply_state', 'cleanup_success', 'save_stage_error', 'resume_task_error', 'restart_schedule_error',
     'fail', 'features_restart', 'wsl_msi_restart', 'docker_restart', 'ubuntu_readiness_restart',
 ]
@@ -1747,6 +2041,7 @@ required_calls = [
     'call :install_wsl',
     'call :install_ubuntu',
     'call :install_docker',
+    'call :install_wsl_engine',
     'call :restore_devbox',
     'call :verify',
     'call :schedule_restart',
@@ -1804,7 +2099,7 @@ if 'wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04"' in normalized_bat_text:
 if 'validate-offline.ps1' not in normalized_bat_text or 'manage-wsl-features.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: required PowerShell scripts are not referenced.')
 
-if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text:
+if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text or 'install-wsl-docker-engine.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
 
 def find_label_line(text, label):
@@ -1827,7 +2122,7 @@ if re.search(r'for\s+/f[^\n]*powershell\.exe', normalized_bat_text, re.I):
 
 if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
     raise SystemExit('Generated validation script check failed.')
-import_text = Path(sys.argv[9]).read_text(encoding='utf-8') if len(sys.argv) > 9 else ''
+import_text = import_ps1.read_text(encoding='utf-8')
 if 'Get-FileHash' in import_text:
     raise SystemExit('Generated import.ps1 validation failed: Get-FileHash dependency detected.')
 if 'System.Security.Cryptography.SHA256' not in import_text:
@@ -1851,6 +2146,11 @@ if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restar
 if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wait_docker_text or 'TimeoutSeconds' not in wait_docker_text:
     raise SystemExit('Generated Docker install waiter validation failed.')
 
+if 'systemd=true' not in install_engine_sh_text or 'wsl-engine' not in install_engine_sh_text or 'docker-compose-plugin' not in install_engine_sh_text or 'devbox-docker.sock' not in install_engine_sh_text:
+    raise SystemExit('Generated WSL Docker Engine installer validation failed.')
+if 'wsl-engine' not in install_engine_ps1_text or 'install-wsl-docker-engine.sh' not in install_engine_ps1_text:
+    raise SystemExit('Generated WSL Docker Engine PowerShell helper validation failed.')
+
 install_docker_start = find_label_line(normalized_bat_text, 'install_docker')
 restore_start = find_label_line(normalized_bat_text, 'restore_devbox')
 if install_docker_start == -1 or restore_start == -1 or restore_start <= install_docker_start:
@@ -1860,6 +2160,13 @@ if 'start /wait' in install_docker_text.lower() and 'docker desktop installer' i
     raise SystemExit('Generated BAT validation failed: Docker installer must not block on start /wait.')
 if 'wait_for_docker_install' not in install_docker_text:
     raise SystemExit('Generated BAT validation failed: Docker installation waiter is not used.')
+
+engine_start = find_label_line(normalized_bat_text, 'install_wsl_engine')
+if engine_start == -1 or install_docker_start == -1 or install_docker_start <= engine_start:
+    raise SystemExit('Generated BAT validation failed: install_wsl_engine/install_docker sections could not be located.')
+engine_text = normalized_bat_text[engine_start:install_docker_start]
+if 'install-wsl-docker-engine.ps1' not in engine_text:
+    raise SystemExit('Generated BAT validation failed: WSL Docker Engine installer is not invoked.')
 
 if 'RebootPending' not in restart_text and 'RebootRequired' not in restart_text:
     raise SystemExit('Generated restart helper validation failed.')
@@ -1895,6 +2202,11 @@ rm -f "$MANIFEST_TMP" "$BUNDLE_DIR/manifest.txt"
   echo "docker_desktop_installer_filename:$(basename "$DOCKER_INSTALLER")"
   echo "docker_desktop_installer_sha256:$DOCKER_INSTALLER_SHA256"
   echo "docker_desktop_download_policy:wsl-curl-then-windows-host-fallback"
+  echo "wsl_docker_engine:enabled"
+  echo "wsl_docker_engine_socket:unix:///run/devbox-docker.sock"
+  echo "wsl_docker_engine_context:wsl-engine"
+  echo "wsl_docker_engine_package_dir:docker-engine/debs"
+  echo "docker-engine-package-count:$(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' | wc -l)"
   echo "image:$IMAGE_NAME"
   echo "image_sha256:$IMAGE_SHA256"
   echo "compose_project:$COMPOSE_PROJECT"
@@ -1914,6 +2226,10 @@ rm -f "$MANIFEST_TMP" "$BUNDLE_DIR/manifest.txt"
     archive="$BUNDLE_DIR/volumes/vol-${logical_volume}.tar.gz"
     echo "volumes/$(basename "$archive"):$(sha256sum "$archive" | awk '{print $1}')"
   done
+  while IFS='|' read -r pkg_name pkg_version pkg_arch deb_name deb_sha; do
+    [ -n "$deb_name" ] || continue
+    echo "docker-engine/$deb_name:$deb_sha"
+  done < "$DOCKER_ENGINE_META"
 } > "$MANIFEST_TMP"
 
 if [ ! -s "$MANIFEST_TMP" ]; then
@@ -1954,7 +2270,15 @@ required_files=(
   "$BUNDLE_DIR/scripts/check-restart-required.ps1"
   "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1"
   "$BUNDLE_DIR/scripts/wait-docker-install.ps1"
+  "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1"
+  "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh"
+  "$BUNDLE_DIR/docker-engine/packages.txt"
 )
+
+if ! compgen -G "$BUNDLE_DIR/docker-engine/debs/*.deb" > /dev/null; then
+  echo "[error] Docker Engine .deb package bundle is missing or empty."
+  exit 1
+fi
 
 if [ -d "$PROJECT_ROOT/prebuilt" ]; then
   required_files+=("$BUNDLE_DIR/prebuilt.tar.gz")
@@ -1996,6 +2320,11 @@ required_prefixes = [
     'docker_desktop_installer_filename:',
     'docker_desktop_installer_sha256:',
     'docker_desktop_download_policy:',
+    'wsl_docker_engine:',
+    'wsl_docker_engine_socket:',
+    'wsl_docker_engine_context:',
+    'wsl_docker_engine_package_dir:',
+    'docker-engine-package-count:',
     'image:',
     'image_sha256:',
     'compose_project:',
@@ -2069,6 +2398,28 @@ for volume in volumes:
     actual = sha256(path)
     if actual != expected:
         raise SystemExit(f'Manifest validation failed: SHA256 mismatch for {key}')
+
+engine_meta = bundle / 'docker-engine' / 'packages.txt'
+engine_dir = bundle / 'docker-engine' / 'debs'
+if not engine_meta.exists():
+    raise SystemExit('Manifest validation failed: Docker Engine package metadata is missing')
+engine_count = sum(1 for line in engine_meta.read_text(encoding='utf-8').splitlines() if '|' in line)
+expected_count = entries.get('docker-engine-package-count')
+if expected_count is None or int(expected_count) != engine_count:
+    raise SystemExit('Manifest validation failed: Docker Engine package count mismatch')
+for line in engine_meta.read_text(encoding='utf-8').splitlines():
+    parts = line.split('|')
+    if len(parts) != 5:
+        continue
+    _pkg, _ver, _arch, deb_name, expected_sha = parts
+    if not deb_name.endswith('.deb'):
+        continue
+    deb_path = engine_dir / deb_name
+    if not deb_path.exists():
+        raise SystemExit(f'Manifest validation failed: Docker Engine package missing: {deb_name}')
+    actual = sha256(deb_path)
+    if actual != expected_sha:
+        raise SystemExit(f'Manifest validation failed: Docker Engine SHA256 mismatch: {deb_name}')
 
 print('  [ok] manifest.txt verified')
 PY
