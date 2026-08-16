@@ -1223,12 +1223,27 @@ $ErrorActionPreference = 'Stop'
 function Get-NormalWslUser {
     param([string]$Distro)
 
-    $command = 'getent passwd | awk -F: ''$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}'''
-    $result = & wsl.exe -d $Distro -u root -- bash -lc $command 2>$null
+    $result = & wsl.exe -d $Distro -u root -- getent passwd 2>$null
     if ($LASTEXITCODE -ne 0) { return '' }
-    $line = $result | Select-Object -First 1
-    if ($null -eq $line) { return '' }
-    return $line.ToString().Trim()
+
+    foreach ($line in @($result)) {
+        $text = $line.ToString().Trim()
+        if (-not $text) { continue }
+
+        $fields = $text.Split(':')
+        if ($fields.Count -lt 7) { continue }
+
+        $uid = 0
+        if (-not [int]::TryParse($fields[2], [ref]$uid)) { continue }
+        if ($uid -lt 1000 -or $uid -ge 60000) { continue }
+
+        $shell = $fields[6].Trim().ToLowerInvariant()
+        if ($shell -match '/(nologin|false)$') { continue }
+
+        return $fields[0].Trim()
+    }
+
+    return ''
 }
 
 try {
@@ -1240,31 +1255,49 @@ try {
 
     Write-Host ''
     Write-Host '  Ubuntu-24.04 requires first-run account setup.'
-    Write-Host '  The Ubuntu terminal will open now.'
+    Write-Host '  A separate Ubuntu terminal will open now.'
     Write-Host '  Create the Linux username and password when prompted.'
     Write-Host '  The password is used only by Ubuntu and is never stored by DevBox Lite.'
     Write-Host ''
-    Write-Host '  [wsl] Starting Ubuntu first-run...'
+    Write-Host '  [wsl] Starting Ubuntu first-run in a separate window...'
     Write-Host ''
 
-    & wsl.exe -d $Distribution
-    $firstRunRc = $LASTEXITCODE
+    $process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('-d', $Distribution) -PassThru
+    $deadline = (Get-Date).AddMinutes(15)
+    $pollSeconds = 2
+    $existingUser = ''
 
-    $existingUser = Get-NormalWslUser -Distro $Distribution
+    do {
+        Start-Sleep -Seconds $pollSeconds
+        $existingUser = Get-NormalWslUser -Distro $Distribution
+        if ($existingUser) { break }
+        if ($process.HasExited) { break }
+    } while ((Get-Date) -lt $deadline)
+
     if (-not $existingUser) {
-        if ($firstRunRc -ne 0) {
-            throw "Ubuntu first-run exited with code $firstRunRc before creating a normal Linux user."
+        if ($process -and -not $process.HasExited) {
+            try { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue } catch {}
         }
-        throw 'Ubuntu first-run completed without creating a normal Linux user account.'
+        if ($process -and $process.HasExited) {
+            throw "Ubuntu first-run exited with code $($process.ExitCode) before creating a normal Linux user."
+        }
+        throw 'Ubuntu first-run did not create a normal Linux user within 15 minutes.'
     }
 
-    Write-Host "  [OK] Ubuntu first-run completed: $existingUser"
+    Write-Host "  [OK] Ubuntu user created: $existingUser"
+    Write-Host '  [wsl] Closing temporary Ubuntu first-run session...'
+    & wsl.exe --terminate $Distribution 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '  [OK] Ubuntu first-run session closed.'
+    }
+
     exit 0
 }
 catch {
     Write-Host "[ERROR] Ubuntu first-run initialization failed: $($_.Exception.Message)"
     exit 1
 }
+
 PS1
 echo "  [ok] initialize-wsl-user.ps1"
 
@@ -1815,12 +1848,14 @@ echo [3/9] Installing WSL from the offline MSI...
 where wsl.exe >nul 2>&1
 if errorlevel 1 goto :wsl_command_missing
 
+set "WSL_INSTALLED_NOW=0"
 wsl.exe --version >nul 2>&1
 if not errorlevel 1 goto :wsl_ready
 
 echo   Installing WSL MSI...
 msiexec.exe /i "%WSL_MSI%" /passive /norestart
 set "WSL_MSI_RC=%errorlevel%"
+set "WSL_INSTALLED_NOW=1"
 if "%WSL_MSI_RC%"=="3010" exit /b 3010
 if not "%WSL_MSI_RC%"=="0" goto :wsl_install_error
 
@@ -1828,13 +1863,16 @@ if not "%WSL_MSI_RC%"=="0" goto :wsl_install_error
 wsl.exe --set-default-version 2 >nul 2>&1
 if errorlevel 1 goto :wsl_default_error
 
-rem WSL MSI may return success while Windows still has a pending reboot.
-rem Detect the actual Windows restart state instead of relying only on MSI 3010.
+rem Only a fresh WSL MSI installation can introduce a new Windows reboot requirement here.
+rem If WSL was already installed and working, do not recycle an unrelated stale reboot flag.
+if not "%WSL_INSTALLED_NOW%"=="1" goto :wsl_restart_check_done
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-restart-required.ps1"
 set "WSL_RESTART_RC=%errorlevel%"
 if "%WSL_RESTART_RC%"=="3010" exit /b 3010
 if not "%WSL_RESTART_RC%"=="0" goto :wsl_install_error
 
+:wsl_restart_check_done
 echo   [OK] WSL2 is installed and default version is 2.
 exit /b 0
 
@@ -2339,6 +2377,8 @@ if 'validate-offline.ps1' not in normalized_bat_text or 'manage-wsl-features.ps1
 
 if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text or 'initialize-wsl-user.ps1' not in normalized_bat_text or 'install-wsl-docker-engine.ps1' not in normalized_bat_text or 'restore-wsl-project.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
+if 'Start-Process' not in initialize_wsl_user_text or 'wsl.exe --terminate' not in initialize_wsl_user_text or 'getent passwd' not in initialize_wsl_user_text:
+    raise SystemExit('Generated WSL user initialization validation failed: non-blocking first-run flow is missing.')
 
 def find_label_line(text, label):
     match = re.search(rf'(?m)^:{re.escape(label)}\s*$', text)
@@ -2349,8 +2389,8 @@ install_ubuntu_start = find_label_line(normalized_bat_text, 'install_ubuntu')
 if install_wsl_start == -1 or install_ubuntu_start == -1 or install_ubuntu_start <= install_wsl_start:
     raise SystemExit('Generated BAT validation failed: install_wsl/install_ubuntu sections could not be located.')
 install_wsl_text = normalized_bat_text[install_wsl_start:install_ubuntu_start]
-if 'check-restart-required.ps1' not in install_wsl_text:
-    raise SystemExit('Generated BAT validation failed: install_wsl must verify Windows pending restart state.')
+if 'WSL_INSTALLED_NOW=0' not in install_wsl_text or 'if not "%WSL_INSTALLED_NOW%"=="1" goto :wsl_restart_check_done' not in install_wsl_text or ':wsl_restart_check_done' not in install_wsl_text:
+    raise SystemExit('Generated BAT validation failed: WSL restart check must only run after a fresh WSL MSI installation.')
 
 if 'call :save_stage START' in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: startup must not depend on save_stage START.')
