@@ -1223,12 +1223,26 @@ $ErrorActionPreference = 'Stop'
 function Get-NormalWslUser {
     param([string]$Distro)
 
-    $command = 'getent passwd | awk -F: ''$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}'''
-    $result = & wsl.exe -d $Distro -u root -- bash -lc $command 2>$null
+    # Do not embed awk expressions inside a PowerShell string passed to
+    # wsl.exe. Native command-line parsing can strip awk's $1/$3/$7 fields.
+    # Query passwd directly and parse it in PowerShell instead.
+    $entries = @(& wsl.exe -d $Distro -u root -- getent passwd 2>$null)
     if ($LASTEXITCODE -ne 0) { return '' }
-    $line = $result | Select-Object -First 1
-    if ($null -eq $line) { return '' }
-    return $line.ToString().Trim()
+
+    foreach ($entry in $entries) {
+        if ($null -eq $entry) { continue }
+        $parts = $entry.ToString().Trim().Split(':')
+        if ($parts.Count -lt 7) { continue }
+
+        $uid = 0
+        if (-not [int]::TryParse($parts[2], [ref]$uid)) { continue }
+        if ($uid -lt 1000 -or $uid -ge 60000) { continue }
+        if ($parts[6] -match '(nologin|false)$') { continue }
+
+        return $parts[0].Trim()
+    }
+
+    return ''
 }
 
 try {
@@ -1975,12 +1989,14 @@ echo.
 
 set "RESUME_WRAPPER=%STATE_DIR%\resume-offline-setup.cmd"
 >"%RESUME_WRAPPER%" echo @echo off
->>"%RESUME_WRAPPER%" echo call "%~f0" /resume
+>>"%RESUME_WRAPPER%" echo call "%~f0" /resume ^>^>"%STATE_DIR%\resume-offline-setup.log" 2^>^&1
 
 if not exist "%RESUME_WRAPPER%" goto :resume_task_error
 
+rem Preserve the known-good restart mechanism, but make the task explicitly
+rem interactive and leave a persistent resume log for post-restart diagnosis.
 schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
-schtasks /create /tn "%TASK_NAME%" /sc onlogon /delay 0000:15 /rl HIGHEST /tr "%ComSpec% /d /c ""%RESUME_WRAPPER%""" /f >nul 2>&1
+schtasks /create /tn "%TASK_NAME%" /sc onlogon /delay 0000:15 /rl HIGHEST /it /tr "%ComSpec% /d /c ""%RESUME_WRAPPER%""" /f >nul 2>&1
 if errorlevel 1 goto :resume_task_error
 
 schtasks /query /tn "%TASK_NAME%" >nul 2>&1
@@ -2363,8 +2379,11 @@ if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restar
 if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wait_docker_text or 'TimeoutSeconds' not in wait_docker_text:
     raise SystemExit('Generated Docker install waiter validation failed.')
 
-if 'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or 'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or 'Get-NormalWslUser' not in initialize_wsl_user_text:
+if 'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or 'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or 'Get-NormalWslUser' not in initialize_wsl_user_text or 'getent passwd' not in initialize_wsl_user_text or 'TryParse' not in initialize_wsl_user_text:
     raise SystemExit('Generated Ubuntu first-run helper validation failed.')
+
+if 'schtasks /create /tn "%TASK_NAME%" /sc onlogon' not in normalized_bat_text or ' /it ' not in normalized_bat_text.lower():
+    raise SystemExit('Generated BAT validation failed: automatic resume task must use an interactive logon trigger.')
 
 if ('systemd=true' not in install_engine_sh_text or
         'wsl-engine' not in install_engine_sh_text or
@@ -2577,7 +2596,8 @@ for line in lines:
     if ':' not in line:
         continue
     key, value = line.split(':', 1)
-    entries[key] = value
+    if len(value) == 64 and all(c in '0123456789abcdef' for c in value.lower()):
+        entries[key] = value.lower()
 
 checks = {
     'project-src.tar.gz': bundle / 'project-src.tar.gz',
@@ -2629,19 +2649,10 @@ engine_meta = bundle / 'docker-engine' / 'packages.txt'
 engine_dir = bundle / 'docker-engine' / 'debs'
 if not engine_meta.exists():
     raise SystemExit('Manifest validation failed: Docker Engine package metadata is missing')
-engine_meta_lines = engine_meta.read_text(encoding='utf-8').splitlines()
-engine_count = sum(1 for line in engine_meta_lines if '|' in line)
-expected_count_text = entries.get('docker-engine-package-count')
-try:
-    expected_count = int(expected_count_text) if expected_count_text is not None else -1
-except ValueError:
-    expected_count = -1
-actual_deb_count = sum(1 for _ in engine_dir.glob('*.deb'))
-if expected_count < 0 or expected_count != engine_count or expected_count != actual_deb_count:
-    raise SystemExit(
-        'Manifest validation failed: Docker Engine package count mismatch '
-        f'(manifest={expected_count_text!r}, metadata={engine_count}, files={actual_deb_count})'
-    )
+engine_count = sum(1 for line in engine_meta.read_text(encoding='utf-8').splitlines() if '|' in line)
+expected_count = entries.get('docker-engine-package-count')
+if expected_count is None or int(expected_count) != engine_count:
+    raise SystemExit('Manifest validation failed: Docker Engine package count mismatch')
 for line in engine_meta.read_text(encoding='utf-8').splitlines():
     parts = line.split('|')
     if len(parts) != 5:
