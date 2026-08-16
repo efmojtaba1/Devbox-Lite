@@ -2577,8 +2577,7 @@ for line in lines:
     if ':' not in line:
         continue
     key, value = line.split(':', 1)
-    if len(value) == 64 and all(c in '0123456789abcdef' for c in value.lower()):
-        entries[key] = value.lower()
+    entries[key] = value
 
 checks = {
     'project-src.tar.gz': bundle / 'project-src.tar.gz',
@@ -2630,10 +2629,19 @@ engine_meta = bundle / 'docker-engine' / 'packages.txt'
 engine_dir = bundle / 'docker-engine' / 'debs'
 if not engine_meta.exists():
     raise SystemExit('Manifest validation failed: Docker Engine package metadata is missing')
-engine_count = sum(1 for line in engine_meta.read_text(encoding='utf-8').splitlines() if '|' in line)
-expected_count = entries.get('docker-engine-package-count')
-if expected_count is None or int(expected_count) != engine_count:
-    raise SystemExit('Manifest validation failed: Docker Engine package count mismatch')
+engine_meta_lines = engine_meta.read_text(encoding='utf-8').splitlines()
+engine_count = sum(1 for line in engine_meta_lines if '|' in line)
+expected_count_text = entries.get('docker-engine-package-count')
+try:
+    expected_count = int(expected_count_text) if expected_count_text is not None else -1
+except ValueError:
+    expected_count = -1
+actual_deb_count = sum(1 for _ in engine_dir.glob('*.deb'))
+if expected_count < 0 or expected_count != engine_count or expected_count != actual_deb_count:
+    raise SystemExit(
+        'Manifest validation failed: Docker Engine package count mismatch '
+        f'(manifest={expected_count_text!r}, metadata={engine_count}, files={actual_deb_count})'
+    )
 for line in engine_meta.read_text(encoding='utf-8').splitlines():
     parts = line.split('|')
     if len(parts) != 5:
