@@ -2711,7 +2711,7 @@ if command -v powershell.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>
     echo ""
     echo "[export] Clearing Windows Mark-of-the-Web metadata..."
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
-      "$root = '$OUT_WIN_PATH'; Get-ChildItem -LiteralPath $root -Recurse -Force -File | Unblock-File -ErrorAction SilentlyContinue" \
+      "\$root = '$OUT_WIN_PATH'; Get-ChildItem -LiteralPath \$root -Recurse -Force -File | Unblock-File -ErrorAction SilentlyContinue" \
       >/dev/null 2>&1 || true
     echo "  [ok] Mark-of-the-Web metadata cleared from generated package files"
   else
