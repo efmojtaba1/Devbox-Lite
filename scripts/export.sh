@@ -1223,6 +1223,9 @@ $ErrorActionPreference = 'Stop'
 function Get-NormalWslUser {
     param([string]$Distro)
 
+    # Never query the distribution while its first-run OOBE is active.
+    # WSL serializes OOBE with other launches and can return:
+    # "Waiting for OOBE command to complete".
     $result = & wsl.exe -d $Distro -u root -- getent passwd 2>$null
     if ($LASTEXITCODE -ne 0) { return '' }
 
@@ -1260,37 +1263,35 @@ try {
     Write-Host '  The password is used only by Ubuntu and is never stored by DevBox Lite.'
     Write-Host ''
     Write-Host '  [wsl] Starting Ubuntu first-run in a separate window...'
+    Write-Host '  [info] The installer will wait for the first-run setup to finish.'
     Write-Host ''
 
     $process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('-d', $Distribution) -PassThru
     $deadline = (Get-Date).AddMinutes(15)
-    $pollSeconds = 2
-    $existingUser = ''
 
-    do {
-        Start-Sleep -Seconds $pollSeconds
-        $existingUser = Get-NormalWslUser -Distro $Distribution
-        if ($existingUser) { break }
+    # IMPORTANT: Do not poll the distro while OOBE is running. A second
+    # wsl.exe invocation can block behind OOBE and produce a false failure.
+    # We wait for the first-run process to finish its OOBE work instead.
+    while ($true) {
         if ($process.HasExited) { break }
-    } while ((Get-Date) -lt $deadline)
-
-    if (-not $existingUser) {
-        if ($process -and -not $process.HasExited) {
+        if ((Get-Date) -ge $deadline) {
             try { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue } catch {}
+            throw 'Ubuntu first-run did not finish within 15 minutes.'
         }
-        if ($process -and $process.HasExited) {
-            throw "Ubuntu first-run exited with code $($process.ExitCode) before creating a normal Linux user."
-        }
-        throw 'Ubuntu first-run did not create a normal Linux user within 15 minutes.'
+        Start-Sleep -Seconds 2
+    }
+
+    if ($process.ExitCode -ne 0) {
+        throw "Ubuntu first-run exited with code $($process.ExitCode)."
+    }
+
+    # OOBE is complete now, so it is safe to query the distro.
+    $existingUser = Get-NormalWslUser -Distro $Distribution
+    if (-not $existingUser) {
+        throw 'Ubuntu first-run completed, but no normal Linux user account was detected.'
     }
 
     Write-Host "  [OK] Ubuntu user created: $existingUser"
-    Write-Host '  [wsl] Closing temporary Ubuntu first-run session...'
-    & wsl.exe --terminate $Distribution 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host '  [OK] Ubuntu first-run session closed.'
-    }
-
     exit 0
 }
 catch {
@@ -1317,15 +1318,26 @@ try {
         throw "Project source archive not found: $projectTarWin"
     }
 
-    $projectTarWsl = (& wsl.exe wslpath -u $projectTarWin).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $projectTarWsl) {
-        throw 'Could not convert project source archive path to WSL path.'
-    }
+    # Do not pass a raw Windows path through wsl.exe command-line parsing.
+    # Backslashes can be consumed before wslpath receives the value.
+    # Encode the Windows path in PowerShell and decode it inside WSL first.
+    $projectTarWinB64 = [Convert]::ToBase64String(
+        [Text.Encoding]::UTF8.GetBytes($projectTarWin)
+    )
 
     $restoreScript = @'
 set -euo pipefail
-archive="$1"
+archive_win_b64="$1"
 distro="$2"
+
+archive_win="$(printf '%s' "$archive_win_b64" | base64 -d)"
+archive="$(wslpath -u "$archive_win")"
+
+if [ -z "${archive:-}" ] || [ ! -f "$archive" ]; then
+  echo "[error] Could not resolve project source archive inside WSL."
+  echo "        Windows path: $archive_win"
+  exit 10
+fi
 
 TARGET_USER=""
 if [ -f /etc/wsl.conf ]; then
@@ -1371,7 +1383,7 @@ printf '  [info] Windows UNC: \\\\wsl.localhost\\%s%s\n' "$distro" "${TARGET_DIR
 '@
 
     $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($restoreScript))
-    $command = "echo '$encoded' | base64 -d | bash -s -- '$projectTarWsl' '$Distribution'"
+    $command = "echo '$encoded' | base64 -d | bash -s -- '$projectTarWinB64' '$Distribution'"
 
     Write-Host '  [wsl] Restoring project source inside Ubuntu-24.04...'
     & wsl.exe -d $Distribution -u root -- bash -lc $command
@@ -1849,17 +1861,28 @@ where wsl.exe >nul 2>&1
 if errorlevel 1 goto :wsl_command_missing
 
 set "WSL_INSTALLED_NOW=0"
-wsl.exe --version >nul 2>&1
-if not errorlevel 1 goto :wsl_ready
 
-echo   Installing WSL MSI...
+rem Detect an already-installed WSL even when the installed WSL is the
+rem Windows inbox version and does not support `wsl --version`.
+rem `wsl --status` is the compatibility check; the Windows optional
+rem components were already verified in stage 2.
+wsl.exe --status >nul 2>&1
+if not errorlevel 1 goto :wsl_already_ready
+
+rem As a secondary check, query the installed distribution list. This also
+rem handles systems where WSL status is available only after a distro exists.
+wsl.exe --list --quiet >nul 2>&1
+if not errorlevel 1 goto :wsl_already_ready
+
+echo   WSL command is present but the WSL runtime is not ready.
+echo   Installing the bundled WSL MSI...
 msiexec.exe /i "%WSL_MSI%" /passive /norestart
 set "WSL_MSI_RC=%errorlevel%"
 set "WSL_INSTALLED_NOW=1"
 if "%WSL_MSI_RC%"=="3010" exit /b 3010
 if not "%WSL_MSI_RC%"=="0" goto :wsl_install_error
 
-:wsl_ready
+:wsl_already_ready
 wsl.exe --set-default-version 2 >nul 2>&1
 if errorlevel 1 goto :wsl_default_error
 
@@ -2377,8 +2400,8 @@ if 'validate-offline.ps1' not in normalized_bat_text or 'manage-wsl-features.ps1
 
 if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text or 'initialize-wsl-user.ps1' not in normalized_bat_text or 'install-wsl-docker-engine.ps1' not in normalized_bat_text or 'restore-wsl-project.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
-if 'Start-Process' not in initialize_wsl_user_text or 'wsl.exe --terminate' not in initialize_wsl_user_text or 'getent passwd' not in initialize_wsl_user_text:
-    raise SystemExit('Generated WSL user initialization validation failed: non-blocking first-run flow is missing.')
+if 'Start-Process' not in initialize_wsl_user_text or 'getent passwd' not in initialize_wsl_user_text or 'Waiting for OOBE command to complete' not in initialize_wsl_user_text:
+    raise SystemExit('Generated WSL user initialization validation failed: OOBE-safe first-run flow is missing.')
 
 def find_label_line(text, label):
     match = re.search(rf'(?m)^:{re.escape(label)}\s*$', text)
@@ -2438,7 +2461,13 @@ if ('wsl-engine' not in install_engine_ps1_text or
         'wslpath -u' not in install_engine_ps1_text or
         'base64 -d' not in install_engine_ps1_text):
     raise SystemExit('Generated WSL Docker Engine PowerShell helper validation failed: Windows-to-WSL path bridge is incomplete.')
-if 'project-src.tar.gz' not in restore_wsl_project_text or 'projects/DevBox-Lite' not in restore_wsl_project_text or 'getent passwd' not in restore_wsl_project_text or 'chown -R' not in restore_wsl_project_text:
+if ('project-src.tar.gz' not in restore_wsl_project_text or
+        'projects/DevBox-Lite' not in restore_wsl_project_text or
+        'getent passwd' not in restore_wsl_project_text or
+        'chown -R' not in restore_wsl_project_text or
+        'ToBase64String' not in restore_wsl_project_text or
+        'base64 -d' not in restore_wsl_project_text or
+        'wslpath -u' not in restore_wsl_project_text):
     raise SystemExit('Generated WSL project restore helper validation failed.')
 
 install_docker_start = find_label_line(normalized_bat_text, 'install_docker')
@@ -2460,6 +2489,11 @@ if 'install-wsl-docker-engine.ps1' not in engine_text:
 
 if 'RebootPending' not in restart_text and 'RebootRequired' not in restart_text:
     raise SystemExit('Generated restart helper validation failed.')
+
+if ('wsl.exe --status' not in install_wsl_text or
+        'wsl.exe --list --quiet' not in install_wsl_text or
+        'WSL_INSTALLED_NOW=0' not in install_wsl_text):
+    raise SystemExit('Generated WSL installer validation failed: existing WSL detection is incomplete.')
 
 print('  [ok] Generated setup-offline.bat structural validation passed')
 print('  [ok] Generated PowerShell validation scripts passed')
