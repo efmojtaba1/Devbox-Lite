@@ -2777,7 +2777,7 @@ rm -f "$MANIFEST_TMP" "$BUNDLE_DIR/manifest.txt"
     echo "volumes/$(basename "$archive"):$(sha256sum "$archive" | awk '{print $1}')"
   done
   while IFS='|' read -r pkg_name pkg_version pkg_arch deb_name deb_sha; do
-    [ -n "$deb_name" ] || continue
+    [ -n "$deb_sha" ] || continue
     echo "docker-engine/$deb_name:$deb_sha"
   done < "$DOCKER_ENGINE_META"
 } > "$MANIFEST_TMP"
@@ -2954,7 +2954,11 @@ engine_meta = bundle / 'docker-engine' / 'packages.txt'
 engine_dir = bundle / 'docker-engine' / 'debs'
 if not engine_meta.exists():
     raise SystemExit('Manifest validation failed: Docker Engine package metadata is missing')
-engine_lines = [line for line in engine_meta.read_text(encoding='utf-8').splitlines() if '|' in line]
+engine_lines = []
+for line in engine_meta.read_text(encoding='utf-8').splitlines():
+    parts = line.split('|')
+    if len(parts) == 5 and all(parts):
+        engine_lines.append(line)
 engine_count = len(engine_lines)
 expected_count_text = entries.get('docker-engine-package-count', '')
 try:
