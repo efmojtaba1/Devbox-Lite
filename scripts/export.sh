@@ -1337,9 +1337,6 @@ $ErrorActionPreference = 'Stop'
 function Get-NormalWslUser {
     param([string]$Distro)
 
-    # Never query the distribution while its first-run OOBE is active.
-    # WSL serializes OOBE with other launches and can return:
-    # "Waiting for OOBE command to complete".
     $result = & wsl.exe -d $Distro -u root -- getent passwd 2>$null
     if ($LASTEXITCODE -ne 0) { return '' }
 
@@ -1363,6 +1360,18 @@ function Get-NormalWslUser {
     return ''
 }
 
+function Convert-SecureStringToPlainText {
+    param([Security.SecureString]$SecureString)
+
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    }
+}
+
 try {
     $existingUser = Get-NormalWslUser -Distro $Distribution
     if ($existingUser) {
@@ -1372,47 +1381,103 @@ try {
 
     Write-Host ''
     Write-Host '  Ubuntu-24.04 requires first-run account setup.'
-    Write-Host '  A separate Ubuntu terminal will open now.'
-    Write-Host '  Create the Linux username and password when prompted.'
+    Write-Host '  The account will be created in this installer window.'
+    Write-Host '  Enter the Linux username and password below.'
+    Write-Host '  You do not need to open Ubuntu or type exit.'
+    Write-Host '  The installer will continue automatically after setup.'
     Write-Host '  The password is used only by Ubuntu and is never stored by DevBox Lite.'
     Write-Host ''
-    Write-Host '  [wsl] Starting Ubuntu first-run in a separate window...'
-    Write-Host '  [info] The installer will wait for the first-run setup to finish.'
-    Write-Host ''
 
-    $process = Start-Process -FilePath 'wsl.exe' -ArgumentList @('-d', $Distribution) -PassThru
-    $deadline = (Get-Date).AddMinutes(15)
-
-    # IMPORTANT: Do not poll the distro while OOBE is running. A second
-    # wsl.exe invocation can block behind OOBE and produce a false failure.
-    # We wait for the first-run process to finish its OOBE work instead.
-    while ($true) {
-        if ($process.HasExited) { break }
-        if ((Get-Date) -ge $deadline) {
-            try { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue } catch {}
-            throw 'Ubuntu first-run did not finish within 15 minutes.'
+    do {
+        $username = (Read-Host '  Linux username').Trim()
+        if ($username -notmatch '^[a-z_][a-z0-9_-]*[$]?$') {
+            Write-Host '  [ERROR] Invalid username. Use lowercase letters, numbers, _ or -.'
+            $username = ''
         }
-        Start-Sleep -Seconds 2
+    } while (-not $username)
+
+    $passwordSecure = Read-Host '  Linux password' -AsSecureString
+    $password = Convert-SecureStringToPlainText -SecureString $passwordSecure
+    $passwordSecure = $null
+
+    if ([string]::IsNullOrEmpty($password)) {
+        throw 'A non-empty Linux password is required.'
     }
 
-    if ($process.ExitCode -ne 0) {
-        throw "Ubuntu first-run exited with code $($process.ExitCode)."
+    $setupScript = @'
+set -euo pipefail
+TARGET_USER="$(printf '%s' "$1" | base64 -d)"
+PASSWORD_B64="$(cat)"
+PASSWORD="$(printf '%s' "$PASSWORD_B64" | base64 -d)"
+unset PASSWORD_B64
+
+if id "$TARGET_USER" >/dev/null 2>&1; then
+    echo "  [wsl] Existing Linux user detected: $TARGET_USER"
+else
+    useradd --create-home --shell /bin/bash "$TARGET_USER"
+    usermod -aG sudo "$TARGET_USER"
+fi
+
+printf '%s:%s\n' "$TARGET_USER" "$PASSWORD" | chpasswd
+unset PASSWORD
+
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+if [ -z "$TARGET_HOME" ]; then
+    echo "[error] Could not determine Linux home directory."
+    exit 10
+fi
+
+cat > /etc/wsl.conf <<EOF
+[boot]
+systemd=true
+
+[user]
+default=$TARGET_USER
+EOF
+
+chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME"
+
+echo "  [wsl] Linux user created: $TARGET_USER"
+echo "  [wsl] Default WSL user configured: $TARGET_USER"
+echo "  [wsl] systemd enabled."
+'@
+
+    $scriptB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($setupScript))
+    $usernameB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($username))
+    $passwordB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($password))
+    $password = $null
+
+    # Run WSL directly from this installer window. No separate Ubuntu window is opened.
+    $command = "echo '$scriptB64' | base64 -d | bash -s -- '$usernameB64'"
+    $passwordB64 | & wsl.exe -d $Distribution -u root -- bash -lc $command
+    $rc = $LASTEXITCODE
+    $passwordB64 = $null
+
+    if ($rc -ne 0) {
+        $hexRc = ('0x{0:X8}' -f ([uint32]$rc))
+        throw "Ubuntu first-run account setup failed with code $rc ($hexRc)."
     }
 
-    # OOBE is complete now, so it is safe to query the distro.
     $existingUser = Get-NormalWslUser -Distro $Distribution
     if (-not $existingUser) {
-        throw 'Ubuntu first-run completed, but no normal Linux user account was detected.'
+        throw 'Ubuntu account setup completed, but no normal Linux user account was detected.'
     }
 
-    Write-Host "  [OK] Ubuntu user created: $existingUser"
+    if ($existingUser -ne $username) {
+        throw "Ubuntu account setup created '$existingUser' instead of '$username'."
+    }
+
+    Write-Host "  [OK] Ubuntu user initialized: $existingUser"
+    Write-Host '  [OK] Installer will continue automatically.'
     exit 0
 }
 catch {
-    Write-Host "[ERROR] Ubuntu first-run initialization failed: $($_.Exception.Message)"
+    $password = $null
+    $passwordSecure = $null
+    $passwordB64 = $null
+    Write-Host "[ERROR] Ubuntu first-run user initialization failed: $($_.Exception.Message)"
     exit 1
 }
-
 PS1
 echo "  [ok] initialize-wsl-user.ps1"
 
@@ -1988,7 +2053,7 @@ rem handles systems where WSL status is available only after a distro exists.
 wsl.exe --list --quiet >nul 2>&1
 if not errorlevel 1 goto :wsl_already_ready
 
-echo   WSL command is present but the WSL runtime is not ready.
+echo   [INFO] WSL runtime is not ready yet.
 echo   Installing the bundled WSL MSI...
 msiexec.exe /i "%WSL_MSI%" /passive /norestart
 set "WSL_MSI_RC=%errorlevel%"
@@ -2525,9 +2590,6 @@ if 'validate-offline.ps1' not in normalized_bat_text or 'manage-wsl-features.ps1
 
 if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text or 'initialize-wsl-user.ps1' not in normalized_bat_text or 'install-wsl-docker-engine.ps1' not in normalized_bat_text or 'restore-wsl-project.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
-if 'Start-Process' not in initialize_wsl_user_text or 'getent passwd' not in initialize_wsl_user_text or 'Waiting for OOBE command to complete' not in initialize_wsl_user_text:
-    raise SystemExit('Generated WSL user initialization validation failed: OOBE-safe first-run flow is missing.')
-
 def find_label_line(text, label):
     match = re.search(rf'(?m)^:{re.escape(label)}\s*$', text)
     return match.start() if match else -1
@@ -2572,8 +2634,18 @@ if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restar
 if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wait_docker_text or 'TimeoutSeconds' not in wait_docker_text:
     raise SystemExit('Generated Docker install waiter validation failed.')
 
-if 'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or 'The password is used only by Ubuntu and is never stored by DevBox Lite.' not in initialize_wsl_user_text or 'Get-NormalWslUser' not in initialize_wsl_user_text:
-    raise SystemExit('Generated Ubuntu first-run helper validation failed.')
+if (
+        'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or
+        'The account will be created in this installer window.' not in initialize_wsl_user_text or
+        'You do not need to open Ubuntu or type exit.' not in initialize_wsl_user_text or
+        'Installer will continue automatically.' not in initialize_wsl_user_text or
+        'Read-Host' not in initialize_wsl_user_text or
+        'chpasswd' not in initialize_wsl_user_text or
+        'wsl.exe -d $Distribution -u root' not in initialize_wsl_user_text or
+        'Start-Process -FilePath' in initialize_wsl_user_text or
+        'A separate Ubuntu terminal will open now.' in initialize_wsl_user_text
+):
+    raise SystemExit('Generated Ubuntu first-run helper validation failed: first-run must stay in the installer window and continue automatically.')
 
 if ('systemd=true' not in install_engine_sh_text or
         'wsl-engine' not in install_engine_sh_text or
