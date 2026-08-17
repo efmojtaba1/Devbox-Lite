@@ -551,145 +551,200 @@ echo "  [ok] Docker Desktop installer verified."
 echo ""
 echo "[export] Preparing offline Docker Engine for Ubuntu WSL..."
 
+command -v docker >/dev/null 2>&1 || {
+    echo "[error] Docker is required on the export machine to build the exact Ubuntu 24.04 package environment."
+    exit 1
+}
+
 DOCKER_ENGINE_DIR="$BUNDLE_DIR/docker-engine"
 DOCKER_ENGINE_DEB_DIR="$DOCKER_ENGINE_DIR/debs"
 DOCKER_ENGINE_META="$DOCKER_ENGINE_DIR/packages.txt"
-mkdir -p "$DOCKER_ENGINE_DEB_DIR/partial"
+DOCKER_ENGINE_WORK_DIR="$DOCKER_ENGINE_DIR/.resolver"
+DOCKER_ENGINE_BASE_IMAGE="devbox-lite-ubuntu-24.04-resolver:latest"
+mkdir -p "$DOCKER_ENGINE_DEB_DIR"
+rm -rf "$DOCKER_ENGINE_WORK_DIR"
+mkdir -p "$DOCKER_ENGINE_WORK_DIR"
+find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' -delete
 
-command -v sudo >/dev/null 2>&1 || {
-    echo "[error] sudo is required on the export machine to resolve Ubuntu/Docker Engine package dependencies."
+# IMPORTANT:
+# Resolve Docker Engine dependencies inside the EXACT Ubuntu 24.04 WSL rootfs
+# that will be installed on the destination. Resolving dependencies from the
+# export host is unsafe because its installed libc/base-files versions can be
+# newer than the destination WSL image.
+if [ ! -s "$UBUNTU_WSL" ]; then
+    echo "[error] Ubuntu 24.04 WSL package is missing before Docker dependency resolution."
     exit 1
-  }
+fi
 
-  APT_TMP_DIR="$(mktemp -d)"
-  DOCKER_SOURCE_FILE="/etc/apt/sources.list.d/devbox-lite-docker-engine.sources"
-  DOCKER_KEY_FILE="/etc/apt/keyrings/devbox-lite-docker-engine.asc"
+if ! tar -tf "$UBUNTU_WSL" >/dev/null 2>&1; then
+    echo "[error] Ubuntu 24.04 WSL package is not a valid tar-compatible root filesystem."
+    exit 1
+fi
 
-  cleanup_docker_engine_apt() {
-    sudo rm -f "$DOCKER_SOURCE_FILE" "$DOCKER_KEY_FILE" >/dev/null 2>&1 || true
-    rm -rf "$APT_TMP_DIR" >/dev/null 2>&1 || true
-  }
-  trap cleanup_docker_engine_apt EXIT
+echo "  [info] Importing the exact Ubuntu 24.04 WSL rootfs for dependency resolution..."
+docker rm -f devbox-lite-ubuntu-24.04-resolver >/dev/null 2>&1 || true
+docker rmi -f "$DOCKER_ENGINE_BASE_IMAGE" >/dev/null 2>&1 || true
 
-  if ! sudo test -f "$DOCKER_KEY_FILE"; then
-    sudo install -d -m 0755 /etc/apt/keyrings
-    curl -fsSL --retry 3 --retry-delay 2 "$DOCKER_ENGINE_GPG_URL" | sudo tee "$DOCKER_KEY_FILE" >/dev/null
-    sudo chmod a+r "$DOCKER_KEY_FILE"
-  fi
+docker import "$UBUNTU_WSL" "$DOCKER_ENGINE_BASE_IMAGE" >/dev/null
 
-  if ! sudo test -f "$DOCKER_SOURCE_FILE"; then
-    sudo tee "$DOCKER_SOURCE_FILE" >/dev/null <<EOF
+# Export the package files through a bind-mounted directory. The resolver
+# container is temporary and is removed after package collection.
+cat > "$DOCKER_ENGINE_WORK_DIR/resolve.sh" <<'RESOLVER'
+#!/usr/bin/env bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+export LC_ALL=C
+
+OUT_DIR="/out"
+REPO_URL="https://download.docker.com/linux/ubuntu"
+KEY_FILE="/etc/apt/keyrings/devbox-lite-docker-engine.asc"
+SOURCE_FILE="/etc/apt/sources.list.d/devbox-lite-docker-engine.sources"
+
+printf '%s\n' '  [resolver] Updating Ubuntu 24.04 package metadata...'
+apt-get update -qq
+apt-get install -y --no-install-recommends ca-certificates curl gnupg >/dev/null
+
+install -d -m 0755 /etc/apt/keyrings
+curl -fsSL --retry 5 --retry-delay 2 "$REPO_URL/gpg" -o "$KEY_FILE"
+chmod a+r "$KEY_FILE"
+
+cat > "$SOURCE_FILE" <<EOF
 Types: deb
-URIs: $DOCKER_ENGINE_REPO
+URIs: $REPO_URL
 Suites: noble
 Components: stable
 Architectures: amd64
-Signed-By: $DOCKER_KEY_FILE
+Signed-By: $KEY_FILE
 EOF
-  fi
 
-  echo "  [info] Resolving Docker Engine packages and complete offline dependencies..."
-  sudo apt-get update -qq
+apt-get update -qq
 
-  # IMPORTANT:
-  # apt-get --download-only only downloads dependencies that APT decides
-  # need installation. If a dependency is already installed on the EXPORT
-  # machine, it may not be downloaded at all. That makes the resulting
-  # bundle incomplete for a clean/offline Ubuntu installation.
-  #
-  # Build the complete Depends/Pre-Depends closure first, then explicitly
-  # request every package with --reinstall so that every required .deb is
-  # copied into the offline bundle regardless of the EXPORT machine state.
-  mapfile -t RESOLVED_ENGINE_PACKAGES < <(
-    {
-      printf '%s\n' "${DOCKER_ENGINE_PACKAGES[@]}"
-      apt-cache depends \
-        --recurse \
-        --no-recommends \
-        --no-suggests \
-        --no-conflicts \
-        --no-breaks \
-        --no-replaces \
-        --no-enhances \
-        "${DOCKER_ENGINE_PACKAGES[@]}" 2>/dev/null |
-        awk '
-          /^[[:space:]]+(Pre-)?Depends:/ {
-            value=$0
-            sub(/^[[:space:]]+(Pre-)?Depends:[[:space:]]*/, "", value)
-            sub(/[[:space:]].*$/, "", value)
-            gsub(/^</, "", value)
-            gsub(/>$/, "", value)
-            if (value != "") print value
-          }
-        '
-    } | awk 'NF && !seen[$0]++ { print }'
-  )
+ROOT_PACKAGES=(
+  docker-ce
+  docker-ce-cli
+  containerd.io
+  docker-buildx-plugin
+  docker-compose-plugin
+  fonts-ubuntu
+  fonts-ubuntu-console
+)
 
-  if [ "${#RESOLVED_ENGINE_PACKAGES[@]}" -eq 0 ]; then
-    echo "[error] Could not resolve the Docker Engine dependency closure."
-    exit 1
-  fi
+printf '%s\n' '  [resolver] Calculating the complete Ubuntu 24.04 dependency set...'
+apt-cache depends \
+  --recurse \
+  --no-recommends \
+  --no-suggests \
+  --no-conflicts \
+  --no-breaks \
+  --no-replaces \
+  --no-enhances \
+  "${ROOT_PACKAGES[@]}" 2>/dev/null |
+awk '
+  /^[[:space:]]+(Pre-)?Depends:/ {
+    value=$0
+    sub(/^[[:space:]]+(Pre-)?Depends:[[:space:]]*/, "", value)
+    sub(/[[:space:]].*$/, "", value)
+    gsub(/^</, "", value)
+    gsub(/>$/, "", value)
+    if (value != "") print value
+  }
+' |
+awk 'NF && !seen[$0]++ { print }' > /tmp/devbox-engine-package-list.txt
 
-  echo "  [info] Resolved ${#RESOLVED_ENGINE_PACKAGES[@]} required packages."
+{
+  printf '%s\n' "${ROOT_PACKAGES[@]}"
+  cat /tmp/devbox-engine-package-list.txt
+} | awk 'NF && !seen[$0]++ { print }' > /tmp/devbox-engine-package-list-final.txt
 
-  # Remove stale package files first. Keeping an old .deb can hide a broken
-  # dependency resolution and make the manifest appear valid while the
-  # bundle actually contains packages from a previous export.
-  find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' -delete
+mapfile -t PACKAGES < /tmp/devbox-engine-package-list-final.txt
+if [ "${#PACKAGES[@]}" -eq 0 ]; then
+  echo "[error] Could not resolve Docker Engine dependency closure inside Ubuntu 24.04."
+  exit 1
+fi
 
-  sudo apt-get \
-    -y \
-    --download-only \
-    --no-install-recommends \
-    -o Dir::Cache::archives="$DOCKER_ENGINE_DEB_DIR/" \
-    --reinstall \
-    install "${RESOLVED_ENGINE_PACKAGES[@]}"
+printf '  [resolver] Resolved %s packages.\n' "${#PACKAGES[@]}"
 
-  mapfile -t ENGINE_DEBS < <(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' | sort)
-  if [ "${#ENGINE_DEBS[@]}" -eq 0 ]; then
+# Download every required .deb, including packages that are already installed
+# in the base image. This makes the offline bundle self-contained.
+apt-get -y --download-only \
+  --no-install-recommends \
+  -o Dir::Cache::archives="$OUT_DIR/" \
+  -o APT::Keep-Downloaded-Packages=true \
+  --reinstall \
+  install "${PACKAGES[@]}"
+
+find "$OUT_DIR" -maxdepth 1 -type f -name '*.deb' -printf '%f\n' | sort
+RESOLVER
+chmod +x "$DOCKER_ENGINE_WORK_DIR/resolve.sh"
+
+echo "  [info] Downloading Docker Engine packages and all dependencies from the Ubuntu 24.04 environment..."
+docker run --rm \
+  --platform linux/amd64 \
+  -v "$DOCKER_ENGINE_DEB_DIR:/out" \
+  -v "$DOCKER_ENGINE_WORK_DIR/resolve.sh:/resolver.sh:ro" \
+  --entrypoint /bin/bash \
+  "$DOCKER_ENGINE_BASE_IMAGE" \
+  /resolver.sh
+
+# Verify that the exact Docker Engine root packages exist in the generated bundle.
+mapfile -t ENGINE_DEBS < <(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' | sort)
+if [ "${#ENGINE_DEBS[@]}" -eq 0 ]; then
     echo "[error] No Docker Engine .deb packages were downloaded."
+    docker rmi -f "$DOCKER_ENGINE_BASE_IMAGE" >/dev/null 2>&1 || true
+    rm -rf "$DOCKER_ENGINE_WORK_DIR"
     exit 1
-  fi
+fi
 
-  # Verify that every explicitly requested root package is present in the
-  # generated bundle. This catches APT resolution problems before export
-  # reaches the destination/offline installer.
-  for required_pkg in "${DOCKER_ENGINE_PACKAGES[@]}"; do
+for required_pkg in "${DOCKER_ENGINE_PACKAGES[@]}"; do
     found_pkg="0"
     for deb in "${ENGINE_DEBS[@]}"; do
-      if [ "$(dpkg-deb -f "$deb" Package 2>/dev/null || true)" = "$required_pkg" ]; then
-        found_pkg="1"
-        break
-      fi
+        if [ "$(dpkg-deb -f "$deb" Package 2>/dev/null || true)" = "$required_pkg" ]; then
+            found_pkg="1"
+            break
+        fi
     done
     if [ "$found_pkg" != "1" ]; then
-      echo "[error] Required Docker Engine package is missing from offline bundle: $required_pkg"
-      exit 1
+        echo "[error] Required Docker Engine package is missing from offline bundle: $required_pkg"
+        docker rmi -f "$DOCKER_ENGINE_BASE_IMAGE" >/dev/null 2>&1 || true
+        rm -rf "$DOCKER_ENGINE_WORK_DIR"
+        exit 1
     fi
+done
+
+# Record the Ubuntu base package versions used by the dependency resolver.
+# This provides an audit trail and makes accidental cross-release exports easy
+# to identify.
+RESOLVER_UBUNTU_VERSION="$({ docker run --rm --platform linux/amd64 "$DOCKER_ENGINE_BASE_IMAGE" bash -lc '. /etc/os-release; printf "%s|%s|%s\n" "$PRETTY_NAME" "$VERSION_ID" "$VERSION_CODENAME"'; } 2>/dev/null || true)"
+RESOLVER_LIBC_VERSION="$({ docker run --rm --platform linux/amd64 "$DOCKER_ENGINE_BASE_IMAGE" dpkg-query -W -f='${Version}' libc6; } 2>/dev/null || true)"
+RESOLVER_BASE_FILES_VERSION="$({ docker run --rm --platform linux/amd64 "$DOCKER_ENGINE_BASE_IMAGE" dpkg-query -W -f='${Version}' base-files; } 2>/dev/null || true)"
+
+{
+  echo "format_version:2"
+  echo "architecture:amd64"
+  echo "ubuntu_release:24.04"
+  echo "resolver_base:$RESOLVER_UBUNTU_VERSION"
+  echo "resolver_libc6:$RESOLVER_LIBC_VERSION"
+  echo "resolver_base_files:$RESOLVER_BASE_FILES_VERSION"
+  echo "docker_repo:$DOCKER_ENGINE_REPO"
+  echo "packages:${#ENGINE_DEBS[@]}"
+  echo ""
+  for deb in "${ENGINE_DEBS[@]}"; do
+    pkg_name="$(dpkg-deb -f "$deb" Package)"
+    pkg_version="$(dpkg-deb -f "$deb" Version)"
+    pkg_arch="$(dpkg-deb -f "$deb" Architecture)"
+    pkg_sha="$(sha256sum "$deb" | awk '{print $1}')"
+    echo "$pkg_name|$pkg_version|$pkg_arch|$(basename "$deb")|$pkg_sha"
   done
+} > "$DOCKER_ENGINE_META"
 
-  rm -rf "$DOCKER_ENGINE_DEB_DIR/partial"
-  {
-    echo "format_version:1"
-    echo "architecture:amd64"
-    echo "ubuntu_release:24.04"
-    echo "docker_repo:$DOCKER_ENGINE_REPO"
-    echo "packages:${#ENGINE_DEBS[@]}"
-    echo ""
-    for deb in "${ENGINE_DEBS[@]}"; do
-      pkg_name="$(dpkg-deb -f "$deb" Package)"
-      pkg_version="$(dpkg-deb -f "$deb" Version)"
-      pkg_arch="$(dpkg-deb -f "$deb" Architecture)"
-      pkg_sha="$(sha256sum "$deb" | awk '{print $1}')"
-      echo "$pkg_name|$pkg_version|$pkg_arch|$(basename "$deb")|$pkg_sha"
-    done
-  } > "$DOCKER_ENGINE_META"
+# The imported WSL rootfs is used only as a dependency-resolution reference.
+docker rmi -f "$DOCKER_ENGINE_BASE_IMAGE" >/dev/null 2>&1 || true
+rm -rf "$DOCKER_ENGINE_WORK_DIR"
 
-  cleanup_docker_engine_apt
-  trap - EXIT
-
-  echo "  [ok] Docker Engine package bundle prepared"
-  echo "  [info] Packages: ${#ENGINE_DEBS[@]}"
+echo "  [ok] Docker Engine package bundle prepared from the exact Ubuntu 24.04 WSL rootfs"
+echo "  [info] Packages: ${#ENGINE_DEBS[@]}"
+echo "  [info] Resolver libc6: ${RESOLVER_LIBC_VERSION:-unknown}"
+echo "  [info] Resolver base-files: ${RESOLVER_BASE_FILES_VERSION:-unknown}"
 
 # ------------------------------------------------------------
 # Docker image
@@ -2570,6 +2625,29 @@ print('  [ok] Generated PowerShell validation scripts passed')
 PY
 
 echo "  [ok] setup-offline.bat"
+
+# ------------------------------------------------------------
+# Clear Windows Mark-of-the-Web metadata from the generated offline package
+# ------------------------------------------------------------
+# Windows SmartScreen can show "Windows protected your PC" when files carry
+# the Zone.Identifier alternate data stream. Remove that metadata from the
+# package while it is still on the export machine. This does not disable
+# SmartScreen globally and does not affect unrelated files on Windows.
+if command -v powershell.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+  OUT_WIN_PATH="$(wslpath -w "$ABS_OUT" 2>/dev/null || true)"
+  if [ -n "$OUT_WIN_PATH" ]; then
+    echo ""
+    echo "[export] Clearing Windows Mark-of-the-Web metadata..."
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+      "$root = '$OUT_WIN_PATH'; Get-ChildItem -LiteralPath $root -Recurse -Force -File | Unblock-File -ErrorAction SilentlyContinue" \
+      >/dev/null 2>&1 || true
+    echo "  [ok] Mark-of-the-Web metadata cleared from generated package files"
+  else
+    echo "  [warn] Could not resolve Windows output path; SmartScreen metadata was not cleared."
+  fi
+else
+  echo "  [warn] powershell.exe/wslpath unavailable; SmartScreen metadata was not cleared."
+fi
 
 
 # ------------------------------------------------------------
