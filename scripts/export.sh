@@ -686,6 +686,12 @@ docker run --rm \
   "$DOCKER_ENGINE_BASE_IMAGE" \
   /resolver.sh
 
+# APT creates temporary cache artifacts in the output directory. They are not
+# part of the offline package and must never be shipped in devbox-data.
+rm -rf "$DOCKER_ENGINE_DEB_DIR/partial"
+find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f \
+    \( -name 'lock' -o -name 'lock.*' \) -delete
+
 # Verify that the exact Docker Engine root packages exist in the generated bundle.
 mapfile -t ENGINE_DEBS < <(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' | sort)
 if [ "${#ENGINE_DEBS[@]}" -eq 0 ]; then
