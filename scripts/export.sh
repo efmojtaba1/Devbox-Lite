@@ -556,11 +556,7 @@ DOCKER_ENGINE_DEB_DIR="$DOCKER_ENGINE_DIR/debs"
 DOCKER_ENGINE_META="$DOCKER_ENGINE_DIR/packages.txt"
 mkdir -p "$DOCKER_ENGINE_DEB_DIR/partial"
 
-if [ -s "$DOCKER_ENGINE_META" ] && compgen -G "$DOCKER_ENGINE_DEB_DIR/*.deb" > /dev/null; then
-  echo "  [ok] Existing Docker Engine package bundle"
-  echo "  [info] Packages: $(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -name '*.deb' -type f | wc -l)"
-else
-  command -v sudo >/dev/null 2>&1 || {
+command -v sudo >/dev/null 2>&1 || {
     echo "[error] sudo is required on the export machine to resolve Ubuntu/Docker Engine package dependencies."
     exit 1
   }
@@ -592,21 +588,85 @@ Signed-By: $DOCKER_KEY_FILE
 EOF
   fi
 
-  echo "  [info] Resolving Docker Engine packages and offline dependencies..."
+  echo "  [info] Resolving Docker Engine packages and complete offline dependencies..."
   sudo apt-get update -qq
+
+  # IMPORTANT:
+  # apt-get --download-only only downloads dependencies that APT decides
+  # need installation. If a dependency is already installed on the EXPORT
+  # machine, it may not be downloaded at all. That makes the resulting
+  # bundle incomplete for a clean/offline Ubuntu installation.
+  #
+  # Build the complete Depends/Pre-Depends closure first, then explicitly
+  # request every package with --reinstall so that every required .deb is
+  # copied into the offline bundle regardless of the EXPORT machine state.
+  mapfile -t RESOLVED_ENGINE_PACKAGES < <(
+    {
+      printf '%s\n' "${DOCKER_ENGINE_PACKAGES[@]}"
+      apt-cache depends \
+        --recurse \
+        --no-recommends \
+        --no-suggests \
+        --no-conflicts \
+        --no-breaks \
+        --no-replaces \
+        --no-enhances \
+        "${DOCKER_ENGINE_PACKAGES[@]}" 2>/dev/null |
+        awk '
+          /^[[:space:]]+(Pre-)?Depends:/ {
+            value=$0
+            sub(/^[[:space:]]+(Pre-)?Depends:[[:space:]]*/, "", value)
+            sub(/[[:space:]].*$/, "", value)
+            gsub(/^</, "", value)
+            gsub(/>$/, "", value)
+            if (value != "") print value
+          }
+        '
+    } | awk 'NF && !seen[$0]++ { print }'
+  )
+
+  if [ "${#RESOLVED_ENGINE_PACKAGES[@]}" -eq 0 ]; then
+    echo "[error] Could not resolve the Docker Engine dependency closure."
+    exit 1
+  fi
+
+  echo "  [info] Resolved ${#RESOLVED_ENGINE_PACKAGES[@]} required packages."
+
+  # Remove stale package files first. Keeping an old .deb can hide a broken
+  # dependency resolution and make the manifest appear valid while the
+  # bundle actually contains packages from a previous export.
+  find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' -delete
+
   sudo apt-get \
     -y \
     --download-only \
     --no-install-recommends \
     -o Dir::Cache::archives="$DOCKER_ENGINE_DEB_DIR/" \
     --reinstall \
-    install "${DOCKER_ENGINE_PACKAGES[@]}"
+    install "${RESOLVED_ENGINE_PACKAGES[@]}"
 
   mapfile -t ENGINE_DEBS < <(find "$DOCKER_ENGINE_DEB_DIR" -maxdepth 1 -type f -name '*.deb' | sort)
   if [ "${#ENGINE_DEBS[@]}" -eq 0 ]; then
     echo "[error] No Docker Engine .deb packages were downloaded."
     exit 1
   fi
+
+  # Verify that every explicitly requested root package is present in the
+  # generated bundle. This catches APT resolution problems before export
+  # reaches the destination/offline installer.
+  for required_pkg in "${DOCKER_ENGINE_PACKAGES[@]}"; do
+    found_pkg="0"
+    for deb in "${ENGINE_DEBS[@]}"; do
+      if [ "$(dpkg-deb -f "$deb" Package 2>/dev/null || true)" = "$required_pkg" ]; then
+        found_pkg="1"
+        break
+      fi
+    done
+    if [ "$found_pkg" != "1" ]; then
+      echo "[error] Required Docker Engine package is missing from offline bundle: $required_pkg"
+      exit 1
+    fi
+  done
 
   rm -rf "$DOCKER_ENGINE_DEB_DIR/partial"
   {
@@ -630,7 +690,6 @@ EOF
 
   echo "  [ok] Docker Engine package bundle prepared"
   echo "  [info] Packages: ${#ENGINE_DEBS[@]}"
-fi
 
 # ------------------------------------------------------------
 # Docker image
@@ -2273,6 +2332,17 @@ if check.replace(b"\r\n", b"").find(b"\n") != -1:
 
 print("  [ok] setup-offline.bat normalized to Windows CRLF line endings")
 PY_EOL
+
+# Validate the offline Docker Engine dependency collector itself.
+if ! grep -q 'apt-cache depends' "$0" ||
+   ! grep -q 'RESOLVED_ENGINE_PACKAGES' "$0" ||
+   ! grep -q -- '--reinstall' "$0" ||
+   ! grep -q 'Pre-.*Depends' "$0"; then
+  echo "[error] Export validation failed: complete Docker dependency collection is missing."
+  exit 1
+fi
+
+echo "  [ok] Docker Engine dependency collector validation passed"
 
 # Validate generated files before package creation continues.
 python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
