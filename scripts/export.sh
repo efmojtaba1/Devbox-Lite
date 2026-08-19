@@ -1464,9 +1464,21 @@ echo "  [wsl] systemd enabled."
         throw "Ubuntu first-run account setup failed with code $rc ($hexRc)."
     }
 
-    $existingUser = Get-NormalWslUser -Distro $Distribution
+    Write-Host '  [INFO] Waiting for Ubuntu user database synchronization...'
+    $existingUser = ''
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        Start-Sleep -Seconds 2
+        $existingUser = Get-NormalWslUser -Distro $Distribution
+        if ($existingUser) {
+            break
+        }
+        Write-Host "  [INFO] Checking Ubuntu user... attempt $attempt/10"
+    }
+
     if (-not $existingUser) {
-        throw 'Ubuntu account setup completed, but no normal Linux user account was detected.'
+        Write-Host '  [DEBUG] Current Ubuntu passwd entries:'
+        & wsl.exe -d $Distribution -u root -- cat /etc/passwd 2>$null | Write-Host
+        throw 'Ubuntu account setup completed, but no normal Linux user account was detected after retry.'
     }
 
     if ($existingUser -ne $username) {
