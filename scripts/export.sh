@@ -822,6 +822,26 @@ for logical_volume in "${VOLUMES[@]}"; do
 done
 
 # ------------------------------------------------------------
+# Normalize project ownership before creating archives
+# ------------------------------------------------------------
+echo ""
+echo "[export] Normalizing project ownership..."
+
+EXPORT_USER="${SUDO_USER:-$USER}"
+if ! id "$EXPORT_USER" >/dev/null 2>&1; then
+  echo "[error] Current export user was not found: $EXPORT_USER"
+  exit 1
+fi
+
+if ! sudo chown -R -- "$EXPORT_USER:$EXPORT_USER" "$PROJECT_ROOT"; then
+  echo "[error] Could not assign project ownership to: $EXPORT_USER"
+  echo "        Project: $PROJECT_ROOT"
+  exit 1
+fi
+
+echo "  [ok] Project ownership normalized: $EXPORT_USER"
+
+# ------------------------------------------------------------
 # Project source
 # ------------------------------------------------------------
 echo ""
@@ -829,7 +849,7 @@ echo "[export] Packaging project source code..."
 
 rm -f "$BUNDLE_DIR/project-src.tar.gz"
 
-tar \
+if ! tar \
   --exclude='.git' \
   --exclude='node_modules' \
   --exclude='vendor' \
@@ -837,10 +857,12 @@ tar \
   --exclude='devbox-offline' \
   --exclude='out' \
   --exclude='backups' \
-  --exclude='scripts/import.ps1' \
   --exclude='prebuilt' \
   -czf "$BUNDLE_DIR/project-src.tar.gz" \
-  -C "$PROJECT_ROOT" .
+  -C "$PROJECT_ROOT" .; then
+  echo "[error] Failed to create project-src.tar.gz after ownership normalization."
+  exit 1
+fi
 
 if [ ! -s "$BUNDLE_DIR/project-src.tar.gz" ]; then
   echo "[error] project-src.tar.gz was not created."
@@ -861,7 +883,11 @@ if [ -d "$PROJECT_ROOT/prebuilt" ]; then
   echo ""
   echo "[export] Packaging prebuilt directory..."
   rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
-  tar czf "$BUNDLE_DIR/prebuilt.tar.gz" -C "$PROJECT_ROOT" prebuilt
+
+  if ! tar czf "$BUNDLE_DIR/prebuilt.tar.gz" -C "$PROJECT_ROOT" prebuilt; then
+    echo "[error] Failed to create prebuilt.tar.gz after ownership normalization."
+    exit 1
+  fi
 
   PREBUILT_SHA256="$(sha256sum "$BUNDLE_DIR/prebuilt.tar.gz" | awk '{print $1}')"
   echo "  [ok] prebuilt.tar.gz"
@@ -880,444 +906,20 @@ echo "[export] Copying offline installer scripts..."
 rm -rf "$BUNDLE_DIR/scripts"
 mkdir -p "$BUNDLE_DIR/scripts"
 
-cat > "$BUNDLE_DIR/scripts/import.ps1" <<'PS1'
-[CmdletBinding()]
-param(
-    [string]$InputPath,
-    [string]$TargetProj = "D:\devbox-project",
-    [string]$Distribution = "Ubuntu-24.04"
-)
+cp "$PROJECT_ROOT/scripts/import.ps1" "$BUNDLE_DIR/scripts/import.ps1"
 
-$ErrorActionPreference = "Stop"
-
-function Write-Info([string]$Message) { Write-Host $Message -ForegroundColor Cyan }
-function Write-Ok([string]$Message)   { Write-Host $Message -ForegroundColor Green }
-function Write-Warn([string]$Message) { Write-Host $Message -ForegroundColor Yellow }
-function Fail([string]$Message) {
-    Write-Host "[ERROR] $Message" -ForegroundColor Red
-    throw $Message
-}
-
-function Get-Sha256([string]$Path) {
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        Fail "File not found for checksum verification: $Path"
-    }
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $stream = [System.IO.File]::OpenRead($Path)
-        try { $hash = $sha256.ComputeHash($stream) }
-        finally { $stream.Dispose() }
-    }
-    finally { $sha256.Dispose() }
-    return ([System.BitConverter]::ToString($hash) -replace '-', '').ToLowerInvariant()
-}
-
-function Verify-Sha256([string]$Path, [string]$Expected) {
-    if (-not $Expected) { return }
-    $actual = Get-Sha256 $Path
-    $expectedNormalized = $Expected.ToLowerInvariant()
-    if ($actual -ne $expectedNormalized) {
-        Fail "SHA256 mismatch for $(Split-Path $Path -Leaf). Expected $expectedNormalized but got $actual"
-    }
-    Write-Ok "  [OK] SHA256 $(Split-Path $Path -Leaf)"
-}
-
-function Invoke-WslRoot([string]$BashCommand) {
-    & wsl.exe -d $Distribution -u root -- bash -lc $BashCommand
-    $rc = $LASTEXITCODE
-    if ($rc -ne 0) {
-        throw "WSL command failed with exit code $rc."
-    }
-}
-
-function Invoke-WslDocker([string]$DockerArguments) {
-    # The WSL Ubuntu Docker Engine is intentionally separate from Docker Desktop.
-    # All operations in this function target the dedicated local socket.
-    $cmd = 'export DOCKER_HOST=unix:///run/devbox-docker.sock; docker ' + $DockerArguments
-    & wsl.exe -d $Distribution -u root -- bash -lc $cmd
-    $rc = $LASTEXITCODE
-    if ($rc -ne 0) {
-        throw "WSL Docker Engine command failed with exit code ${rc}: docker $DockerArguments"
-    }
-}
-
-function Convert-WindowsPathToWsl([string]$WindowsPath) {
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($WindowsPath))
-    $result = & wsl.exe -d $Distribution -u root -- bash -lc "p=`$(printf '%s' '$encoded' | base64 -d); wslpath -u `"$p`""
-    $rc = $LASTEXITCODE
-    if ($rc -ne 0) { throw "Could not convert Windows path to WSL path: $WindowsPath" }
-    return (($result | Out-String).Trim())
-}
-
-function Get-WslNormalUser {
-    # Resolve and validate the normal Linux account entirely inside WSL, then
-    # return exactly one line to PowerShell. The command is base64-encoded so
-    # Windows quoting cannot alter the bash script.
-    $probe = @'
-set -eu
-user=""
-if [ -f /etc/wsl.conf ]; then
-  user="$(awk '
-    BEGIN { section="" }
-    /^\[user\][[:space:]]*$/ { section="user"; next }
-    /^\[/ { section="" }
-    section == "user" && $0 ~ /^[[:space:]]*default[[:space:]]*=/ {
-      sub(/^[[:space:]]*default[[:space:]]*=[[:space:]]*/, "")
-      gsub(/[[:space:]]/, "")
-      print
-      exit
-    }
-  ' /etc/wsl.conf)"
-fi
-
-if [ -n "$user" ] && getent passwd "$user" >/dev/null 2>&1; then
-  :
-else
-  user="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')"
-fi
-
-if [ -z "$user" ]; then
-  echo "[error] No normal Ubuntu user account was found (UID 1000+)." >&2
-  exit 2
-fi
-
-entry="$(getent passwd "$user" || true)"
-uid="$(printf '%s\n' "$entry" | cut -d: -f3)"
-shell="$(printf '%s\n' "$entry" | cut -d: -f7)"
-home="$(printf '%s\n' "$entry" | cut -d: -f6)"
-
-case "$uid" in
-  ''|*[!0-9]*) echo "[error] Invalid UID for WSL user: $user" >&2; exit 3 ;;
-esac
-
-if [ "$uid" -lt 1000 ] || [ "$uid" -ge 60000 ]; then
-  echo "[error] WSL account is not a normal user: $user" >&2
-  exit 4
-fi
-
-case "$shell" in
-  */nologin|*/false) echo "[error] WSL account is not an interactive user: $user" >&2; exit 5 ;;
-esac
-
-if [ -z "$home" ] || [ ! -d "$home" ]; then
-  echo "[error] WSL user home directory is missing: $home" >&2
-  exit 6
-fi
-
-printf '%s\n' "$user"
-'@
-
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($probe))
-    $result = & wsl.exe -d $Distribution -u root -- bash -lc "echo '$encoded' | base64 -d | bash -s" 2>$null
-    $rc = $LASTEXITCODE
-    if ($rc -ne 0) {
-        throw "Could not determine the Ubuntu normal user (exit code ${rc})."
-    }
-
-    $user = (($result | Where-Object { $_ -and $_.Trim() } | Select-Object -First 1) -as [string]).Trim()
-    if (-not $user -or $user -notmatch '^[a-z_][a-z0-9_-]*$') {
-        throw "No normal Ubuntu user account was found in /etc/wsl.conf or /etc/passwd."
-    }
-
-    return $user
-}
-
-function Get-WslUserHome([string]$UserName) {
-    $encodedUser = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($UserName))
-    $result = & wsl.exe -d $Distribution -u root -- bash -lc "u=`$(printf '%s' '$encodedUser' | base64 -d); getent passwd `"`$u`" | cut -d: -f6"
-    $rc = $LASTEXITCODE
-    if ($rc -ne 0) { throw "Could not resolve home directory for WSL user: $UserName (exit code ${rc})" }
-    $home = (($result | Select-Object -First 1) -as [string]).Trim()
-    if (-not $home) { throw "Could not resolve home directory for WSL user: $UserName" }
-    return $home
-}
-
-Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host " DevBox Lite - Dual Docker Restore" -ForegroundColor Cyan
-Write-Host "=========================================" -ForegroundColor Cyan
-
-if (-not $InputPath) {
-    $InputPath = Join-Path (Get-Location).Path ".."
-}
-
-$InputPath = [System.IO.Path]::GetFullPath($InputPath)
-$TargetProj = [System.IO.Path]::GetFullPath($TargetProj)
-
-if (-not (Test-Path -LiteralPath $InputPath -PathType Container)) {
-    Fail "Offline package path not found: $InputPath"
-}
-if (-not (Get-Command docker.exe -ErrorAction SilentlyContinue)) {
-    Fail "docker.exe is not available. Docker Desktop must be installed."
-}
-if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-    Fail "wsl.exe is not available."
-}
-
-& wsl.exe -d $Distribution -u root -- true
-if ($LASTEXITCODE -ne 0) {
-    Fail "WSL distribution '$Distribution' is not ready."
-}
-
-try {
-    docker.exe version *> $null
-    if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop daemon is not ready." }
-} catch {
-    Fail "Docker Desktop daemon is not ready."
-}
-
-try {
-    Invoke-WslDocker "version >/dev/null"
-} catch {
-    Fail "Docker Engine inside '$Distribution' is not ready on /run/devbox-docker.sock."
-}
-
-$ManifestPath = Join-Path $InputPath "manifest.txt"
-if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
-    Fail "manifest.txt not found: $ManifestPath"
-}
-
-$Manifest = @{}
-$Volumes = [ordered]@{}
-$section = ""
-foreach ($line in Get-Content -LiteralPath $ManifestPath) {
-    $trimmed = $line.Trim()
-    if (-not $trimmed) { continue }
-    if ($trimmed -match '^\[(.+)\]$') {
-        $section = $Matches[1]
-        continue
-    }
-    if ($trimmed -match '^([^:]+):(.*)$') {
-        $key = $Matches[1]
-        $value = $Matches[2]
-        if ($section -eq "volumes") { $Volumes[$key] = $value }
-        else { $Manifest[$key] = $value }
-    }
-}
-
-$ImageName = $Manifest["image"]
-$ComposeProject = $Manifest["compose_project"]
-if (-not $ImageName) { Fail "Image name is missing from manifest.txt" }
-if (-not $ComposeProject) { $ComposeProject = "devbox" }
-
-if (-not (Test-Path -LiteralPath $TargetProj)) {
-    New-Item -ItemType Directory -Force -Path $TargetProj | Out-Null
-}
-
-Write-Info "[restore] Package : $InputPath"
-Write-Info "[restore] Windows : $TargetProj"
-Write-Info "[restore] WSL     : /home/<user>/projects/DevBox-Lite"
-Write-Info "[restore] Image   : $ImageName"
-Write-Info "[restore] Compose : $ComposeProject"
-
-$ImageTar = Join-Path $InputPath "image.tar"
-$ProjectSrcTar = Join-Path $InputPath "project-src.tar.gz"
-$PrebuiltTar = Join-Path $InputPath "prebuilt.tar.gz"
-$VolumesPath = Join-Path $InputPath "volumes"
-
-Write-Info "[1/7] Verifying package archives..."
-Verify-Sha256 $ImageTar $Manifest["image_sha256"]
-Verify-Sha256 $ProjectSrcTar $Manifest["project-src.tar.gz"]
-foreach ($logical in $Volumes.Keys) {
-    $archive = Join-Path $VolumesPath "vol-$logical.tar.gz"
-    if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
-        Fail "Volume archive is missing: $archive"
-    }
-    Verify-Sha256 $archive $Manifest["volumes/vol-$logical.tar.gz"]
-}
-if (Test-Path -LiteralPath $PrebuiltTar -PathType Leaf) {
-    Verify-Sha256 $PrebuiltTar $Manifest["prebuilt.tar.gz"]
-}
-
-Write-Info "[2/7] Restoring project and prebuilt on Windows..."
-if (Test-Path -LiteralPath $TargetProj) {
-    Get-ChildItem -LiteralPath $TargetProj -Force -ErrorAction SilentlyContinue |
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-}
-New-Item -ItemType Directory -Force -Path $TargetProj | Out-Null
-
-tar.exe -xzf $ProjectSrcTar -C $TargetProj
-if ($LASTEXITCODE -ne 0) { Fail "Failed to extract project-src.tar.gz on Windows." }
-
-if (Test-Path -LiteralPath $PrebuiltTar -PathType Leaf) {
-    tar.exe -xzf $PrebuiltTar -C $TargetProj
-    if ($LASTEXITCODE -ne 0) { Fail "Failed to extract prebuilt.tar.gz on Windows." }
-}
-if (-not (Test-Path (Join-Path $TargetProj "docker\compose\docker-compose.yml"))) {
-    Fail "Windows project restore did not produce docker/compose/docker-compose.yml"
-}
-if ((Test-Path -LiteralPath $PrebuiltTar) -and -not (Test-Path (Join-Path $TargetProj "prebuilt"))) {
-    Fail "Windows prebuilt restore did not produce prebuilt directory."
-}
-Write-Ok "  [OK] Windows project: $TargetProj"
-
-Write-Info "[3/7] Restoring project and prebuilt inside WSL..."
-$wslUser = Get-WslNormalUser
-$wslHome = Get-WslUserHome $wslUser
-$wslProject = "$wslHome/projects/DevBox-Lite"
-
-$projectTarWsl = Convert-WindowsPathToWsl $ProjectSrcTar
-$prebuiltTarWsl = if (Test-Path -LiteralPath $PrebuiltTar) { Convert-WindowsPathToWsl $PrebuiltTar } else { "" }
-
-$restoreWslProject = @'
-set -euo pipefail
-TARGET_USER="$1"
-TARGET_HOME="$2"
-PROJECT="$TARGET_HOME/projects/DevBox-Lite"
-PROJECT_TAR="$3"
-PREBUILT_TAR="${4:-}"
-
-rm -rf "$PROJECT"
-mkdir -p "$TARGET_HOME/projects" "$PROJECT"
-tar -xzf "$PROJECT_TAR" -C "$PROJECT"
-
-if [ -n "$PREBUILT_TAR" ] && [ -f "$PREBUILT_TAR" ]; then
-  tar -xzf "$PREBUILT_TAR" -C "$PROJECT"
-fi
-
-chown -R "$TARGET_USER":"$TARGET_USER" "$PROJECT"
-test -f "$PROJECT/docker/compose/docker-compose.yml"
-if [ -n "$PREBUILT_TAR" ]; then
-  test -d "$PROJECT/prebuilt"
-fi
-printf '%s\n' "$PROJECT"
-'@
-$scriptB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($restoreWslProject))
-$args = @(
-    "-d", $Distribution, "-u", "root", "--", "bash", "-lc",
-    "printf '%s' '$scriptB64' | base64 -d | bash -s -- '$wslUser' '$wslHome' '$projectTarWsl' '$prebuiltTarWsl'"
-)
-& wsl.exe @args
-if ($LASTEXITCODE -ne 0) { Fail "Failed to restore project/prebuilt inside WSL." }
-Write-Ok "  [OK] WSL project: \\wsl.localhost\$Distribution$($wslProject -replace '/','\')"
-
-Write-Info "[4/7] Loading image into Docker Desktop..."
-docker.exe load -i $ImageTar
-if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop image load failed." }
-docker.exe image inspect $ImageName *> $null
-if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop does not contain image '$ImageName' after load." }
-Write-Ok "  [OK] Docker Desktop image: $ImageName"
-
-Write-Info "[5/7] Loading image into WSL Docker Engine..."
-$encodedTar = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Convert-WindowsPathToWsl $ImageTar)))
-Invoke-WslRoot "image_wsl_tar_path=`$(printf '%s' '$encodedTar' | base64 -d); test -f `"`$image_wsl_tar_path`""
-$imageWslPath = Convert-WindowsPathToWsl $ImageTar
-$loadCmd = "export DOCKER_HOST=unix:///run/devbox-docker.sock; docker load -i '$imageWslPath'"
-Invoke-WslRoot $loadCmd
-Invoke-WslDocker "image inspect '$ImageName' >/dev/null"
-Write-Ok "  [OK] WSL Docker Engine image: $ImageName"
-
-Write-Info "[6/7] Restoring Docker volumes into both daemons..."
-$tempRoot = "/tmp/devbox-lite-restore"
-Invoke-WslRoot "rm -rf '$tempRoot'; mkdir -p '$tempRoot'"
-
-foreach ($logical in $Volumes.Keys) {
-    $volumeName = [string]$Volumes[$logical]
-    if (-not $volumeName) { Fail "Empty Docker volume name for logical volume '$logical'" }
-
-    $archive = Join-Path $VolumesPath "vol-$logical.tar.gz"
-
-    # Docker Desktop volume.
-    $inspect = & docker.exe volume inspect $volumeName 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        & docker.exe volume create $volumeName *> $null
-        if ($LASTEXITCODE -ne 0) { Fail "Could not create Docker Desktop volume '$volumeName'" }
-    }
-    $archiveName = Split-Path $archive -Leaf
-    & docker.exe run --rm `
-        -v "${volumeName}:/restore-target" `
-        -v "${VolumesPath}:/backup:ro" `
-        $ImageName `
-        sh -c "rm -rf /restore-target/* /restore-target/.[!.]* /restore-target/..?* 2>/dev/null || true; tar xzf /backup/$archiveName -C /restore-target"
-    if ($LASTEXITCODE -ne 0) { Fail "Failed to restore Docker Desktop volume '$volumeName'" }
-
-    # WSL Docker Engine volume.
-    $archiveWsl = Convert-WindowsPathToWsl $archive
-    $stage = "$tempRoot/$archiveName"
-    Invoke-WslRoot "cp -f '$archiveWsl' '$stage'"
-    Invoke-WslDocker "volume inspect '$volumeName' >/dev/null 2>&1 || docker volume create '$volumeName' >/dev/null"
-    Invoke-WslDocker "run --rm -v '${volumeName}:/restore-target' -v '${tempRoot}:/backup:ro' '$ImageName' sh -c `"rm -rf /restore-target/* /restore-target/.[!.]* /restore-target/..?* 2>/dev/null || true; tar xzf /backup/$archiveName -C /restore-target`""
-    Invoke-WslRoot "rm -f '$stage'"
-
-    Write-Ok "  [OK] $logical -> Desktop + WSL Engine: $volumeName"
-}
-Invoke-WslRoot "rm -rf '$tempRoot'"
-
-Write-Info "[7/7] Verifying both Docker daemons and project trees..."
-
-docker.exe image inspect $ImageName *> $null
-if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop image verification failed." }
-
-foreach ($logical in $Volumes.Keys) {
-    $volumeName = [string]$Volumes[$logical]
-    docker.exe volume inspect $volumeName *> $null
-    if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop volume verification failed: $volumeName" }
-}
-if (-not (Test-Path (Join-Path $TargetProj "docker\compose\docker-compose.yml"))) {
-    Fail "Windows project verification failed."
-}
-if (Test-Path -LiteralPath $PrebuiltTar) {
-    if (-not (Test-Path (Join-Path $TargetProj "prebuilt"))) {
-        Fail "Windows prebuilt verification failed."
-    }
-}
-
-Invoke-WslDocker "image inspect '$ImageName' >/dev/null"
-foreach ($logical in $Volumes.Keys) {
-    $volumeName = [string]$Volumes[$logical]
-    Invoke-WslDocker "volume inspect '$volumeName' >/dev/null"
-}
-Invoke-WslRoot "test -f '$wslProject/docker/compose/docker-compose.yml'"
-if (Test-Path -LiteralPath $PrebuiltTar) {
-    Invoke-WslRoot "test -d '$wslProject/prebuilt'"
-}
-
-# Start each Compose project against its own daemon.
-$ComposeRelative = $Manifest["compose_file"]
-if (-not $ComposeRelative) { $ComposeRelative = "docker/compose/docker-compose.yml" }
-$ComposeFileWin = Join-Path $TargetProj ($ComposeRelative -replace '/', '\')
-
-Write-Info "[start] Starting DevBox on Docker Desktop..."
-& docker.exe compose -p $ComposeProject -f $ComposeFileWin up -d
-if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop docker compose up failed." }
-
-Write-Info "[start] Starting DevBox on WSL Docker Engine..."
-$composeFileWsl = "$wslProject/$($ComposeRelative -replace '\\','/')"
-$composeProjectEsc = $ComposeProject.Replace("'","'\''")
-$composeFileEsc = $composeFileWsl.Replace("'","'\''")
-Invoke-WslDocker "compose -p '$composeProjectEsc' -f '$composeFileEsc' up -d"
-
-Write-Ok "  [OK] Docker Desktop Compose started."
-Write-Ok "  [OK] WSL Docker Engine Compose started."
-
-Write-Host ""
-Write-Host "=========================================" -ForegroundColor Green
-Write-Host " DevBox Lite Dual Restore Completed" -ForegroundColor Green
-Write-Host "=========================================" -ForegroundColor Green
-Write-Host "Windows project : $TargetProj"
-Write-Host "WSL project     : \\wsl.localhost\$Distribution$($wslProject -replace '/','\')"
-Write-Host "Image           : $ImageName"
-Write-Host "Desktop daemon  : loaded + verified"
-Write-Host "WSL daemon      : loaded + verified"
-Write-Host "Volumes         : loaded + verified in both daemons"
-Write-Host "Prebuilt        : restored in Windows and WSL"
-Write-Host ""
-PS1
-
-if [ ! -s "$BUNDLE_DIR/scripts/import.ps1" ]; then
-  echo "[error] Refactored scripts/import.ps1 was not generated."
+if [ ! -f "$PROJECT_ROOT/scripts/import.ps1" ]; then
+  echo "[error] scripts/import.ps1 not found in project."
   exit 1
 fi
 
-if ! grep -q "docker.exe load -i" "$BUNDLE_DIR/scripts/import.ps1" ||
-   ! grep -q "DOCKER_HOST=unix:///run/devbox-docker.sock" "$BUNDLE_DIR/scripts/import.ps1" ||
-   ! grep -q "docker load -i" "$BUNDLE_DIR/scripts/import.ps1" ||
-   ! grep -q "prebuilt" "$BUNDLE_DIR/scripts/import.ps1" ||
-   ! grep -q "projects/DevBox-Lite" "$BUNDLE_DIR/scripts/import.ps1"; then
-  echo "[error] Refactored import.ps1 dual-daemon restore validation failed."
+if grep -q "Get-FileHash" "$PROJECT_ROOT/scripts/import.ps1"; then
+  echo "[error] scripts/import.ps1 still depends on Get-FileHash."
+  echo "        Replace it with the portable .NET SHA256 implementation before exporting."
   exit 1
 fi
 
-echo "  [ok] import.ps1 (dual Docker daemon restore)"
+echo "  [ok] import.ps1"
 
 # Generate Windows-side validation and feature-management scripts first.
 # Complex PowerShell logic is kept outside CMD to avoid cmd.exe parser issues.
@@ -1391,7 +993,11 @@ try {
         @{ Path = (Join-Path $PackageRoot 'scripts\wait-docker-install.ps1'); Name = 'wait-docker-install.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\initialize-wsl-user.ps1'); Name = 'initialize-wsl-user.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.ps1'); Name = 'install-wsl-docker-engine.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\restore-windows-devbox.ps1'); Name = 'restore-windows-devbox.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\restore-wsl-project.ps1'); Name = 'restore-wsl-project.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\verify-windows-devbox.ps1'); Name = 'verify-windows-devbox.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\verify-wsl-devbox.ps1'); Name = 'verify-wsl-devbox.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\verify-wsl-project.ps1'); Name = 'verify-wsl-project.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.sh'); Name = 'install-wsl-docker-engine.sh' }
     )
 
@@ -1845,15 +1451,23 @@ unset PASSWORD_B64
 if id "$TARGET_USER" >/dev/null 2>&1; then
     echo "  [wsl] Existing Linux user detected: $TARGET_USER"
 else
+    echo "  [wsl] Creating Linux user: $TARGET_USER"
     useradd --create-home --shell /bin/bash "$TARGET_USER"
     usermod -aG sudo "$TARGET_USER"
+fi
+
+if ! getent passwd "$TARGET_USER" >/dev/null 2>&1; then
+    echo "[error] Linux user was not created or cannot be read from passwd database: $TARGET_USER"
+    id "$TARGET_USER" 2>&1 || true
+    getent passwd "$TARGET_USER" 2>&1 || true
+    exit 11
 fi
 
 printf '%s:%s\n' "$TARGET_USER" "$PASSWORD" | chpasswd
 unset PASSWORD
 
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-if [ -z "$TARGET_HOME" ]; then
+if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ]; then
     echo "[error] Could not determine Linux home directory."
     exit 10
 fi
@@ -1923,6 +1537,134 @@ catch {
 }
 PS1
 echo "  [ok] initialize-wsl-user.ps1"
+
+cat > "$BUNDLE_DIR/scripts/restore-windows-devbox.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackageRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$DestinationPath,
+    [string]$ImageName = 'devbox-lite:latest',
+    [string]$ComposeProject = 'devbox'
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Require-File([string]$Path, [string]$Name) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Required offline file not found: $Name`n        $Path"
+    }
+}
+
+try {
+    $projectTar = Join-Path $PackageRoot 'project-src.tar.gz'
+    $prebuiltTar = Join-Path $PackageRoot 'prebuilt.tar.gz'
+    $volumesDir = Join-Path $PackageRoot 'volumes'
+    $imageTar = Join-Path $PackageRoot 'image.tar'
+
+    Require-File $projectTar 'project-src.tar.gz'
+    Require-File $prebuiltTar 'prebuilt.tar.gz'
+    Require-File $imageTar 'image.tar'
+
+    foreach ($name in @('pnpm-store','bruno-config','example-templates','devbox-deps','composer-cache','bruno-collections')) {
+        Require-File (Join-Path $volumesDir "vol-$name.tar.gz") "vol-$name.tar.gz"
+    }
+
+    if (-not (Test-Path -LiteralPath $DestinationPath -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $DestinationPath | Out-Null
+    }
+
+    # project-src.tar.gz intentionally excludes prebuilt/.
+    Write-Host "  [windows] Restoring project source to: $DestinationPath"
+    tar.exe -xzf $projectTar -C $DestinationPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Windows project source extraction failed with code $LASTEXITCODE."
+    }
+
+    Write-Host "  [windows] Restoring prebuilt directory to: $DestinationPath\prebuilt"
+    if (Test-Path -LiteralPath (Join-Path $DestinationPath 'prebuilt')) {
+        Remove-Item -LiteralPath (Join-Path $DestinationPath 'prebuilt') -Recurse -Force
+    }
+    tar.exe -xzf $prebuiltTar -C $DestinationPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Windows prebuilt extraction failed with code $LASTEXITCODE."
+    }
+
+    $composeFile = Join-Path $DestinationPath 'docker\compose\docker-compose.yml'
+    $prebuiltDir = Join-Path $DestinationPath 'prebuilt'
+    if (-not (Test-Path -LiteralPath $composeFile -PathType Leaf)) {
+        throw "Windows project restore completed but docker-compose.yml is missing: $composeFile"
+    }
+    if (-not (Test-Path -LiteralPath $prebuiltDir -PathType Container)) {
+        throw "Windows prebuilt restore completed but prebuilt directory is missing: $prebuiltDir"
+    }
+
+    # Docker Desktop and the WSL Engine are independent daemons. Always target
+    # Docker Desktop explicitly so a WSL-specific context cannot receive these
+    # imports accidentally.
+    Write-Host '  [docker-desktop] Loading DevBox Docker image into Docker Desktop...'
+    & docker.exe --context desktop-linux load -i $imageTar
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker Desktop image load failed with code $LASTEXITCODE."
+    }
+
+    $volumeNames = @(
+        'pnpm-store',
+        'bruno-config',
+        'example-templates',
+        'devbox-deps',
+        'composer-cache',
+        'bruno-collections'
+    )
+
+    foreach ($logicalVolume in $volumeNames) {
+        $archive = Join-Path $volumesDir "vol-$logicalVolume.tar.gz"
+        $actualVolume = "${ComposeProject}_${logicalVolume}"
+
+        Write-Host "  [docker-desktop] Restoring volume: $actualVolume"
+        & docker.exe --context desktop-linux volume inspect $actualVolume *> $null
+        if ($LASTEXITCODE -eq 0) {
+            & docker.exe --context desktop-linux volume rm $actualVolume *> $null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Could not remove existing Docker Desktop volume: $actualVolume"
+            }
+        }
+
+        & docker.exe --context desktop-linux volume create `
+            --label "com.docker.compose.project=$ComposeProject" `
+            --label "com.docker.compose.volume=$logicalVolume" `
+            $actualVolume *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not create Docker Desktop volume: $actualVolume"
+        }
+
+        $mountSpec = "type=bind,source=$volumesDir,target=/backup,readonly"
+        $volumeMount = "type=volume,source=$actualVolume,target=/volume"
+        $cleanupAndExtract = "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar xzf /backup/vol-$logicalVolume.tar.gz -C /volume"
+
+        & docker.exe --context desktop-linux run --rm `
+            --mount $volumeMount `
+            --mount $mountSpec `
+            $ImageName `
+            sh -c $cleanupAndExtract
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Docker Desktop volume restore failed for $actualVolume with code $LASTEXITCODE."
+        }
+    }
+
+    Write-Host '  [OK] Windows project and prebuilt restored.'
+    Write-Host '  [OK] DevBox Docker image loaded into Docker Desktop.'
+    Write-Host '  [OK] DevBox Docker volumes restored into Docker Desktop.'
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Failed to restore DevBox on Windows/Docker Desktop: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] restore-windows-devbox.ps1"
 
 cat > "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" <<'PS1'
 [CmdletBinding()]
@@ -1996,7 +1738,7 @@ mkdir -p "$TARGET_HOME/projects"
 rm -rf "$TARGET_DIR"
 mkdir -p "$TARGET_DIR"
 
-tar -xzf "$archive" -C "$TARGET_DIR"
+tar --no-same-owner -xzf "$archive" -C "$TARGET_DIR"
 chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_DIR"
 
 printf '  [ok] WSL project source restored: %s\n' "$TARGET_DIR"
@@ -2022,6 +1764,412 @@ catch {
 }
 PS1
 echo "  [ok] restore-wsl-project.ps1"
+
+cat > "$BUNDLE_DIR/scripts/verify-windows-devbox.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$DestinationPath,
+    [string]$ImageName = 'devbox-lite:latest',
+    [string]$ComposeProject = 'devbox'
+)
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    $composeFile = Join-Path $DestinationPath 'docker\compose\docker-compose.yml'
+    $prebuiltDir = Join-Path $DestinationPath 'prebuilt'
+
+    if (-not (Test-Path -LiteralPath $composeFile -PathType Leaf)) {
+        throw "Windows DevBox source is missing: $composeFile"
+    }
+    if (-not (Test-Path -LiteralPath $prebuiltDir -PathType Container)) {
+        throw "Windows DevBox prebuilt directory is missing: $prebuiltDir"
+    }
+
+    $null = & docker.exe --context desktop-linux version 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Docker Desktop daemon is not available on context desktop-linux.'
+    }
+
+    $imageInspect = & docker.exe --context desktop-linux image inspect $ImageName 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "DevBox Docker image is missing from Docker Desktop: $ImageName"
+    }
+
+    foreach ($name in @('pnpm-store','bruno-config','example-templates','devbox-deps','composer-cache','bruno-collections')) {
+        $volumeName = "${ComposeProject}_${name}"
+        & docker.exe --context desktop-linux volume inspect $volumeName *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Docker Desktop volume is missing: $volumeName"
+        }
+    }
+
+    Write-Host "  [OK] Windows project files: $composeFile"
+    Write-Host "  [OK] Windows prebuilt: $prebuiltDir"
+    Write-Host "  [OK] Docker Desktop image: $ImageName"
+    Write-Host '  [OK] Docker Desktop volumes: all 6 present'
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Windows/Docker Desktop verification failed: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] verify-windows-devbox.ps1"
+
+cat > "$BUNDLE_DIR/scripts/verify-wsl-devbox.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Distribution = 'Ubuntu-24.04',
+    [string]$ImageName = 'devbox-lite:latest',
+    [string]$ComposeProject = 'devbox'
+)
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    $script = @'
+set -euo pipefail
+
+DOCKER_HOST=unix:///run/devbox-docker.sock
+export DOCKER_HOST
+
+TARGET_USER=""
+if [ -f /etc/wsl.conf ]; then
+    TARGET_USER="$(
+        awk '
+            BEGIN { section="" }
+            /^\[user\][[:space:]]*$/ { section="user"; next }
+            /^\[/ { section="" }
+            section == "user" && $0 ~ /^[[:space:]]*default[[:space:]]*=/ {
+                sub(/^[[:space:]]*default[[:space:]]*=[[:space:]]*/, "")
+                gsub(/[[:space:]]/, "")
+                print
+                exit
+            }
+        ' /etc/wsl.conf
+    )"
+fi
+if [ -z "$TARGET_USER" ]; then
+    TARGET_USER="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')"
+fi
+if [ -z "$TARGET_USER" ]; then
+    echo '[error] No normal WSL user found.'
+    exit 10
+fi
+
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+PROJECT_DIR="$TARGET_HOME/projects/DevBox-Lite"
+COMPOSE_FILE="$PROJECT_DIR/docker/compose/docker-compose.yml"
+PREBUILT_DIR="$PROJECT_DIR/prebuilt"
+
+[ -f "$COMPOSE_FILE" ] || { echo "[error] WSL compose file missing: $COMPOSE_FILE"; exit 11; }
+[ -d "$PREBUILT_DIR" ] || { echo "[error] WSL prebuilt directory missing: $PREBUILT_DIR"; exit 12; }
+
+[ -S /run/devbox-docker.sock ] || { echo '[error] WSL Docker socket missing.'; exit 13; }
+DOCKER_HOST="$DOCKER_HOST" docker version >/dev/null 2>&1 || { echo '[error] WSL Docker Engine is not responding.'; exit 14; }
+DOCKER_HOST="$DOCKER_HOST" docker image inspect "$2" >/dev/null 2>&1 || { echo "[error] WSL Docker image missing: $2"; exit 15; }
+
+for logical_volume in pnpm-store bruno-config example-templates devbox-deps composer-cache bruno-collections; do
+    volume_name="${3}_${logical_volume}"
+    DOCKER_HOST="$DOCKER_HOST" docker volume inspect "$volume_name" >/dev/null 2>&1 || {
+        echo "[error] WSL Docker volume missing: $volume_name"
+        exit 20
+    }
+done
+
+echo "  [OK] WSL project files: $COMPOSE_FILE"
+echo "  [OK] WSL prebuilt: $PREBUILT_DIR"
+echo "  [OK] WSL Docker Engine image: $2"
+echo '  [OK] WSL Docker Engine volumes: all 6 present'
+'@
+
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script))
+    $command = "echo '$encoded' | base64 -d | bash -s -- '$Distribution' '$ImageName' '$ComposeProject'"
+
+    & wsl.exe -d $Distribution -u root -- bash -lc $command
+    if ($LASTEXITCODE -ne 0) {
+        throw "WSL DevBox verification exited with code $LASTEXITCODE."
+    }
+
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] WSL DevBox verification failed: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] verify-wsl-devbox.ps1"
+
+cat > "$BUNDLE_DIR/scripts/verify-wsl-project.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Distribution = 'Ubuntu-24.04'
+)
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    $verifyScript = @'
+set -euo pipefail
+
+TARGET_USER=""
+
+if [ -f /etc/wsl.conf ]; then
+    TARGET_USER="$(
+        awk '
+            BEGIN { section="" }
+            /^\[user\][[:space:]]*$/ {
+                section="user"
+                next
+            }
+            /^\[/ {
+                section=""
+            }
+            section == "user" && $0 ~ /^[[:space:]]*default[[:space:]]*=/ {
+                sub(/^[[:space:]]*default[[:space:]]*=[[:space:]]*/, "")
+                gsub(/[[:space:]]/, "")
+                print
+                exit
+            }
+        ' /etc/wsl.conf
+    )"
+fi
+
+if [ -z "$TARGET_USER" ]; then
+    TARGET_USER="$(
+        getent passwd |
+        awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}'
+    )"
+fi
+
+if [ -z "$TARGET_USER" ]; then
+    echo "[error] No normal Ubuntu user was found."
+    exit 10
+fi
+
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ]; then
+    echo "[error] Could not resolve home directory for WSL user: $TARGET_USER"
+    exit 11
+fi
+
+PROJECT_FILE="$TARGET_HOME/projects/DevBox-Lite/docker/compose/docker-compose.yml"
+if [ ! -f "$PROJECT_FILE" ]; then
+    echo "[error] DevBox source was not restored inside Ubuntu-24.04 WSL."
+    echo "        Expected: $PROJECT_FILE"
+    exit 12
+fi
+
+echo "  [OK] DevBox source restored inside WSL: $PROJECT_FILE"
+exit 0
+'@
+
+    $encoded = [Convert]::ToBase64String(
+        [Text.Encoding]::UTF8.GetBytes($verifyScript)
+    )
+
+    $command = "echo '$encoded' | base64 -d | bash -s"
+
+    & wsl.exe -d $Distribution -u root -- bash -lc $command
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -ne 0) {
+        throw "WSL project verification exited with code $exitCode."
+    }
+
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Failed to verify DevBox source inside WSL: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] verify-wsl-project.ps1"
+
+cat > "$BUNDLE_DIR/scripts/restore-wsl-devbox.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackageRoot,
+    [string]$Distribution = 'Ubuntu-24.04',
+    [string]$ImageName = 'devbox-lite:latest',
+    [string]$ComposeProject = 'devbox'
+)
+
+$ErrorActionPreference = 'Stop'
+
+try {
+    $required = @(
+        (Join-Path $PackageRoot 'image.tar'),
+        (Join-Path $PackageRoot 'prebuilt.tar.gz')
+    )
+    foreach ($path in $required) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Required DevBox restore archive not found: $path"
+        }
+    }
+
+    $volumeNames = @(
+        'pnpm-store',
+        'bruno-config',
+        'example-templates',
+        'devbox-deps',
+        'composer-cache',
+        'bruno-collections'
+    )
+
+    foreach ($name in $volumeNames) {
+        $archive = Join-Path $PackageRoot "volumes\vol-$name.tar.gz"
+        if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
+            throw "Required Docker volume archive not found: $archive"
+        }
+    }
+
+    $packageRootB64 = [Convert]::ToBase64String(
+        [Text.Encoding]::UTF8.GetBytes($PackageRoot)
+    )
+
+    $restoreScript = @'
+set -euo pipefail
+
+package_root_win="$(printf '%s' "$1" | base64 -d)"
+image_name="$2"
+compose_project="$3"
+
+package_root="$(wslpath -u "$package_root_win")"
+image_tar="$package_root/image.tar"
+prebuilt_tar="$package_root/prebuilt.tar.gz"
+volumes_dir="$package_root/volumes"
+
+if [ ! -f "$image_tar" ]; then
+  echo "[error] WSL image archive not found: $image_tar"
+  exit 10
+fi
+
+if [ ! -f "$prebuilt_tar" ]; then
+  echo "[error] WSL prebuilt archive not found: $prebuilt_tar"
+  exit 11
+fi
+
+if [ ! -d "$volumes_dir" ]; then
+  echo "[error] WSL Docker volumes directory not found: $volumes_dir"
+  exit 12
+fi
+
+TARGET_USER=""
+if [ -f /etc/wsl.conf ]; then
+  TARGET_USER="$(awk '
+    BEGIN { section="" }
+    /^\[user\][[:space:]]*$/ { section="user"; next }
+    /^\[/ { section="" }
+    section == "user" && $0 ~ /^[[:space:]]*default[[:space:]]*=/ {
+      sub(/^[[:space:]]*default[[:space:]]*=[[:space:]]*/, "")
+      gsub(/[[:space:]]/, "")
+      print
+      exit
+    }
+  ' /etc/wsl.conf)"
+fi
+
+if [ -z "${TARGET_USER:-}" ]; then
+  TARGET_USER="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')"
+fi
+
+if [ -z "${TARGET_USER:-}" ]; then
+  echo "[error] No normal WSL user was found."
+  exit 13
+fi
+
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+PROJECT_DIR="$TARGET_HOME/projects/DevBox-Lite"
+
+if [ ! -d "$PROJECT_DIR" ]; then
+  echo "[error] WSL project directory does not exist: $PROJECT_DIR"
+  echo "        Stage 6 must complete before DevBox restore."
+  exit 14
+fi
+
+export DOCKER_HOST=unix:///run/devbox-docker.sock
+
+echo "  [wsl] Restoring prebuilt directory inside Ubuntu-24.04..."
+rm -rf "$PROJECT_DIR/prebuilt"
+tar --no-same-owner -xzf "$prebuilt_tar" -C "$PROJECT_DIR"
+chown -R "$TARGET_USER":"$TARGET_USER" "$PROJECT_DIR/prebuilt"
+echo "  [OK] WSL prebuilt restored: $PROJECT_DIR/prebuilt"
+
+echo "  [wsl-engine] Loading DevBox Docker image..."
+docker load -i "$image_tar"
+echo "  [OK] WSL Docker image loaded: $image_name"
+
+VOLUMES=(
+  pnpm-store
+  bruno-config
+  example-templates
+  devbox-deps
+  composer-cache
+  bruno-collections
+)
+
+for logical_volume in "${VOLUMES[@]}"; do
+  archive="$volumes_dir/vol-${logical_volume}.tar.gz"
+  actual_volume="${compose_project}_${logical_volume}"
+
+  if [ ! -f "$archive" ]; then
+    echo "[error] Volume archive not found: $archive"
+    exit 20
+  fi
+
+  echo "  [wsl-engine] Restoring volume: $actual_volume"
+  if docker volume inspect "$actual_volume" >/dev/null 2>&1; then
+    docker volume rm "$actual_volume" >/dev/null
+  fi
+  docker volume create \
+    --label "com.docker.compose.project=$compose_project" \
+    --label "com.docker.compose.volume=$logical_volume" \
+    "$actual_volume" >/dev/null
+
+  docker run --rm \
+    --mount "type=volume,source=${actual_volume},target=/volume" \
+    --mount "type=bind,source=${volumes_dir},target=/backup,readonly" \
+    "$image_name" \
+    sh -c "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar xzf /backup/vol-${logical_volume}.tar.gz -C /volume"
+
+  echo "  [OK] $actual_volume"
+done
+
+echo "  [wsl-engine] Starting DevBox Compose inside Ubuntu-24.04..."
+cd "$PROJECT_DIR/docker/compose"
+
+docker compose -p "$compose_project" up -d
+
+echo "  [OK] DevBox Compose started in WSL Docker Engine."
+'@
+
+    $encoded = [Convert]::ToBase64String(
+        [Text.Encoding]::UTF8.GetBytes($restoreScript)
+    )
+
+    $command = "echo '$encoded' | base64 -d | bash -s -- '$packageRootB64' '$ImageName' '$ComposeProject'"
+
+    Write-Host '  [wsl] Restoring DevBox assets inside Ubuntu-24.04 Docker Engine...'
+    & wsl.exe -d $Distribution -u root -- bash -lc $command
+    if ($LASTEXITCODE -ne 0) {
+        throw "WSL DevBox restore exited with code $LASTEXITCODE."
+    }
+
+    Write-Host '  [OK] prebuilt, Docker image, Docker volumes, and Compose restored inside WSL.'
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Failed to restore DevBox inside WSL: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] restore-wsl-devbox.ps1"
 
 cat > "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" <<'SH'
 #!/usr/bin/env bash
@@ -2106,10 +2254,43 @@ if [ ! -d /run/systemd/system ]; then
   exit 10
 fi
 
-systemctl daemon-reload
-systemctl enable docker >/dev/null
-systemctl restart containerd >/dev/null 2>&1 || true
-systemctl restart docker >/dev/null 2>&1 || systemctl start docker
+# Do not use `systemctl enable docker` here. On this Ubuntu 24.04 WSL image,
+# the SysV compatibility helper can print "Synchronizing state..." and return
+# a non-zero result before the Docker service is usable. The installer only
+# needs the service running now. Persistence is handled by systemd in WSL.
+echo "  [wsl-engine] Starting Docker service..."
+
+set +e
+systemctl daemon-reload >/tmp/devbox-docker-daemon-reload.log 2>&1
+daemon_rc=$?
+systemctl restart containerd >/tmp/devbox-docker-containerd.log 2>&1
+containerd_rc=$?
+systemctl restart docker >/tmp/devbox-docker-restart.log 2>&1
+docker_rc=$?
+set -e
+
+if [ "$daemon_rc" -ne 0 ]; then
+  echo "  [wsl-engine] systemctl daemon-reload failed (code $daemon_rc)."
+  cat /tmp/devbox-docker-daemon-reload.log 2>/dev/null || true
+fi
+
+if [ "$containerd_rc" -ne 0 ]; then
+  echo "  [wsl-engine] systemctl restart containerd failed (code $containerd_rc)."
+  cat /tmp/devbox-docker-containerd.log 2>/dev/null || true
+fi
+
+if [ "$docker_rc" -ne 0 ]; then
+  echo "  [wsl-engine] systemctl restart docker failed (code $docker_rc); trying start..."
+  cat /tmp/devbox-docker-restart.log 2>/dev/null || true
+  systemctl start docker >/tmp/devbox-docker-start.log 2>&1
+  docker_rc=$?
+  if [ "$docker_rc" -ne 0 ]; then
+    echo "[error] systemctl start docker failed (code $docker_rc)."
+    cat /tmp/devbox-docker-start.log 2>/dev/null || true
+    systemctl status docker --no-pager 2>/dev/null || true
+    exit 1
+  fi
+fi
 
 # Configure a dedicated Docker context for the local WSL daemon.
 if [ -n "${TARGET_USER:-}" ]; then
@@ -2121,14 +2302,41 @@ if [ -n "${TARGET_USER:-}" ]; then
     runuser -u "$TARGET_USER" -- docker context inspect wsl-engine >/dev/null 2>&1 || \
       runuser -u "$TARGET_USER" -- docker context create wsl-engine --docker "host=unix:///run/devbox-docker.sock" >/dev/null
     runuser -u "$TARGET_USER" -- docker context update wsl-engine --docker "host=unix:///run/devbox-docker.sock" >/dev/null 2>&1 || true
-    runuser -u "$TARGET_USER" -- docker context use wsl-engine >/dev/null
+
+    # `docker context use` may write its confirmation to stderr and may fail
+    # when the user has not received the updated docker-group membership yet.
+    # Context selection is not required for daemon installation, so do not let
+    # this optional step abort the installer.
+    if ! runuser -u "$TARGET_USER" -- docker context use wsl-engine >/tmp/devbox-docker-context-use.log 2>&1; then
+      echo "  [wsl-engine] Could not select wsl-engine context for $TARGET_USER; continuing with explicit socket verification."
+      cat /tmp/devbox-docker-context-use.log 2>/dev/null || true
+    fi
+
     chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME/.docker"
   fi
 fi
 
 # Root verification keeps the installer independent of the user's login shell.
-DOCKER_HOST=unix:///run/devbox-docker.sock docker version >/dev/null
-DOCKER_HOST=unix:///run/devbox-docker.sock docker compose version >/dev/null
+if ! systemctl is-active --quiet docker; then
+  echo "[error] Docker service is not active after startup."
+  systemctl status docker --no-pager 2>/dev/null || true
+  exit 1
+fi
+if [ ! -S /run/devbox-docker.sock ]; then
+  echo "[error] Docker Engine socket was not created: /run/devbox-docker.sock"
+  systemctl status docker --no-pager 2>/dev/null || true
+  exit 1
+fi
+if ! DOCKER_HOST=unix:///run/devbox-docker.sock docker version >/tmp/devbox-docker-version.log 2>&1; then
+  echo "[error] Docker Engine responded incorrectly on the configured socket."
+  cat /tmp/devbox-docker-version.log 2>/dev/null || true
+  exit 1
+fi
+if ! DOCKER_HOST=unix:///run/devbox-docker.sock docker compose version >/tmp/devbox-docker-compose.log 2>&1; then
+  echo "[error] Docker Compose plugin is not available."
+  cat /tmp/devbox-docker-compose.log 2>/dev/null || true
+  exit 1
+fi
 
 fc-cache -f >/dev/null 2>&1 || true
 
@@ -2183,14 +2391,20 @@ bash "$script_wsl" "$deb_wsl"
 
     function Invoke-EngineInstall {
         param([string]$ScriptB64, [string]$DebB64)
+
         $bridgeB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pathBridge))
         $command = "echo '$bridgeB64' | base64 -d | bash -s -- '$ScriptB64' '$DebB64'"
-        # Send WSL stdout directly to the console. Do not let it enter the
-        # PowerShell success stream, otherwise function output becomes an
-        # array and $rc is no longer a scalar exit code.
-        & wsl.exe -d $Distribution -u root -- bash -lc $command | Out-Host
-        $exitCode = [int]$LASTEXITCODE
-        return $exitCode
+
+        # Capture WSL output so the function returns only the numeric process exit code.
+        # Without this, PowerShell assigns all WSL output plus $LASTEXITCODE to $rc.
+        $output = & wsl.exe -d $Distribution -u root -- bash -lc $command 2>&1
+        $exitCode = $LASTEXITCODE
+
+        foreach ($line in @($output)) {
+            Write-Host $line
+        }
+
+        return [int]$exitCode
     }
 
     Write-Host '  [wsl-engine] Installing Docker Engine inside Ubuntu-24.04...'
@@ -2233,6 +2447,8 @@ set "PACKAGE_ROOT=%~dp0devbox-data"
 set "STATE_DIR=%ProgramData%\DevBoxLite"
 set "STATE_FILE=%STATE_DIR%\offline-setup.state"
 set "TASK_NAME=DevBoxLite-OfflineSetup"
+set "TASK_START=DevBoxLite-OfflineSetup-Startup"
+set "TASK_LOGON=DevBoxLite-OfflineSetup-Logon"
 set "RESUME_MODE=0"
 set "STAGE=START"
 set "DEST_PATH=D:\devbox-project"
@@ -2922,7 +3138,6 @@ echo Exit code: %FAIL_CODE%
 echo.
 echo Fix the reported problem and run setup-offline.bat again.
 echo.
-if /I "%RESUME_MODE%"=="1" exit /b %FAIL_CODE%
 pause
 exit /b %FAIL_CODE%
 BAT
@@ -2966,12 +3181,12 @@ fi
 echo "  [ok] Docker Engine dependency collector validation passed"
 
 # Validate generated files before package creation continues.
-python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
+python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/restore-windows-devbox.ps1" "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" "$BUNDLE_DIR/scripts/verify-windows-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-project.ps1" "$BUNDLE_DIR/scripts/restore-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-EXPECTED_VALIDATOR_ARGS = 13
+EXPECTED_VALIDATOR_ARGS = 18
 actual_validator_args = len(sys.argv) - 1
 if actual_validator_args != EXPECTED_VALIDATOR_ARGS:
     raise SystemExit(
@@ -2990,8 +3205,13 @@ wait_docker = Path(sys.argv[8])
 initialize_wsl_user = Path(sys.argv[9])
 install_engine_ps1 = Path(sys.argv[10])
 install_engine_sh = Path(sys.argv[11])
-restore_wsl_project = Path(sys.argv[12])
-import_ps1 = Path(sys.argv[13])
+restore_windows_devbox = Path(sys.argv[12])
+restore_wsl_project = Path(sys.argv[13])
+verify_windows_devbox = Path(sys.argv[14])
+verify_wsl_devbox = Path(sys.argv[15])
+verify_wsl_project = Path(sys.argv[16])
+restore_wsl_devbox = Path(sys.argv[17])
+import_ps1 = Path(sys.argv[18])
 
 bat_bytes = bat.read_bytes()
 if b"\r\n" not in bat_bytes:
@@ -3013,29 +3233,17 @@ wait_docker_text = wait_docker.read_text(encoding='utf-8')
 initialize_wsl_user_text = initialize_wsl_user.read_text(encoding='utf-8')
 install_engine_ps1_text = install_engine_ps1.read_text(encoding='utf-8')
 install_engine_sh_text = install_engine_sh.read_text(encoding='utf-8')
+restore_windows_devbox_text = restore_windows_devbox.read_text(encoding='utf-8')
+verify_windows_devbox_text = verify_windows_devbox.read_text(encoding='utf-8')
 restore_wsl_project_text = restore_wsl_project.read_text(encoding='utf-8')
+verify_wsl_project_text = verify_wsl_project.read_text(encoding='utf-8')
+restore_wsl_devbox_text = restore_wsl_devbox.read_text(encoding='utf-8')
 import_text = import_ps1.read_text(encoding='utf-8')
-dual_import_requirements = [
-    'docker.exe load -i',
-    'DOCKER_HOST=unix:///run/devbox-docker.sock',
-    'docker load -i',
-    'docker.exe volume create',
-    'docker volume create',
-    'projects/DevBox-Lite',
-    'prebuilt',
-    'compose -p',
-]
-missing_import_requirements = [x for x in dual_import_requirements if x not in import_text]
-if missing_import_requirements:
-    raise SystemExit(
-        'Generated import.ps1 validation failed: missing dual-restore requirements: '
-        + ', '.join(missing_import_requirements)
-    )
 
 required_labels = [
     'main', 'resume', 'require_admin', 'validate_package',
     'enable_wsl_features', 'install_wsl', 'install_ubuntu',
-    'install_docker', 'initialize_wsl_user', 'install_wsl_engine', 'restore_wsl_project', 'restore_devbox', 'verify', 'verify_wsl_engine_missing', 'verify_wsl_project_missing', 'schedule_restart',
+    'install_docker', 'initialize_wsl_user', 'install_wsl_engine', 'restore_wsl_project', 'restore_windows_devbox', 'restore_devbox', 'verify', 'verify_wsl_engine_missing', 'verify_wsl_project_missing', 'schedule_restart',
     'save_stage', 'load_state_line', 'apply_state', 'cleanup_success', 'save_stage_error', 'resume_task_error', 'restart_schedule_error',
     'fail', 'features_restart', 'wsl_msi_restart', 'docker_restart', 'ubuntu_readiness_restart',
 ]
@@ -3048,6 +3256,7 @@ required_calls = [
     'call :initialize_wsl_user',
     'call :install_wsl_engine',
     'call :restore_wsl_project',
+    'call :restore_windows_devbox',
     'call :restore_devbox',
     'call :verify',
     'call :schedule_restart',
@@ -3093,19 +3302,6 @@ missing = [x for x in required_calls if x not in normalized_bat_text]
 if missing:
     raise SystemExit('Generated BAT validation failed: missing calls: ' + ', '.join(missing))
 
-resume_requirements = [
-    'DevBoxLite-OfflineSetup-Startup',
-    'DevBoxLite-OfflineSetup-Logon',
-    'schtasks /create /tn "%TASK_START%" /sc onstart',
-    'schtasks /create /tn "%TASK_LOGON%" /sc onlogon',
-    'resume-offline-setup.lock',
-    'resume.log',
-    'offline-setup.state',
-]
-missing_resume = [x for x in resume_requirements if x not in normalized_bat_text]
-if missing_resume:
-    raise SystemExit('Generated BAT validation failed: automatic resume requirements are missing: ' + ', '.join(missing_resume))
-
 if 'goto :eof' in normalized_bat_text.lower():
     raise SystemExit('Generated BAT validation failed: goto :eof is not permitted.')
 
@@ -3118,7 +3314,7 @@ if 'wsl.exe -l -q 2>nul | findstr /I /X "Ubuntu-24.04"' in normalized_bat_text:
 if 'validate-offline.ps1' not in normalized_bat_text or 'manage-wsl-features.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: required PowerShell scripts are not referenced.')
 
-if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text or 'initialize-wsl-user.ps1' not in normalized_bat_text or 'install-wsl-docker-engine.ps1' not in normalized_bat_text or 'restore-wsl-project.ps1' not in normalized_bat_text:
+if 'check-wsl-distro.ps1' not in normalized_bat_text or 'check-wsl-ready.ps1' not in normalized_bat_text or 'check-restart-required.ps1' not in normalized_bat_text or 'check-docker-restart-required.ps1' not in normalized_bat_text or 'wait-docker-install.ps1' not in normalized_bat_text or 'initialize-wsl-user.ps1' not in normalized_bat_text or 'install-wsl-docker-engine.ps1' not in normalized_bat_text or 'restore-windows-devbox.ps1' not in normalized_bat_text or 'restore-wsl-project.ps1' not in normalized_bat_text or 'verify-windows-devbox.ps1' not in normalized_bat_text or 'verify-wsl-devbox.ps1' not in normalized_bat_text or 'verify-wsl-project.ps1' not in normalized_bat_text or 'restore-wsl-devbox.ps1' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: helper PowerShell scripts are not referenced.')
 def find_label_line(text, label):
     match = re.search(rf'(?m)^:{re.escape(label)}\s*$', text)
@@ -3134,6 +3330,23 @@ if 'WSL_INSTALLED_NOW=0' not in install_wsl_text or 'if not "%WSL_INSTALLED_NOW%
 
 if 'call :save_stage START' in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: startup must not depend on save_stage START.')
+
+# Resume must be registered for both Windows startup and interactive logon.
+# Keep a lock and diagnostic log so simultaneous triggers cannot run the installer twice.
+required_resume_markers = [
+    'DevBoxLite-OfflineSetup-Startup',
+    'DevBoxLite-OfflineSetup-Logon',
+    'schtasks /create /tn "%TASK_START%" /sc onstart',
+    'schtasks /create /tn "%TASK_LOGON%" /sc onlogon',
+    'resume-offline-setup.lock',
+    'resume.log',
+]
+missing_resume_markers = [x for x in required_resume_markers if x not in normalized_bat_text]
+if missing_resume_markers:
+    raise SystemExit(
+        'Generated BAT validation failed: automatic resume support is incomplete: '
+        + ', '.join(missing_resume_markers)
+    )
 
 if re.search(r'for\s+/f[^\n]*powershell\.exe', normalized_bat_text, re.I):
     raise SystemExit('Generated BAT validation failed: inline PowerShell for /f parser pattern detected.')
@@ -3188,6 +3401,32 @@ if ('wsl-engine' not in install_engine_ps1_text or
         'wslpath -u' not in install_engine_ps1_text or
         'base64 -d' not in install_engine_ps1_text):
     raise SystemExit('Generated WSL Docker Engine PowerShell helper validation failed: Windows-to-WSL path bridge is incomplete.')
+
+if ('project-src.tar.gz' not in restore_windows_devbox_text or
+        'prebuilt.tar.gz' not in restore_windows_devbox_text or
+        'tar.exe -xzf' not in restore_windows_devbox_text or
+        'docker.exe --context desktop-linux load' not in restore_windows_devbox_text or
+        'docker.exe --context desktop-linux volume create' not in restore_windows_devbox_text):
+    raise SystemExit('Generated Windows DevBox restore helper validation failed.')
+
+if ('docker.exe --context desktop-linux image inspect' not in verify_windows_devbox_text or
+        'docker.exe --context desktop-linux volume inspect' not in verify_windows_devbox_text):
+    raise SystemExit('Generated Windows DevBox verification helper validation failed.')
+
+if ('/run/devbox-docker.sock' not in verify_wsl_devbox_text or
+        'docker image inspect' not in verify_wsl_devbox_text or
+        'docker volume inspect' not in verify_wsl_devbox_text or
+        'prebuilt' not in verify_wsl_devbox_text):
+    raise SystemExit('Generated WSL DevBox verification helper validation failed.')
+
+if ('prebuilt.tar.gz' not in restore_wsl_devbox_text or
+        'docker load -i' not in restore_wsl_devbox_text or
+        'docker volume create' not in restore_wsl_devbox_text or
+        'com.docker.compose.project' not in restore_wsl_devbox_text or
+        'docker compose -p' not in restore_wsl_devbox_text or
+        'devbox-network' not in restore_wsl_devbox_text and 'docker compose' not in restore_wsl_devbox_text):
+    raise SystemExit('Generated WSL DevBox restore helper validation failed.')
+
 if ('project-src.tar.gz' not in restore_wsl_project_text or
         'projects/DevBox-Lite' not in restore_wsl_project_text or
         'getent passwd' not in restore_wsl_project_text or
@@ -3196,6 +3435,12 @@ if ('project-src.tar.gz' not in restore_wsl_project_text or
         'base64 -d' not in restore_wsl_project_text or
         'wslpath -u' not in restore_wsl_project_text):
     raise SystemExit('Generated WSL project restore helper validation failed.')
+
+if ('ToBase64String' not in verify_wsl_project_text or
+        'base64 -d' not in verify_wsl_project_text or
+        'getent passwd' not in verify_wsl_project_text or
+        'projects/DevBox-Lite/docker/compose/docker-compose.yml' not in verify_wsl_project_text):
+    raise SystemExit('Generated WSL project verification helper validation failed.')
 
 install_docker_start = find_label_line(normalized_bat_text, 'install_docker')
 restore_start = find_label_line(normalized_bat_text, 'restore_devbox')
@@ -3347,7 +3592,12 @@ required_files=(
   "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1"
   "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1"
   "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh"
+  "$BUNDLE_DIR/scripts/restore-windows-devbox.ps1"
   "$BUNDLE_DIR/scripts/restore-wsl-project.ps1"
+  "$BUNDLE_DIR/scripts/verify-windows-devbox.ps1"
+  "$BUNDLE_DIR/scripts/verify-wsl-devbox.ps1"
+  "$BUNDLE_DIR/scripts/verify-wsl-project.ps1"
+  "$BUNDLE_DIR/scripts/restore-wsl-devbox.ps1"
   "$BUNDLE_DIR/docker-engine/packages.txt"
 )
 
