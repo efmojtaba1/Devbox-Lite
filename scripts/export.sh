@@ -2857,9 +2857,16 @@ echo.
 echo [9/9] Restoring DevBox Lite to:
 echo        %DEST_PATH%
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\import.ps1" -InputPath "%PACKAGE_ROOT%" -TargetProj "%DEST_PATH%"
-if errorlevel 1 goto :restore_error
+rem Restore the Windows project, prebuilt directory, Docker Desktop image,
+rem and Docker Desktop volumes through the dedicated restore helper.
+call :restore_windows_devbox
+set "WINDOWS_RESTORE_RC=%errorlevel%"
+if not "%WINDOWS_RESTORE_RC%"=="0" goto :restore_error
 exit /b 0
+
+:restore_windows_devbox
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\restore-windows-devbox.ps1" -PackageRoot "%PACKAGE_ROOT%" -DestinationPath "%DEST_PATH%"
+exit /b %errorlevel%
 
 :verify
 echo.
