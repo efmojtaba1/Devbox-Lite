@@ -827,8 +827,7 @@ for logical_volume in "${VOLUMES[@]}"; do
     --mount "type=volume,source=${actual_volume},target=/volume,readonly" \
     --mount "type=bind,source=${VOLUMES_OUT},target=/backup" \
     "$IMAGE_NAME" \
-    sh -c "tar --owner=$EXPORT_UID --group=$EXPORT_GID --numeric-owner czf /backup/vol-${logical_volume}.tar.gz -C /volume ."
-
+sh -c "tar --owner=$EXPORT_UID --group=$EXPORT_GID --numeric-owner -czf /backup/vol-${logical_volume}.tar.gz -C /volume ."
   if [ ! -s "$archive" ]; then
     echo "[error] Volume archive was not created: $archive"
     exit 1
