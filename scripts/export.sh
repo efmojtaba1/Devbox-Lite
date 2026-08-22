@@ -140,6 +140,25 @@ echo "[export] Output          : $ABS_OUT"
 echo ""
 
 # ------------------------------------------------------------
+# Export archive ownership identity
+# ------------------------------------------------------------
+EXPORT_USER="${SUDO_USER:-$USER}"
+if ! id "$EXPORT_USER" >/dev/null 2>&1; then
+  echo "[error] Current export user was not found: $EXPORT_USER"
+  exit 1
+fi
+
+EXPORT_UID="$(id -u "$EXPORT_USER")"
+EXPORT_GID="$(id -g "$EXPORT_USER")"
+
+if [ -z "$EXPORT_UID" ] || [ -z "$EXPORT_GID" ]; then
+  echo "[error] Could not resolve UID/GID for export user: $EXPORT_USER"
+  exit 1
+fi
+
+echo "[export] Archive owner: $EXPORT_USER (UID $EXPORT_UID / GID $EXPORT_GID)"
+
+# ------------------------------------------------------------
 # Logical volumes used by DevBox Lite
 # ------------------------------------------------------------
 VOLUMES=(
@@ -801,11 +820,14 @@ for logical_volume in "${VOLUMES[@]}"; do
   archive="$VOLUMES_OUT/vol-${logical_volume}.tar.gz"
   rm -f "$archive"
 
+  EXPORT_UID="$(id -u "$EXPORT_USER")"
+  EXPORT_GID="$(id -g "$EXPORT_USER")"
+
   docker run --rm \
     --mount "type=volume,source=${actual_volume},target=/volume,readonly" \
     --mount "type=bind,source=${VOLUMES_OUT},target=/backup" \
     "$IMAGE_NAME" \
-    sh -c "tar czf /backup/vol-${logical_volume}.tar.gz -C /volume ."
+    sh -c "tar --owner=$EXPORT_UID --group=$EXPORT_GID --numeric-owner czf /backup/vol-${logical_volume}.tar.gz -C /volume ."
 
   if [ ! -s "$archive" ]; then
     echo "[error] Volume archive was not created: $archive"
@@ -822,24 +844,13 @@ for logical_volume in "${VOLUMES[@]}"; do
 done
 
 # ------------------------------------------------------------
-# Normalize project ownership before creating archives
+# Normalize archive ownership to the current export user.
+# The actual source tree is not chowned. This avoids a sudo prompt during export.
 # ------------------------------------------------------------
 echo ""
-echo "[export] Normalizing project ownership..."
-
-EXPORT_USER="${SUDO_USER:-$USER}"
-if ! id "$EXPORT_USER" >/dev/null 2>&1; then
-  echo "[error] Current export user was not found: $EXPORT_USER"
-  exit 1
-fi
-
-if ! sudo chown -R -- "$EXPORT_USER:$EXPORT_USER" "$PROJECT_ROOT"; then
-  echo "[error] Could not assign project ownership to: $EXPORT_USER"
-  echo "        Project: $PROJECT_ROOT"
-  exit 1
-fi
-
-echo "  [ok] Project ownership normalized: $EXPORT_USER"
+echo "[export] Normalizing archive ownership..."
+echo "  [ok] Archive owner: $EXPORT_USER (UID $EXPORT_UID / GID $EXPORT_GID)"
+echo "  [info] Source files are not modified; ownership is normalized inside exported archives."
 
 # ------------------------------------------------------------
 # Project source
@@ -850,6 +861,9 @@ echo "[export] Packaging project source code..."
 rm -f "$BUNDLE_DIR/project-src.tar.gz"
 
 if ! tar \
+  --owner="$EXPORT_UID" \
+  --group="$EXPORT_GID" \
+  --numeric-owner \
   --exclude='.git' \
   --exclude='node_modules' \
   --exclude='vendor' \
@@ -884,7 +898,12 @@ if [ -d "$PROJECT_ROOT/prebuilt" ]; then
   echo "[export] Packaging prebuilt directory..."
   rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
 
-  if ! tar czf "$BUNDLE_DIR/prebuilt.tar.gz" -C "$PROJECT_ROOT" prebuilt; then
+  if ! tar \
+  --owner="$EXPORT_UID" \
+  --group="$EXPORT_GID" \
+  --numeric-owner \
+  -czf "$BUNDLE_DIR/prebuilt.tar.gz" \
+  -C "$PROJECT_ROOT" prebuilt; then
     echo "[error] Failed to create prebuilt.tar.gz after ownership normalization."
     exit 1
   fi
@@ -1641,7 +1660,7 @@ try {
 
         $mountSpec = "type=bind,source=$volumesDir,target=/backup,readonly"
         $volumeMount = "type=volume,source=$actualVolume,target=/volume"
-        $cleanupAndExtract = "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar xzf /backup/vol-$logicalVolume.tar.gz -C /volume"
+        $cleanupAndExtract = "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar --no-same-owner -xzf /backup/vol-$logicalVolume.tar.gz -C /volume"
 
         & docker.exe --context desktop-linux run --rm `
             --mount $volumeMount `
@@ -2136,9 +2155,9 @@ for logical_volume in "${VOLUMES[@]}"; do
     --mount "type=volume,source=${actual_volume},target=/volume" \
     --mount "type=bind,source=${volumes_dir},target=/backup,readonly" \
     "$image_name" \
-    sh -c "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar xzf /backup/vol-${logical_volume}.tar.gz -C /volume"
+    sh -c "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar --no-same-owner -xzf /backup/vol-${logical_volume}.tar.gz -C /volume; chown -R $TARGET_USER:$TARGET_USER /volume"
 
-  echo "  [OK] $actual_volume"
+  echo "  [OK] $actual_volume (owner: $TARGET_USER)"
 done
 
 echo "  [wsl-engine] Starting DevBox Compose inside Ubuntu-24.04..."
@@ -3456,6 +3475,8 @@ if ('/run/devbox-docker.sock' not in verify_wsl_devbox_text or
 if ('prebuilt.tar.gz' not in restore_wsl_devbox_text or
         'docker load -i' not in restore_wsl_devbox_text or
         'docker volume create' not in restore_wsl_devbox_text or
+        '--no-same-owner' not in restore_wsl_devbox_text or
+        'chown -R $TARGET_USER:$TARGET_USER /volume' not in restore_wsl_devbox_text or
         'com.docker.compose.project' not in restore_wsl_devbox_text or
         'docker compose -p' not in restore_wsl_devbox_text or
         'devbox-network' not in restore_wsl_devbox_text and 'docker compose' not in restore_wsl_devbox_text):
@@ -3564,6 +3585,10 @@ rm -f "$MANIFEST_TMP" "$BUNDLE_DIR/manifest.txt"
   echo "image_sha256:$IMAGE_SHA256"
   echo "compose_project:$COMPOSE_PROJECT"
   echo "compose_file:docker/compose/docker-compose.yml"
+  echo "archive_owner:$EXPORT_USER"
+  echo "archive_owner_uid:$EXPORT_UID"
+  echo "archive_owner_gid:$EXPORT_GID"
+  echo "destination_ownership_policy:restore-to-target-user"
   echo ""
   echo "[volumes]"
   for logical_volume in "${VOLUMES[@]}"; do
@@ -3689,6 +3714,10 @@ required_prefixes = [
     'image_sha256:',
     'compose_project:',
     'compose_file:',
+    'archive_owner:',
+    'archive_owner_uid:',
+    'archive_owner_gid:',
+    'destination_ownership_policy:',
     '[volumes]',
     '[archives]',
     'project-src.tar.gz:',
