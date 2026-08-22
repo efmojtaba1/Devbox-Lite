@@ -2643,8 +2643,15 @@ exit /b 3010
 
 :stage_restore
 set "STAGE=RESTORE_DEVBOX"
+
+rem Restore the DevBox runtime inside the dedicated WSL Docker Engine first.
+call :restore_wsl_devbox
+if errorlevel 1 goto :wsl_devbox_restore_error
+
+rem Restore the Windows project and Docker Desktop runtime separately.
 call :restore_devbox
-if errorlevel 1 goto :fail
+if errorlevel 1 goto :restore_error
+
 call :save_stage RESTORED
 if errorlevel 1 goto :fail
 
@@ -2852,6 +2859,11 @@ exit /b 0
 :docker_installer_restart
 exit /b 3010
 
+:restore_wsl_devbox
+echo   [wsl] Restoring DevBox image, prebuilt directory, volumes, and Compose...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\restore-wsl-devbox.ps1" -PackageRoot "%PACKAGE_ROOT%" -Distribution "Ubuntu-24.04" -ImageName "devbox-lite:latest" -ComposeProject "devbox"
+exit /b %errorlevel%
+
 :restore_devbox
 echo.
 echo [9/9] Restoring DevBox Lite to:
@@ -2878,21 +2890,24 @@ if errorlevel 1 goto :verify_wsl_missing
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\check-wsl-distro.ps1" -Distribution "Ubuntu-24.04"
 if errorlevel 1 goto :verify_ubuntu_missing
 
-wsl.exe -d Ubuntu-24.04 -u root -- bash -lc "DOCKER_HOST=unix:///run/devbox-docker.sock docker version >/dev/null 2>&1 && DOCKER_HOST=unix:///run/devbox-docker.sock docker compose version >/dev/null 2>&1"
-if errorlevel 1 goto :verify_wsl_engine_missing
-
-wsl.exe -d Ubuntu-24.04 -u root -- bash -lc "TARGET_USER=; if [ -f /etc/wsl.conf ]; then TARGET_USER=\"$(awk 'BEGIN { section=\"\" } /^\[user\][[:space:]]*$/ { section=\"user\"; next } /^\[/ { section=\"\" } section == \"user\" && $0 ~ /^[[:space:]]*default[[:space:]]*=/ { sub(/^[[:space:]]*default[[:space:]]*=[[:space:]]*/, \"\"); gsub(/[[:space:]]/, \"\"); print; exit }' /etc/wsl.conf)\"; fi; if [ -z \"$TARGET_USER\" ]; then TARGET_USER=\"$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')\"; fi; TARGET_HOME=\"$(getent passwd \"$TARGET_USER\" | cut -d: -f6)\"; test -f \"$TARGET_HOME/projects/DevBox-Lite/docker/compose/docker-compose.yml\""
+rem Verify the project source inside Ubuntu-24.04.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\verify-wsl-project.ps1" -Distribution "Ubuntu-24.04"
 if errorlevel 1 goto :verify_wsl_project_missing
 
-docker version >nul 2>&1
-if errorlevel 1 goto :verify_docker_missing
+rem Verify the WSL Docker Engine, image, volumes, and Compose project.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\verify-wsl-devbox.ps1" -Distribution "Ubuntu-24.04" -ImageName "devbox-lite:latest" -ComposeProject "devbox"
+if errorlevel 1 goto :verify_wsl_devbox_error
 
-if not exist "%DEST_PATH%\docker\compose\docker-compose.yml" goto :verify_project_missing
+rem Verify the Windows project, Docker Desktop image, and Docker Desktop volumes.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\verify-windows-devbox.ps1" -DestinationPath "%DEST_PATH%" -ImageName "devbox-lite:latest" -ComposeProject "devbox"
+if errorlevel 1 goto :verify_windows_devbox_error
 
 echo   [OK] WSL2
 echo   [OK] Ubuntu 24.04
 echo   [OK] Docker Engine inside WSL (wsl-engine)
 echo   [OK] Docker Desktop / Docker Engine
+echo   [OK] WSL DevBox runtime
+echo   [OK] Windows DevBox runtime
 echo   [OK] DevBox project files
 exit /b 0
 
@@ -3098,8 +3113,20 @@ echo [ERROR] Docker Engine did not become ready within 5 minutes.
 echo         Open Docker Desktop and check its status.
 exit /b 1
 
+ :wsl_devbox_restore_error
+echo [ERROR] DevBox restore inside Ubuntu-24.04 WSL Docker Engine failed.
+exit /b 1
+
+:verify_wsl_devbox_error
+echo [ERROR] WSL DevBox verification failed.
+exit /b 1
+
+:verify_windows_devbox_error
+echo [ERROR] Windows DevBox / Docker Desktop verification failed.
+exit /b 1
+
 :restore_error
-echo [ERROR] DevBox restore failed.
+echo [ERROR] DevBox restore on Windows/Docker Desktop failed.
 exit /b 1
 
 :verify_wsl_missing
@@ -3250,7 +3277,7 @@ import_text = import_ps1.read_text(encoding='utf-8')
 required_labels = [
     'main', 'resume', 'require_admin', 'validate_package',
     'enable_wsl_features', 'install_wsl', 'install_ubuntu',
-    'install_docker', 'initialize_wsl_user', 'install_wsl_engine', 'restore_wsl_project', 'restore_windows_devbox', 'restore_devbox', 'verify', 'verify_wsl_engine_missing', 'verify_wsl_project_missing', 'schedule_restart',
+    'install_docker', 'initialize_wsl_user', 'install_wsl_engine', 'restore_wsl_project', 'restore_wsl_devbox', 'restore_windows_devbox', 'restore_devbox', 'verify', 'verify_wsl_engine_missing', 'verify_wsl_project_missing', 'schedule_restart',
     'save_stage', 'load_state_line', 'apply_state', 'cleanup_success', 'save_stage_error', 'resume_task_error', 'restart_schedule_error',
     'fail', 'features_restart', 'wsl_msi_restart', 'docker_restart', 'ubuntu_readiness_restart',
 ]
