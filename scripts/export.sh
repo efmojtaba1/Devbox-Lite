@@ -1468,17 +1468,15 @@ else
     usermod -aG sudo "$TARGET_USER"
 fi
 
-if ! getent passwd "$TARGET_USER" >/dev/null 2>&1; then
-    echo "[error] Linux user was not created or cannot be read from passwd database: $TARGET_USER"
-    id "$TARGET_USER" 2>&1 || true
-    getent passwd "$TARGET_USER" 2>&1 || true
+if ! id "$TARGET_USER" >/dev/null 2>&1; then
+    echo "[error] Linux user was not created: $TARGET_USER"
     exit 11
 fi
 
 printf '%s:%s\n' "$TARGET_USER" "$PASSWORD" | chpasswd
 unset PASSWORD
 
-TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+TARGET_HOME="$(id -u "$TARGET_USER" >/dev/null 2>&1 && getent passwd "$TARGET_USER" | cut -d: -f6 || echo "/home/$TARGET_USER")"
 if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ]; then
     echo "[error] Could not determine Linux home directory."
     exit 10

@@ -30,3 +30,4 @@ MEMORY.md
 my-env/
 venv/
 .venv/
+.claude
