@@ -1389,32 +1389,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-function Get-NormalWslUser {
-    param([string]$Distro)
-
-    $result = & wsl.exe -d $Distro -u root -- getent passwd 2>$null
-    if ($LASTEXITCODE -ne 0) { return '' }
-
-    foreach ($line in @($result)) {
-        $text = $line.ToString().Trim()
-        if (-not $text) { continue }
-
-        $fields = $text.Split(':')
-        if ($fields.Count -lt 7) { continue }
-
-        $uid = 0
-        if (-not [int]::TryParse($fields[2], [ref]$uid)) { continue }
-        if ($uid -lt 1000 -or $uid -ge 60000) { continue }
-
-        $shell = $fields[6].Trim().ToLowerInvariant()
-        if ($shell -match '/(nologin|false)$') { continue }
-
-        return $fields[0].Trim()
-    }
-
-    return ''
-}
-
 function Convert-SecureStringToPlainText {
     param([Security.SecureString]$SecureString)
 
@@ -1428,8 +1402,35 @@ function Convert-SecureStringToPlainText {
 }
 
 try {
-    $existingUser = Get-NormalWslUser -Distro $Distribution
-    if ($existingUser) {
+    # Check if user already exists by running a single WSL command that checks internally
+    $checkScript = @'
+set -euo pipefail
+TARGET_USER="$(printf '%s' "$1" | base64 -d)"
+
+if id "$TARGET_USER" >/dev/null 2>&1; then
+    echo "EXISTS:$TARGET_USER"
+    exit 0
+fi
+echo "NOT_EXISTS"
+'@
+    $username = ''
+    do {
+        $username = (Read-Host '  Linux username').Trim()
+        if ($username -notmatch '^[a-z_][a-z0-9_-]*[$]?$') {
+            Write-Host '  [ERROR] Invalid username. Use lowercase letters, numbers, _ or -.'
+            $username = ''
+        }
+    } while (-not $username)
+
+    # First check if user already exists
+    $checkScriptB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($checkScript))
+    $usernameB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($username))
+    $checkCmd = "echo '$checkScriptB64' | base64 -d | bash -s -- '$usernameB64'"
+    $checkResult = & wsl.exe -d $Distribution -u root -- bash -lc $checkCmd
+    $checkRc = $LASTEXITCODE
+
+    if ($checkResult -match '^EXISTS:(.+)$') {
+        $existingUser = $matches[1]
         Write-Host "  [OK] Ubuntu user is already initialized: $existingUser"
         exit 0
     }
@@ -1443,14 +1444,6 @@ try {
     Write-Host '  The password is used only by Ubuntu and is never stored by DevBox Lite.'
     Write-Host ''
 
-    do {
-        $username = (Read-Host '  Linux username').Trim()
-        if ($username -notmatch '^[a-z_][a-z0-9_-]*[$]?$') {
-            Write-Host '  [ERROR] Invalid username. Use lowercase letters, numbers, _ or -.'
-            $username = ''
-        }
-    } while (-not $username)
-
     $passwordSecure = Read-Host '  Linux password' -AsSecureString
     $password = Convert-SecureStringToPlainText -SecureString $passwordSecure
     $passwordSecure = $null
@@ -1459,6 +1452,7 @@ try {
         throw 'A non-empty Linux password is required.'
     }
 
+    # Single combined script that creates user AND verifies it in the same WSL session
     $setupScript = @'
 set -euo pipefail
 TARGET_USER="$(printf '%s' "$1" | base64 -d)"
@@ -1500,6 +1494,14 @@ EOF
 
 chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME"
 
+# Verify user exists in the SAME session - this avoids sync issues
+VERIFIED_USER="$(getent passwd "$TARGET_USER" | cut -d: -f1)"
+if [ -z "$VERIFIED_USER" ]; then
+    echo "[error] User verification failed immediately after creation"
+    exit 12
+fi
+
+echo "VERIFIED:$VERIFIED_USER"
 echo "  [wsl] Linux user created: $TARGET_USER"
 echo "  [wsl] Default WSL user configured: $TARGET_USER"
 echo "  [wsl] systemd enabled."
@@ -1512,37 +1514,34 @@ echo "  [wsl] systemd enabled."
 
     # Run WSL directly from this installer window. No separate Ubuntu window is opened.
     $command = "echo '$scriptB64' | base64 -d | bash -s -- '$usernameB64'"
-    $passwordB64 | & wsl.exe -d $Distribution -u root -- bash -lc $command
+    $output = $passwordB64 | & wsl.exe -d $Distribution -u root -- bash -lc $command 2>&1
     $rc = $LASTEXITCODE
     $passwordB64 = $null
+
+    # Parse output for verification result
+    $verifiedUser = ''
+    foreach ($line in @($output)) {
+        if ($line -match '^VERIFIED:(.+)$') {
+            $verifiedUser = $matches[1]
+        }
+    }
 
     if ($rc -ne 0) {
         $hexRc = ('0x{0:X8}' -f ([uint32]$rc))
         throw "Ubuntu first-run account setup failed with code $rc ($hexRc)."
     }
 
-    Write-Host '  [INFO] Waiting for Ubuntu user database synchronization...'
-    $existingUser = ''
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
-        Start-Sleep -Seconds 2
-        $existingUser = Get-NormalWslUser -Distro $Distribution
-        if ($existingUser) {
-            break
-        }
-        Write-Host "  [INFO] Checking Ubuntu user... attempt $attempt/10"
-    }
-
-    if (-not $existingUser) {
+    if (-not $verifiedUser) {
         Write-Host '  [DEBUG] Current Ubuntu passwd entries:'
         & wsl.exe -d $Distribution -u root -- cat /etc/passwd 2>$null | Write-Host
-        throw 'Ubuntu account setup completed, but no normal Linux user account was detected after retry.'
+        throw 'Ubuntu account setup completed, but no normal Linux user account was detected after creation.'
     }
 
-    if ($existingUser -ne $username) {
-        throw "Ubuntu account setup created '$existingUser' instead of '$username'."
+    if ($verifiedUser -ne $username) {
+        throw "Ubuntu account setup created '$verifiedUser' instead of '$username'."
     }
 
-    Write-Host "  [OK] Ubuntu user initialized: $existingUser"
+    Write-Host "  [OK] Ubuntu user initialized: $verifiedUser"
     Write-Host '  [OK] Installer will continue automatically.'
     exit 0
 }
