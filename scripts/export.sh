@@ -76,7 +76,7 @@ fi
 
 mkdir -p "$OUT_DIR"
 ABS_OUT="$(cd "$OUT_DIR" && pwd)"
-# اضافه کردن این دو خط برای ساخت پوشه داخلی
+# Ø§Ø¶Ø§ÙÙ‡ Ú©Ø±Ø¯Ù† Ø§ÛŒÙ† Ø¯Ùˆ Ø®Ø· Ø¨Ø±Ø§ÛŒ Ø³Ø§Ø®Øª Ù¾ÙˆØ´Ù‡ Ø¯Ø§Ø®Ù„ÛŒ
 BUNDLE_DIR="$ABS_OUT/devbox-data"
 mkdir -p "$BUNDLE_DIR"
 OFFLINE_DEPS_DIR="$BUNDLE_DIR/offline-deps"
@@ -799,7 +799,7 @@ echo "  [ok] image.tar"
 echo ""
 echo "[export] Exporting Docker volumes..."
 
-# ایجاد پوشه جداگانه برای ولوم‌ها
+# Ø§ÛŒØ¬Ø§Ø¯ Ù¾ÙˆØ´Ù‡ Ø¬Ø¯Ø§Ú¯Ø§Ù†Ù‡ Ø¨Ø±Ø§ÛŒ ÙˆÙ„ÙˆÙ…â€ŒÙ‡Ø§
 VOLUMES_OUT="$BUNDLE_DIR/volumes"
 mkdir -p "$VOLUMES_OUT"
 
@@ -816,7 +816,7 @@ for logical_volume in "${VOLUMES[@]}"; do
 
   ACTUAL_VOLUMES["$logical_volume"]="$actual_volume"
 
-  # ذخیره آرشیو داخل پوشه volumes
+  # Ø°Ø®ÛŒØ±Ù‡ Ø¢Ø±Ø´ÛŒÙˆ Ø¯Ø§Ø®Ù„ Ù¾ÙˆØ´Ù‡ volumes
   archive="$VOLUMES_OUT/vol-${logical_volume}.tar.gz"
   rm -f "$archive"
 
@@ -890,30 +890,33 @@ fi
 PROJECT_SHA256="$(sha256sum "$BUNDLE_DIR/project-src.tar.gz" | awk '{print $1}')"
 
 # ------------------------------------------------------------
-# Prebuilt
+# Prebuilt, required offline runtime assets
 # ------------------------------------------------------------
-if [ -d "$PROJECT_ROOT/prebuilt" ]; then
-  echo ""
-  echo "[export] Packaging prebuilt directory..."
-  rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
+echo ""
+if [ ! -d "$PROJECT_ROOT/prebuilt" ]; then
+  echo "[error] Required prebuilt directory was not found: $PROJECT_ROOT/prebuilt"
+  echo "        It contains the offline images and packages required by both"
+  echo "        the Windows and WSL runtimes. Export cancelled."
+  exit 1
+fi
 
-  if ! tar \
+echo "[export] Packaging required prebuilt directory..."
+rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
+
+tar \
   --owner="$EXPORT_UID" \
   --group="$EXPORT_GID" \
   --numeric-owner \
   -czf "$BUNDLE_DIR/prebuilt.tar.gz" \
-  -C "$PROJECT_ROOT" prebuilt; then
-    echo "[error] Failed to create prebuilt.tar.gz after ownership normalization."
-    exit 1
-  fi
+  -C "$PROJECT_ROOT" prebuilt
 
-  PREBUILT_SHA256="$(sha256sum "$BUNDLE_DIR/prebuilt.tar.gz" | awk '{print $1}')"
-  echo "  [ok] prebuilt.tar.gz"
-else
-  rm -f "$BUNDLE_DIR/prebuilt.tar.gz"
-  echo ""
-  echo "[info] prebuilt directory not found; skipping."
+if [ ! -s "$BUNDLE_DIR/prebuilt.tar.gz" ]; then
+  echo "[error] Required prebuilt.tar.gz was not created or is empty."
+  exit 1
 fi
+
+PREBUILT_SHA256="$(sha256sum "$BUNDLE_DIR/prebuilt.tar.gz" | awk '{print $1}')"
+echo "  [ok] prebuilt.tar.gz"
 
 # ------------------------------------------------------------
 # Copy installer scripts
@@ -1016,7 +1019,8 @@ try {
         @{ Path = (Join-Path $PackageRoot 'scripts\verify-windows-devbox.ps1'); Name = 'verify-windows-devbox.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\verify-wsl-devbox.ps1'); Name = 'verify-wsl-devbox.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\verify-wsl-project.ps1'); Name = 'verify-wsl-project.ps1' },
-        @{ Path = (Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.sh'); Name = 'install-wsl-docker-engine.sh' }
+        @{ Path = (Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.sh'); Name = 'install-wsl-docker-engine.sh' },
+        @{ Path = (Join-Path $PackageRoot 'prebuilt.tar.gz'); Name = 'prebuilt.tar.gz' }
     )
 
     foreach ($item in $required) {
@@ -1383,11 +1387,17 @@ echo "  [ok] wait-docker-install.ps1"
 cat > "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" <<'PS1'
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$Distribution = 'Ubuntu-24.04'
+    [ValidateSet('Prepare','Apply')]
+    [string]$Mode = 'Apply',
+    [string]$Distribution = 'Ubuntu-24.04',
+    [string]$StatePath = "$env:ProgramData\DevBoxLite\wsl-credentials.dat"
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Base64 payloads are pure ASCII. Pin the pipe encoding so the password
+# reaches Ubuntu byte-for-byte on every Windows locale and code page.
+$OutputEncoding = [Text.Encoding]::ASCII
 
 function Convert-SecureStringToPlainText {
     param([Security.SecureString]$SecureString)
@@ -1401,71 +1411,150 @@ function Convert-SecureStringToPlainText {
     }
 }
 
-try {
-    # Check if user already exists by running a single WSL command that checks internally
-    $checkScript = @'
-set -euo pipefail
-TARGET_USER="$(printf '%s' "$1" | base64 -d)"
+function Protect-DevBoxSecret {
+    param([string]$Text)
 
-if id "$TARGET_USER" >/dev/null 2>&1; then
-    echo "EXISTS:$TARGET_USER"
-    exit 0
-fi
-echo "NOT_EXISTS"
-'@
-    $username = ''
-    do {
-        $username = (Read-Host '  Linux username').Trim()
-        if ($username -notmatch '^[a-z_][a-z0-9_-]*[$]?$') {
-            Write-Host '  [ERROR] Invalid username. Use lowercase letters, numbers, _ or -.'
-            $username = ''
+    Add-Type -AssemblyName System.Security | Out-Null
+    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+    try {
+        $protected = [Security.Cryptography.ProtectedData]::Protect(
+            $bytes,
+            $null,
+            [Security.Cryptography.DataProtectionScope]::LocalMachine
+        )
+        return [Convert]::ToBase64String($protected)
+    }
+    finally {
+        [Array]::Clear($bytes, 0, $bytes.Length)
+    }
+}
+
+function Unprotect-DevBoxSecret {
+    param([string]$Base64)
+
+    Add-Type -AssemblyName System.Security | Out-Null
+    $protected = [Convert]::FromBase64String($Base64)
+    $bytes = [Security.Cryptography.ProtectedData]::Unprotect(
+        $protected,
+        $null,
+        [Security.Cryptography.DataProtectionScope]::LocalMachine
+    )
+    try {
+        return [Text.Encoding]::UTF8.GetString($bytes)
+    }
+    finally {
+        [Array]::Clear($bytes, 0, $bytes.Length)
+    }
+}
+
+# Single-line bootstrap.
+#
+# The payload is delivered as a base64 ARGUMENT and written to a file inside
+# Ubuntu before bash runs it. The previous implementation piped the payload
+# into `bash -s`, which permanently occupied the standard input of bash, so
+# the password that PowerShell piped to wsl.exe was never readable by the
+# payload. That is why chpasswd received an empty password and the WSL user
+# initialization failed.
+$bootstrap = 'payload="$1"; shift; umask 077; printf "%s" "$payload" | base64 -d > /tmp/.devbox-wsl-init.sh || exit 90; bash /tmp/.devbox-wsl-init.sh "$@"; rc=$?; rm -f /tmp/.devbox-wsl-init.sh; exit $rc'
+
+function Invoke-WslPayload {
+    param(
+        [Parameter(Mandatory = $true)][string]$ScriptText,
+        [string[]]$Arguments = @(),
+        [string]$StdinText
+    )
+
+    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($ScriptText))
+    $wslArgs = @('-d', $Distribution, '-u', 'root', '--', 'bash', '-c', $bootstrap, 'devbox-init', $payload) + $Arguments
+
+    if ($PSBoundParameters.ContainsKey('StdinText')) {
+        $output = $StdinText | & wsl.exe @wslArgs 2>&1
+    }
+    else {
+        $output = & wsl.exe @wslArgs 2>&1
+    }
+
+    return [PSCustomObject]@{
+        ExitCode = $LASTEXITCODE
+        Lines    = @($output | ForEach-Object { ([string]$_) -replace "`0", '' })
+    }
+}
+
+function Format-ExitCode {
+    param($Code)
+
+    $value = -1
+    try { $value = [int64]$Code } catch { $value = -1 }
+    $unsigned = [uint32]($value -band 0xFFFFFFFF)
+    return ('{0} (0x{1:X8})' -f $value, $unsigned)
+}
+
+$probeScript = @'
+set -uo pipefail
+
+EXISTING=""
+if [ -f /etc/wsl.conf ]; then
+    CONF_USER="$(awk '
+        BEGIN { section="" }
+        /^[[:space:]]*\[/ { line=$0; gsub(/[[:space:]]/,"",line); section=line; next }
+        section == "[user]" && $0 ~ /^[[:space:]]*default[[:space:]]*=/ {
+            sub(/^[[:space:]]*default[[:space:]]*=[[:space:]]*/, "")
+            gsub(/[[:space:]]/, "")
+            print
+            exit
         }
-    } while (-not $username)
+    ' /etc/wsl.conf 2>/dev/null)"
+    if [ -n "${CONF_USER:-}" ] && getent passwd "$CONF_USER" >/dev/null 2>&1; then
+        EXISTING="$CONF_USER"
+    fi
+fi
 
-    # First check if user already exists
-    $checkScriptB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($checkScript))
-    $usernameB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($username))
-    $checkCmd = "echo '$checkScriptB64' | base64 -d | bash -s -- '$usernameB64'"
-    $checkResult = & wsl.exe -d $Distribution -u root -- bash -lc $checkCmd
-    $checkRc = $LASTEXITCODE
+if [ -z "$EXISTING" ]; then
+    EXISTING="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')"
+fi
 
-    if ($checkResult -match '^EXISTS:(.+)$') {
-        $existingUser = $matches[1]
-        Write-Host "  [OK] Ubuntu user is already initialized: $existingUser"
-        exit 0
-    }
+if [ -n "${EXISTING:-}" ]; then
+    printf 'EXISTS:%s\n' "$EXISTING"
+else
+    printf '%s\n' 'NOT_EXISTS'
+fi
+exit 0
+'@
 
-    Write-Host ''
-    Write-Host '  Ubuntu-24.04 requires first-run account setup.'
-    Write-Host '  The account will be created in this installer window.'
-    Write-Host '  Enter the Linux username and password below.'
-    Write-Host '  You do not need to open Ubuntu or type exit.'
-    Write-Host '  The installer will continue automatically after setup.'
-    Write-Host '  The password is used only by Ubuntu and is never stored by DevBox Lite.'
-    Write-Host ''
+$setupScript = @'
+set -uo pipefail
+export DEBIAN_FRONTEND=noninteractive
+export LC_ALL=C
 
-    $passwordSecure = Read-Host '  Linux password' -AsSecureString
-    $password = Convert-SecureStringToPlainText -SecureString $passwordSecure
-    $passwordSecure = $null
+TARGET_USER="$(printf '%s' "${1:-}" | base64 -d 2>/dev/null || true)"
+if [ -z "${TARGET_USER:-}" ]; then
+    echo "[error] The Linux username did not reach Ubuntu."
+    exit 21
+fi
 
-    if ([string]::IsNullOrEmpty($password)) {
-        throw 'A non-empty Linux password is required.'
-    }
+# Standard input carries only the base64 password, so it can be read safely.
+PASSWORD_B64="$(tr -d '\r\n' 2>/dev/null || true)"
+if [ -z "${PASSWORD_B64:-}" ]; then
+    echo "[error] The Linux password did not reach Ubuntu."
+    exit 22
+fi
 
-    # Single combined script that creates user AND verifies it in the same WSL session
-    $setupScript = @'
-set -euo pipefail
-TARGET_USER="$(printf '%s' "$1" | base64 -d)"
-PASSWORD_B64="$(cat)"
-PASSWORD="$(printf '%s' "$PASSWORD_B64" | base64 -d)"
+PASSWORD="$(printf '%s' "$PASSWORD_B64" | base64 -d 2>/dev/null || true)"
 unset PASSWORD_B64
+if [ -z "${PASSWORD:-}" ]; then
+    echo "[error] The Linux password could not be decoded inside Ubuntu."
+    exit 23
+fi
 
 if id "$TARGET_USER" >/dev/null 2>&1; then
     echo "  [wsl] Existing Linux user detected: $TARGET_USER"
 else
     echo "  [wsl] Creating Linux user: $TARGET_USER"
-    useradd --create-home --shell /bin/bash "$TARGET_USER"
-    usermod -aG sudo "$TARGET_USER"
+    if ! useradd --create-home --shell /bin/bash "$TARGET_USER" 2>/tmp/.devbox-useradd.log; then
+        echo "[error] useradd failed for: $TARGET_USER"
+        cat /tmp/.devbox-useradd.log 2>/dev/null || true
+        exit 24
+    fi
 fi
 
 if ! id "$TARGET_USER" >/dev/null 2>&1; then
@@ -1473,65 +1562,315 @@ if ! id "$TARGET_USER" >/dev/null 2>&1; then
     exit 11
 fi
 
-printf '%s:%s\n' "$TARGET_USER" "$PASSWORD" | chpasswd
+# Reproduce the group membership of a normal Ubuntu first-run account.
+# Groups that do not exist in the minimal WSL rootfs are skipped.
+if ! getent group sudo >/dev/null 2>&1; then
+    groupadd sudo >/dev/null 2>&1 || true
+fi
+
+for group_name in adm sudo dialout cdrom floppy audio dip video plugdev users; do
+    if getent group "$group_name" >/dev/null 2>&1; then
+        usermod -aG "$group_name" "$TARGET_USER" >/dev/null 2>&1 || true
+    fi
+done
+
+if ! id -nG "$TARGET_USER" | tr ' ' '\n' | grep -qx sudo; then
+    echo "[error] Linux user is not a member of the sudo group: $TARGET_USER"
+    exit 26
+fi
+
+if ! printf '%s:%s\n' "$TARGET_USER" "$PASSWORD" | chpasswd; then
+    unset PASSWORD
+    echo "[error] Could not set the Linux password (chpasswd failed)."
+    exit 25
+fi
 unset PASSWORD
 
-TARGET_HOME="$(id -u "$TARGET_USER" >/dev/null 2>&1 && getent passwd "$TARGET_USER" | cut -d: -f6 || echo "/home/$TARGET_USER")"
-if [ -z "$TARGET_HOME" ] || [ ! -d "$TARGET_HOME" ]; then
+passwd -u "$TARGET_USER" >/dev/null 2>&1 || true
+
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+if [ -z "${TARGET_HOME:-}" ]; then
+    TARGET_HOME="/home/$TARGET_USER"
+fi
+if [ ! -d "$TARGET_HOME" ]; then
+    mkdir -p "$TARGET_HOME"
+fi
+if [ ! -d "$TARGET_HOME" ]; then
     echo "[error] Could not determine Linux home directory."
     exit 10
 fi
 
-cat > /etc/wsl.conf <<EOF
-[boot]
-systemd=true
+# Update /etc/wsl.conf in place instead of overwriting it, so existing distro
+# configuration (for example [automount] or [network]) is preserved.
+set_wsl_conf_value() {
+    conf_section="$1"
+    conf_key="$2"
+    conf_value="$3"
+    conf_file=/etc/wsl.conf
 
-[user]
-default=$TARGET_USER
-EOF
+    [ -f "$conf_file" ] || : > "$conf_file"
 
-chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME"
+    conf_tmp="$(mktemp)"
+    awk -v section="[$conf_section]" -v key="$conf_key" -v value="$conf_value" '
+        BEGIN { insec=0; done=0; seen=0 }
+        /^[[:space:]]*\[/ {
+            line=$0
+            gsub(/[[:space:]]/, "", line)
+            if (insec && !done) { print key "=" value; done=1 }
+            insec = (line == section)
+            if (insec) { seen=1 }
+            print
+            next
+        }
+        {
+            if (insec && $0 ~ ("^[[:space:]]*" key "[[:space:]]*=")) {
+                if (!done) { print key "=" value; done=1 }
+                next
+            }
+            print
+        }
+        END {
+            if (insec && !done) { print key "=" value; done=1 }
+            if (!seen) { print ""; print section; print key "=" value }
+        }
+    ' "$conf_file" > "$conf_tmp"
 
-# Verify user exists in the SAME session - this avoids sync issues
+    if [ -s "$conf_tmp" ]; then
+        cat "$conf_tmp" > "$conf_file"
+    fi
+    rm -f "$conf_tmp"
+}
+
+set_wsl_conf_value boot systemd true
+set_wsl_conf_value user default "$TARGET_USER"
+chmod 0644 /etc/wsl.conf
+
+chown -R "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME" || true
+
 VERIFIED_USER="$(getent passwd "$TARGET_USER" | cut -d: -f1)"
-if [ -z "$VERIFIED_USER" ]; then
+if [ -z "${VERIFIED_USER:-}" ]; then
     echo "[error] User verification failed immediately after creation"
     exit 12
 fi
 
-echo "VERIFIED:$VERIFIED_USER"
+if ! grep -qE "^default[[:space:]]*=[[:space:]]*$TARGET_USER[[:space:]]*$" /etc/wsl.conf; then
+    echo "[error] Default WSL user was not written to /etc/wsl.conf."
+    exit 13
+fi
+
+printf 'VERIFIED:%s\n' "$VERIFIED_USER"
 echo "  [wsl] Linux user created: $TARGET_USER"
 echo "  [wsl] Default WSL user configured: $TARGET_USER"
 echo "  [wsl] systemd enabled."
+exit 0
 '@
 
-    $scriptB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($setupScript))
-    $usernameB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($username))
-    $passwordB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($password))
-    $password = $null
+function Test-WslDistributionPresent {
+    $distros = @(
+        wsl.exe --list --quiet 2>$null |
+            ForEach-Object { ($_ -replace "`0", '').Trim() } |
+            Where-Object { $_ }
+    )
+    return ($distros -contains $Distribution)
+}
 
-    # Run WSL directly from this installer window. No separate Ubuntu window is opened.
-    $command = "echo '$scriptB64' | base64 -d | bash -s -- '$usernameB64'"
-    $output = $passwordB64 | & wsl.exe -d $Distribution -u root -- bash -lc $command 2>&1
-    $rc = $LASTEXITCODE
-    $passwordB64 = $null
+function Get-ExistingWslUser {
+    $probe = Invoke-WslPayload -ScriptText $probeScript
 
-    # Parse output for verification result
-    $verifiedUser = ''
-    foreach ($line in @($output)) {
-        if ($line -match '^VERIFIED:(.+)$') {
-            $verifiedUser = $matches[1]
+    if ($probe.ExitCode -ne 0) {
+        $detail = ($probe.Lines -join ' ').Trim()
+        throw "Could not query Ubuntu user accounts (exit $(Format-ExitCode $probe.ExitCode)). $detail"
+    }
+
+    foreach ($line in $probe.Lines) {
+        if ($line -match '^EXISTS:(.+)$') {
+            return $matches[1].Trim()
         }
     }
 
-    if ($rc -ne 0) {
-        $hexRc = ('0x{0:X8}' -f ([uint32]$rc))
-        throw "Ubuntu first-run account setup failed with code $rc ($hexRc)."
+    return ''
+}
+
+function Read-DevBoxCredential {
+    $reserved = @('root','daemon','bin','sys','sync','games','man','lp','mail','news','uucp','proxy','www-data','backup','list','irc','nobody','systemd-network','systemd-resolve','messagebus','docker')
+
+    $username = ''
+    do {
+        $username = (Read-Host '  Linux username').Trim()
+
+        if ($username.Length -gt 32) {
+            Write-Host '  [ERROR] Username is too long (maximum 32 characters).'
+            $username = ''
+        }
+        elseif ($username -notmatch '^[a-z_][a-z0-9_-]*$') {
+            Write-Host '  [ERROR] Invalid username. Use lowercase letters, numbers, _ or -.'
+            $username = ''
+        }
+        elseif ($reserved -contains $username) {
+            Write-Host '  [ERROR] That username is reserved by Ubuntu. Choose another one.'
+            $username = ''
+        }
+    } while (-not $username)
+
+    $password = ''
+    do {
+        $first = Read-Host '  Linux password' -AsSecureString
+        $second = Read-Host '  Confirm Linux password' -AsSecureString
+
+        $plainFirst = Convert-SecureStringToPlainText -SecureString $first
+        $plainSecond = Convert-SecureStringToPlainText -SecureString $second
+
+        if ([string]::IsNullOrEmpty($plainFirst)) {
+            Write-Host '  [ERROR] A non-empty Linux password is required.'
+        }
+        elseif ($plainFirst.Length -lt 4) {
+            Write-Host '  [ERROR] Use at least 4 characters.'
+        }
+        elseif ($plainFirst -cne $plainSecond) {
+            Write-Host '  [ERROR] The two passwords do not match.'
+        }
+        elseif ($plainFirst -match '[^\u0020-\u007E]') {
+            Write-Host '  [ERROR] Use printable ASCII characters only.'
+        }
+        else {
+            $password = $plainFirst
+        }
+
+        $plainFirst = $null
+        $plainSecond = $null
+    } while (-not $password)
+
+    return [PSCustomObject]@{ UserName = $username; Password = $password }
+}
+
+function Save-DevBoxCredential {
+    param([string]$UserName, [string]$Password)
+
+    $dir = Split-Path -Parent $StatePath
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+
+    $blob = Protect-DevBoxSecret -Text ("{0}`n{1}" -f $UserName, $Password)
+    Set-Content -LiteralPath $StatePath -Value $blob -Encoding ASCII -NoNewline
+
+    # Machine-scoped DPAPI blob, readable only by SYSTEM and Administrators.
+    & icacls.exe $StatePath /inheritance:r /grant:r '*S-1-5-18:(F)' '*S-1-5-32-544:(F)' *> $null
+}
+
+function Get-DevBoxCredential {
+    if (-not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        $blob = (Get-Content -LiteralPath $StatePath -Raw).Trim()
+        if (-not $blob) { return $null }
+
+        $plain = Unprotect-DevBoxSecret -Base64 $blob
+        $parts = $plain -split "`n", 2
+        if ($parts.Count -ne 2 -or -not $parts[0] -or -not $parts[1]) { return $null }
+
+        return [PSCustomObject]@{ UserName = $parts[0].Trim(); Password = $parts[1] }
+    }
+    catch {
+        Write-Host '  [WARN] Stored Ubuntu account details could not be read; they will be requested again.'
+        return $null
+    }
+}
+
+function Remove-DevBoxCredential {
+    if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+        Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+try {
+    if ($Mode -eq 'Prepare') {
+        # Account details are collected BEFORE any Windows restart so the
+        # installer can finish unattended when it resumes automatically.
+        if ((Test-WslDistributionPresent) -and (Get-ExistingWslUser)) {
+            Write-Host '  [OK] Ubuntu already has a Linux user account; no account setup is needed.'
+            Remove-DevBoxCredential
+            exit 0
+        }
+
+        if (Get-DevBoxCredential) {
+            Write-Host '  [OK] Ubuntu account details were already provided for this installation.'
+            exit 0
+        }
+
+        Write-Host ''
+        Write-Host '  Ubuntu-24.04 requires first-run account setup.'
+        Write-Host '  The account will be created in this installer window.'
+        Write-Host '  Enter the Linux username and password below.'
+        Write-Host '  You do not need to open Ubuntu or type exit.'
+        Write-Host '  The installer will continue automatically after setup.'
+        Write-Host '  The password is used only by Ubuntu and is never stored in clear text.'
+        Write-Host ''
+
+        $credential = Read-DevBoxCredential
+        Save-DevBoxCredential -UserName $credential.UserName -Password $credential.Password
+        $credential = $null
+
+        Write-Host '  [OK] Ubuntu account details recorded for this installation.'
+        exit 0
+    }
+
+    if (-not (Test-WslDistributionPresent)) {
+        throw "WSL distribution is not registered: $Distribution"
+    }
+
+    $existingUser = Get-ExistingWslUser
+    if ($existingUser) {
+        Write-Host "  [OK] Ubuntu user is already initialized: $existingUser"
+        Remove-DevBoxCredential
+        exit 0
+    }
+
+    $credential = Get-DevBoxCredential
+
+    if (-not $credential) {
+        if (-not [Environment]::UserInteractive) {
+            throw 'No Ubuntu account details are available and this session cannot prompt. Run setup-offline.bat /resume from an elevated Command Prompt.'
+        }
+
+        Write-Host ''
+        Write-Host '  Ubuntu-24.04 requires first-run account setup.'
+        Write-Host '  The account will be created in this installer window.'
+        Write-Host '  You do not need to open Ubuntu or type exit.'
+        Write-Host '  The installer will continue automatically after setup.'
+        Write-Host ''
+
+        $credential = Read-DevBoxCredential
+    }
+
+    $username = $credential.UserName
+    $usernameB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($username))
+    $passwordB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($credential.Password))
+    $credential = $null
+
+    # The payload runs through wsl.exe -d $Distribution -u root in this same
+    # installer window. No separate Ubuntu window is opened.
+    $result = Invoke-WslPayload -ScriptText $setupScript -Arguments @($usernameB64) -StdinText $passwordB64
+    $passwordB64 = $null
+
+    foreach ($line in $result.Lines) {
+        if ($line -notmatch '^VERIFIED:') { Write-Host $line }
+    }
+
+    if ($result.ExitCode -ne 0) {
+        throw "Ubuntu first-run account setup failed with code $(Format-ExitCode $result.ExitCode)."
+    }
+
+    $verifiedUser = ''
+    foreach ($line in $result.Lines) {
+        if ($line -match '^VERIFIED:(.+)$') { $verifiedUser = $matches[1].Trim() }
     }
 
     if (-not $verifiedUser) {
         Write-Host '  [DEBUG] Current Ubuntu passwd entries:'
-        & wsl.exe -d $Distribution -u root -- cat /etc/passwd 2>$null | Write-Host
+        & wsl.exe -d $Distribution -u root -- getent passwd 2>$null | Write-Host
         throw 'Ubuntu account setup completed, but no normal Linux user account was detected after creation.'
     }
 
@@ -1539,19 +1878,201 @@ echo "  [wsl] systemd enabled."
         throw "Ubuntu account setup created '$verifiedUser' instead of '$username'."
     }
 
-    Write-Host "  [OK] Ubuntu user initialized: $verifiedUser"
+    # /etc/wsl.conf is only evaluated while the distro boots, so the new
+    # default user and systemd stay inactive until Ubuntu is restarted.
+    Write-Host '  Restarting Ubuntu-24.04 so the new default user and systemd take effect...'
+    & wsl.exe --manage $Distribution --set-default-user $username *> $null
+    & wsl.exe --terminate $Distribution *> $null
+    Start-Sleep -Seconds 3
+
+    & wsl.exe -d $Distribution -u root -- true *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Ubuntu-24.04 could not be restarted after account creation.'
+    }
+
+    $confirmedUser = Get-ExistingWslUser
+    if ($confirmedUser -ne $username) {
+        throw "Ubuntu restarted but the account could not be confirmed (found '$confirmedUser')."
+    }
+
+    Remove-DevBoxCredential
+
+    Write-Host "  [OK] Ubuntu user initialized: $username"
     Write-Host '  [OK] Installer will continue automatically.'
     exit 0
 }
 catch {
-    $password = $null
-    $passwordSecure = $null
-    $passwordB64 = $null
     Write-Host "[ERROR] Ubuntu first-run user initialization failed: $($_.Exception.Message)"
     exit 1
 }
 PS1
 echo "  [ok] initialize-wsl-user.ps1"
+
+cat > "$BUNDLE_DIR/scripts/manage-resume-task.ps1" <<'PS1'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('Register','Remove','Status')]
+    [string]$Mode,
+    [string]$TaskName = 'DevBoxLite-OfflineSetup-Resume',
+    [string]$SetupPath,
+    [string]$StateFile,
+    [string]$StateDir
+)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not $StateDir) {
+    $StateDir = Join-Path $env:ProgramData 'DevBoxLite'
+}
+if (-not $StateFile) {
+    $StateFile = Join-Path $StateDir 'offline-setup.state'
+}
+
+$wrapperPath = Join-Path $StateDir 'resume-offline-setup.cmd'
+$lockDir = Join-Path $StateDir 'resume-offline-setup.lock'
+$logPath = Join-Path $StateDir 'resume.log'
+
+function Get-InstallerIdentity {
+    # The installer must resume as the interactive administrator, never as
+    # SYSTEM. WSL distributions are registered per Windows user, so a task
+    # running as SYSTEM cannot see Ubuntu-24.04 and every WSL command fails.
+    $candidates = @()
+
+    if ($env:USERDOMAIN -and $env:USERNAME) { $candidates += ($env:USERDOMAIN + '\' + $env:USERNAME) }
+    $candidates += [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    if ($env:COMPUTERNAME -and $env:USERNAME) { $candidates += ($env:COMPUTERNAME + '\' + $env:USERNAME) }
+
+    foreach ($candidate in $candidates) {
+        if (-not $candidate) { continue }
+        if ($candidate -like '*\SYSTEM') { continue }
+        if ($candidate -like 'NT AUTHORITY*') { continue }
+        return $candidate
+    }
+
+    throw 'Could not determine the interactive Windows account for automatic resume.'
+}
+
+function Remove-ResumeTask {
+    foreach ($name in @($TaskName, 'DevBoxLite-OfflineSetup', 'DevBoxLite-OfflineSetup-Startup', 'DevBoxLite-OfflineSetup-Logon')) {
+        & schtasks.exe /delete /tn $name /f *> $null
+    }
+
+    if (Test-Path -LiteralPath $wrapperPath) {
+        Remove-Item -LiteralPath $wrapperPath -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $lockDir) {
+        Remove-Item -LiteralPath $lockDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Write-ResumeWrapper {
+    param([string]$Setup)
+
+    $q = [char]34
+
+    # Delayed expansion is mandatory here. The previous wrapper read
+    # %errorlevel% inside a FOR block, so it always saw the parse-time value
+    # and the resume loop could never detect success or failure.
+    $lines = @(
+        '@echo off',
+        'setlocal EnableExtensions EnableDelayedExpansion',
+        ('set ' + $q + 'SETUP=' + $Setup + $q),
+        ('set ' + $q + 'STATE_FILE=' + $StateFile + $q),
+        ('set ' + $q + 'LOCK_DIR=' + $lockDir + $q),
+        ('set ' + $q + 'RESUME_LOG=' + $logPath + $q),
+        'if not exist %SETUP% exit /b 0'.Replace('%SETUP%', $q + '%SETUP%' + $q),
+        'if not exist %STATE_FILE% exit /b 0'.Replace('%STATE_FILE%', $q + '%STATE_FILE%' + $q),
+        ('mkdir ' + $q + '%LOCK_DIR%' + $q + ' >nul 2>&1'),
+        'if errorlevel 1 exit /b 0',
+        ('set ' + $q + 'RESUME_RC=1' + $q),
+        ('>>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume trigger started.'),
+        'for /l %%N in (1,1,5) do (',
+        ('  if not ' + $q + '!RESUME_RC!' + $q + '==' + $q + '0' + $q + ' ('),
+        ('    >>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume attempt %%N of 5.'),
+        ('    call ' + $q + '%SETUP%' + $q + ' /resume >>' + $q + '%RESUME_LOG%' + $q + ' 2>&1'),
+        ('    set ' + $q + 'RESUME_RC=!errorlevel!' + $q),
+        ('    if ' + $q + '!RESUME_RC!' + $q + '==' + $q + '3010' + $q + ' goto :resume_done'),
+        ('    if not ' + $q + '!RESUME_RC!' + $q + '==' + $q + '0' + $q + ' timeout /t 20 /nobreak >nul'),
+        '  )',
+        ')',
+        ':resume_done',
+        ('>>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume exited with code !RESUME_RC!.'),
+        ('rmdir /s /q ' + $q + '%LOCK_DIR%' + $q + ' >nul 2>&1'),
+        'for %%R in (!RESUME_RC!) do (endlocal & exit /b %%R)'
+    )
+
+    $dir = Split-Path -Parent $wrapperPath
+    if (-not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+
+    # cmd.exe needs CRLF line endings and a plain ASCII batch file.
+    $content = ($lines -join "`r`n") + "`r`n"
+    [IO.File]::WriteAllText($wrapperPath, $content, [Text.Encoding]::ASCII)
+
+    if (-not (Test-Path -LiteralPath $wrapperPath -PathType Leaf)) {
+        throw "Could not create the resume wrapper: $wrapperPath"
+    }
+}
+
+try {
+    if ($Mode -eq 'Remove') {
+        Remove-ResumeTask
+        Write-Host '  [OK] Automatic resume task removed.'
+        exit 0
+    }
+
+    if ($Mode -eq 'Status') {
+        & schtasks.exe /query /tn $TaskName *> $null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  [OK] Automatic resume task is registered: $TaskName"
+            exit 0
+        }
+        Write-Host "  [INFO] Automatic resume task is not registered: $TaskName"
+        exit 1
+    }
+
+    if (-not $SetupPath) {
+        throw 'SetupPath is required when registering the automatic resume task.'
+    }
+    if (-not (Test-Path -LiteralPath $SetupPath -PathType Leaf)) {
+        throw "setup-offline.bat could not be found for automatic resume: $SetupPath"
+    }
+    if (-not (Test-Path -LiteralPath $StateFile -PathType Leaf)) {
+        throw "Installer state file is missing, so automatic resume cannot be registered: $StateFile"
+    }
+
+    $identity = Get-InstallerIdentity
+    Write-ResumeWrapper -Setup ((Resolve-Path -LiteralPath $SetupPath).Path)
+    Remove-ResumeTask
+
+    # Registered through the ScheduledTasks module so the task can run with an
+    # interactive token at the highest privileges without a stored password.
+    $action = New-ScheduledTaskAction -Execute $env:ComSpec -Argument ('/d /c ' + [char]34 + [char]34 + $wrapperPath + [char]34 + [char]34)
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity
+    $trigger.Delay = 'PT30S'
+    $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Resumes the DevBox Lite offline installation after a Windows restart.' -Force | Out-Null
+
+    $registered = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $registered) {
+        throw 'The automatic resume task could not be verified after registration.'
+    }
+
+    Write-Host "  [OK] Automatic resume task registered: $TaskName"
+    Write-Host "  [INFO] Runs at logon as: $identity"
+    Write-Host "  [INFO] Resume log: $logPath"
+    exit 0
+}
+catch {
+    Write-Host "[ERROR] Automatic resume task could not be configured: $($_.Exception.Message)"
+    exit 1
+}
+PS1
+echo "  [ok] manage-resume-task.ps1"
 
 cat > "$BUNDLE_DIR/scripts/restore-windows-devbox.ps1" <<'PS1'
 [CmdletBinding()]
@@ -2468,6 +2989,9 @@ set "RESUME_MODE=0"
 set "STAGE=START"
 set "DEST_PATH=D:\devbox-project"
 set "WSL_MSI=%PACKAGE_ROOT%\offline-deps\wsl.x64.msi"
+set "SETUP_SELF=%~f0"
+set "CRED_FILE=%STATE_DIR%\wsl-credentials.dat"
+set "TASK_NAME=DevBoxLite-OfflineSetup-Resume"
 
 if /I "%~1"=="/resume" set "RESUME_MODE=1"
 if "%RESUME_MODE%"=="1" goto :resume
@@ -2505,6 +3029,8 @@ set /p "DEST_PATH=Enter destination path for project setup [Default: D:\devbox-p
 if not defined DEST_PATH set "DEST_PATH=D:\devbox-project"
 
 rem A normal run always starts from START. Resume state is used only with /resume.
+if exist "%CRED_FILE%" del /f /q "%CRED_FILE%" >nul 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\manage-resume-task.ps1" -Mode Remove -StateFile "%STATE_FILE%" -StateDir "%STATE_DIR%" >nul 2>&1
 set "STAGE=START"
 if exist "%STATE_FILE%" del /f /q "%STATE_FILE%" >nul 2>&1
 
@@ -2530,6 +3056,11 @@ goto :main
 call :validate_package
 set "VALIDATE_RC=%errorlevel%"
 if not "%VALIDATE_RC%"=="0" goto :fail_validate
+
+rem Account details are collected before any restart so the installer can
+rem finish unattended when it resumes automatically.
+call :prepare_wsl_credentials
+if errorlevel 1 goto :fail
 
 if /I "%STAGE%"=="START" goto :stage_features
 if /I "%STAGE%"=="FEATURES_ENABLED" goto :stage_wsl
@@ -2659,6 +3190,10 @@ exit /b 3010
 :stage_restore
 set "STAGE=RESTORE_DEVBOX"
 
+rem After a restart Docker Desktop may still be starting up.
+call :ensure_docker_desktop_ready
+if errorlevel 1 goto :fail
+
 rem Restore the DevBox runtime inside the dedicated WSL Docker Engine first.
 call :restore_wsl_devbox
 if errorlevel 1 goto :wsl_devbox_restore_error
@@ -2678,6 +3213,8 @@ call :verify
 if errorlevel 1 goto :fail
 
 call :cleanup_success
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\manage-resume-task.ps1" -Mode Remove -StateFile "%STATE_FILE%" -StateDir "%STATE_DIR%" >nul 2>&1
+if exist "%CRED_FILE%" del /f /q "%CRED_FILE%" >nul 2>&1
 
 echo.
 echo ============================================================
@@ -2800,10 +3337,17 @@ if errorlevel 1 goto :ubuntu_default_error
 echo   [OK] Ubuntu-24.04 is installed as WSL2 and set as default distro.
 exit /b 0
 
+:prepare_wsl_credentials
+echo.
+echo [2/9] Preparing Ubuntu-24.04 account details...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Mode Prepare -Distribution "Ubuntu-24.04" -StatePath "%CRED_FILE%"
+if errorlevel 1 goto :wsl_user_init_error
+exit /b 0
+
 :initialize_wsl_user
 echo.
 echo [5/9] Initializing Ubuntu-24.04 first-run user...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Distribution "Ubuntu-24.04"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Mode Apply -Distribution "Ubuntu-24.04" -StatePath "%CRED_FILE%"
 if errorlevel 1 goto :wsl_user_init_error
 exit /b 0
 
@@ -2843,6 +3387,9 @@ set "DOCKER_RESTART_RC=%errorlevel%"
 if "%DOCKER_RESTART_RC%"=="3010" exit /b 3010
 if not "%DOCKER_RESTART_RC%"=="0" goto :docker_install_error
 
+rem A fresh installation must continue with starting Docker Desktop.
+goto :docker_start
+
 :wait_for_docker_install
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\wait-docker-install.ps1" -InstallerPath "%DOCKER_EXE%" -LogPath "%DOCKER_INSTALL_LOG%" -TimeoutSeconds 900 -PollSeconds 2
 exit /b %errorlevel%
@@ -2873,6 +3420,26 @@ exit /b 0
 
 :docker_installer_restart
 exit /b 3010
+:ensure_docker_desktop_ready
+set "DOCKER_DESKTOP_EXE=%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
+if not exist "%DOCKER_DESKTOP_EXE%" goto :docker_exe_missing
+tasklist /fi "imagename eq Docker Desktop.exe" 2>nul | findstr /i "Docker Desktop.exe" >nul 2>&1
+if errorlevel 1 start "" "%DOCKER_DESKTOP_EXE%"
+echo   Waiting for the Docker Desktop engine...
+set /a DD_WAIT=0
+
+:ensure_docker_desktop_wait
+set /a DD_WAIT+=1
+docker.exe --context desktop-linux version >nul 2>&1
+if not errorlevel 1 goto :ensure_docker_desktop_ok
+if %DD_WAIT% GEQ 60 goto :docker_timeout
+timeout /t 5 /nobreak >nul
+goto :ensure_docker_desktop_wait
+
+:ensure_docker_desktop_ok
+echo   [OK] Docker Desktop engine is ready.
+exit /b 0
+
 
 :restore_wsl_devbox
 echo   [wsl] Restoring DevBox image, prebuilt directory, volumes, and Compose...
@@ -2927,77 +3494,27 @@ echo   [OK] DevBox project files
 exit /b 0
 
 :schedule_restart
-set "RESUME_WRAPPER=%STATE_DIR%\resume-offline-setup.cmd"
-set "RESUME_LOCK=%STATE_DIR%\resume-offline-setup.lock"
-set "SETUP_FULL_PATH=%~f0"
-set "TASK_START=DevBoxLite-OfflineSetup-Startup"
-set "TASK_LOGON=DevBoxLite-OfflineSetup-Logon"
-set "RESUME_LOG=%STATE_DIR%\resume.log"
-
 echo.
 echo   Windows restart is required before installation can continue.
-echo   The installer will resume automatically after Windows starts or the user logs on.
+echo   The installer resumes automatically after you sign back in.
 echo.
 
-rem The wrapper is self-contained and records diagnostics for automatic resume.
->"%RESUME_WRAPPER%" echo @echo off
->>"%RESUME_WRAPPER%" echo setlocal EnableExtensions DisableDelayedExpansion
->>"%RESUME_WRAPPER%" echo set "STATE_FILE=%STATE_FILE%"
->>"%RESUME_WRAPPER%" echo set "RESUME_LOCK=%RESUME_LOCK%"
->>"%RESUME_WRAPPER%" echo set "RESUME_LOG=%RESUME_LOG%"
->>"%RESUME_WRAPPER%" echo if not exist "%%STATE_FILE%%" exit /b 0
->>"%RESUME_WRAPPER%" echo if exist "%%RESUME_LOCK%%" exit /b 0
->>"%RESUME_WRAPPER%" echo mkdir "%%RESUME_LOCK%%" ^>nul 2^>^&1
->>"%RESUME_WRAPPER%" echo if errorlevel 1 exit /b 0
->>"%RESUME_WRAPPER%" echo ^>^>"%%RESUME_LOG%%" echo [%%date%% %%time%%] Resume trigger started.
->>"%RESUME_WRAPPER%" echo set "RESUME_RC=1"
->>"%RESUME_WRAPPER%" echo for /l %%%%N in ^(1,1,5^) do ^(
->>"%RESUME_WRAPPER%" echo   ^>^>"%%RESUME_LOG%%" echo [%%date%% %%time%%] Resume attempt %%%%N of 5.
->>"%RESUME_WRAPPER%" echo   call "%SETUP_FULL_PATH%" /resume ^>^>"%%RESUME_LOG%%" 2^>^&1
->>"%RESUME_WRAPPER%" echo   set "RESUME_RC=%%%%errorlevel%%%%"
->>"%RESUME_WRAPPER%" echo   if "%%%%RESUME_RC%%%%"=="0" goto :resume_done
->>"%RESUME_WRAPPER%" echo   if %%%%N LSS 5 timeout /t 30 /nobreak ^>nul
->>"%RESUME_WRAPPER%" echo ^)
->>"%RESUME_WRAPPER%" echo :resume_done
->>"%RESUME_WRAPPER%" echo ^>^>"%%RESUME_LOG%%" echo [%%date%% %%time%%] Resume exited with code %%RESUME_RC%%.
->>"%RESUME_WRAPPER%" echo rmdir "%%RESUME_LOCK%%" ^>nul 2^>^&1
->>"%RESUME_WRAPPER%" echo endlocal ^& exit /b %%RESUME_RC%%
-
-if not exist "%RESUME_WRAPPER%" goto :resume_task_error
-if not exist "%STATE_FILE%" goto :resume_task_error
-
-rem Remove stale tasks before recreating them.
-schtasks /delete /tn "%TASK_START%" /f >nul 2>&1
-schtasks /delete /tn "%TASK_LOGON%" /f >nul 2>&1
-
-rem Startup trigger handles reboot continuation even before interactive logon.
-schtasks /create /tn "%TASK_START%" /sc onstart /delay 0001:00 /ru SYSTEM /rl HIGHEST /tr "%ComSpec% /d /c ""%RESUME_WRAPPER%""" /f >"%STATE_DIR%\resume-task-startup-create.txt" 2>&1
+rem The resume task must run as the interactive administrator.
+rem WSL distributions are registered per Windows user, so a task
+rem running as SYSTEM cannot see Ubuntu-24.04 at all.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\manage-resume-task.ps1" -Mode Register -SetupPath "%SETUP_SELF%" -StateFile "%STATE_FILE%" -StateDir "%STATE_DIR%"
 if errorlevel 1 goto :resume_task_error
 
-rem Logon trigger is a second safety net when startup runs before services are ready.
-schtasks /create /tn "%TASK_LOGON%" /sc onlogon /delay 0000:30 /ru SYSTEM /rl HIGHEST /tr "%ComSpec% /d /c ""%RESUME_WRAPPER%""" /f >"%STATE_DIR%\resume-task-logon-create.txt" 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\manage-resume-task.ps1" -Mode Status -StateFile "%STATE_FILE%" -StateDir "%STATE_DIR%"
 if errorlevel 1 goto :resume_task_error
 
-schtasks /query /tn "%TASK_START%" /fo LIST /v >"%STATE_DIR%\resume-task-startup.txt" 2>&1
-if errorlevel 1 goto :resume_task_error
-schtasks /query /tn "%TASK_LOGON%" /fo LIST /v >"%STATE_DIR%\resume-task-logon.txt" 2>&1
-if errorlevel 1 goto :resume_task_error
-
-findstr /I /C:"TaskName:" "%STATE_DIR%\resume-task-startup.txt" >nul 2>&1
-if errorlevel 1 goto :resume_task_error
-findstr /I /C:"TaskName:" "%STATE_DIR%\resume-task-logon.txt" >nul 2>&1
-if errorlevel 1 goto :resume_task_error
-
-set "TASK_REGISTERED=1"
-echo   [OK] Automatic resume tasks created and verified.
-echo   [INFO] Startup task : %TASK_START%
-echo   [INFO] Logon task   : %TASK_LOGON%
-echo   [INFO] Resume log   : %RESUME_LOG%
-echo   [INFO] Windows will restart in 10 seconds.
-shutdown /r /t 10 /c "DevBox Lite Offline Setup requires a restart to continue."
+echo   [OK] Automatic resume task registered and verified.
+echo   [INFO] Resume task: %TASK_NAME%
+echo   [INFO] Resume log : %STATE_DIR%\resume.log
+echo   [INFO] Windows will restart in 15 seconds.
+shutdown /r /t 15 /c "DevBox Lite Offline Setup requires a restart to continue."
 if errorlevel 1 goto :restart_schedule_error
 exit /b 0
-
 :save_stage
 set "NEW_STAGE=%~1"
 set "STATE_TMP=%STATE_FILE%.tmp"
@@ -3744,6 +4261,9 @@ checks = {
 }
 
 # Metadata hashes point to the downloaded/built payloads.
+if not (bundle / 'prebuilt.tar.gz').is_file():
+    raise SystemExit('Manifest validation failed: required prebuilt.tar.gz is missing')
+
 metadata_checks = {
     'image_sha256': bundle / 'image.tar',
     'ubuntu_wsl_sha256': bundle / 'offline-deps' / 'ubuntu-24.04.4-wsl-amd64.wsl',
