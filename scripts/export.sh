@@ -3502,6 +3502,9 @@ echo.
 rem The resume task must run as the interactive administrator.
 rem WSL distributions are registered per Windows user, so a task
 rem running as SYSTEM cannot see Ubuntu-24.04 at all.
+schtasks /create /tn "%TASK_START%" /sc onstart /tr "\"%SETUP_SELF%\" /resume" /ru SYSTEM /f >nul 2>&1
+schtasks /create /tn "%TASK_LOGON%" /sc onlogon /tr "\"%SETUP_SELF%\" /resume" /ru SYSTEM /f >nul 2>&1
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\manage-resume-task.ps1" -Mode Register -SetupPath "%SETUP_SELF%" -StateFile "%STATE_FILE%" -StateDir "%STATE_DIR%"
 if errorlevel 1 goto :resume_task_error
 
