@@ -1447,15 +1447,66 @@ function Unprotect-DevBoxSecret {
     }
 }
 
-# Single-line bootstrap.
+# WSL payload delivery.
 #
-# The payload is delivered as a base64 ARGUMENT and written to a file inside
-# Ubuntu before bash runs it. The previous implementation piped the payload
-# into `bash -s`, which permanently occupied the standard input of bash, so
-# the password that PowerShell piped to wsl.exe was never readable by the
-# payload. That is why chpasswd received an empty password and the WSL user
-# initialization failed.
-$bootstrap = 'payload="$1"; shift; umask 077; printf "%s" "$payload" | base64 -d > /tmp/.devbox-wsl-init.sh || exit 90; bash /tmp/.devbox-wsl-init.sh "$@"; rc=$?; rm -f /tmp/.devbox-wsl-init.sh; exit $rc'
+# Every command that reaches wsl.exe survives two levels of parsing:
+#   1. the quoting PowerShell applies to native command arguments, and
+#   2. the default Linux login shell that evaluates the command line
+#      whenever wsl.exe is called without --exec.
+#
+# The previous implementation delivered the payload as a base64 ARGUMENT and
+# relied on "$1", "$payload" and "$@" inside an inline `bash -c` command. The
+# Linux shell in step 2 expanded those variables to empty strings before the
+# inner bash ever ran, so `base64 -d` wrote an EMPTY script, bash executed
+# nothing, and wsl.exe returned exit code 0 with no output at all. The
+# installer then failed with "no normal Linux user account was detected",
+# because the account was never actually created.
+#
+# The command strings built below therefore contain no '$' and no double
+# quotes: PowerShell interpolates the base64 text itself, and the payload is
+# written to a file inside Ubuntu before it runs. Running the payload from a
+# file also keeps standard input free, so the password can still be piped in.
+$payloadPath = '/tmp/.devbox-wsl-init.sh'
+
+function Invoke-WslShellCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [string]$StdinText
+    )
+
+    # While $ErrorActionPreference is 'Stop', PowerShell can turn anything the
+    # Linux side writes to stderr into a terminating error before the exit code
+    # is ever read. Relax it around the wsl.exe call and judge the exit code.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($PSBoundParameters.ContainsKey('StdinText')) {
+            $output = $StdinText | & wsl.exe -d $Distribution -u root -- bash -c $Command 2>&1
+        }
+        else {
+            $output = & wsl.exe -d $Distribution -u root -- bash -c $Command 2>&1
+        }
+
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    # wsl.exe can hand back the whole payload output as one multi-line string,
+    # so split it into real lines before any marker is matched against it.
+    $lines = @(
+        @($output) |
+            ForEach-Object { ([string]$_) -replace "`0", '' } |
+            ForEach-Object { $_ -split "`r?`n" } |
+            ForEach-Object { $_.TrimEnd("`r") }
+    )
+
+    return [PSCustomObject]@{
+        ExitCode = $exitCode
+        Lines    = $lines
+    }
+}
 
 function Invoke-WslPayload {
     param(
@@ -1464,20 +1515,41 @@ function Invoke-WslPayload {
         [string]$StdinText
     )
 
-    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($ScriptText))
-    $wslArgs = @('-d', $Distribution, '-u', 'root', '--', 'bash', '-c', $bootstrap, 'devbox-init', $payload) + $Arguments
+    # Ubuntu runs the payload with bash, so it must use LF line endings even
+    # when this installer script itself is stored with CRLF.
+    $normalized = $ScriptText -replace "`r`n", "`n"
+    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($normalized))
+
+    # Payload arguments are base64 text. Reject anything else so no argument
+    # can ever break out of the single quotes used below.
+    $quotedArguments = ''
+    foreach ($argument in $Arguments) {
+        if ($argument -notmatch '^[A-Za-z0-9+/=]+$') {
+            throw 'Unsupported WSL payload argument; only base64 text is allowed.'
+        }
+        $quotedArguments += " '" + $argument + "'"
+    }
+
+    $write = Invoke-WslShellCommand -Command "umask 077; echo '$payload' | base64 -d > $payloadPath"
+    if ($write.ExitCode -ne 0) {
+        return [PSCustomObject]@{
+            ExitCode = $write.ExitCode
+            Lines    = @('[error] The payload script could not be written inside Ubuntu.') + $write.Lines
+        }
+    }
+
+    $runCommand = "bash $payloadPath$quotedArguments"
 
     if ($PSBoundParameters.ContainsKey('StdinText')) {
-        $output = $StdinText | & wsl.exe @wslArgs 2>&1
+        $result = Invoke-WslShellCommand -Command $runCommand -StdinText $StdinText
     }
     else {
-        $output = & wsl.exe @wslArgs 2>&1
+        $result = Invoke-WslShellCommand -Command $runCommand
     }
 
-    return [PSCustomObject]@{
-        ExitCode = $LASTEXITCODE
-        Lines    = @($output | ForEach-Object { ([string]$_) -replace "`0", '' })
-    }
+    Invoke-WslShellCommand -Command "rm -f $payloadPath" | Out-Null
+
+    return $result
 }
 
 function Format-ExitCode {
@@ -1688,7 +1760,16 @@ function Get-ExistingWslUser {
         }
     }
 
-    return ''
+    foreach ($line in $probe.Lines) {
+        if ($line.Trim() -eq 'NOT_EXISTS') {
+            return ''
+        }
+    }
+
+    # A silent probe means the payload never really executed inside Ubuntu.
+    # Reporting that as "no user exists" is exactly what used to hide a broken
+    # WSL payload, so fail loudly instead of guessing.
+    throw 'Could not query Ubuntu user accounts: the probe payload returned no result from inside Ubuntu.'
 }
 
 function Read-DevBoxCredential {
@@ -1789,7 +1870,21 @@ try {
     if ($Mode -eq 'Prepare') {
         # Account details are collected BEFORE any Windows restart so the
         # installer can finish unattended when it resumes automatically.
-        if ((Test-WslDistributionPresent) -and (Get-ExistingWslUser)) {
+        $preparedUser = ''
+        if (Test-WslDistributionPresent) {
+            try {
+                $preparedUser = Get-ExistingWslUser
+            }
+            catch {
+                # Ubuntu may not be able to start yet, for example while a
+                # Windows restart is still pending. Collect the account details
+                # now anyway; the Apply stage verifies the account later.
+                Write-Host "  [WARN] Ubuntu user state could not be checked yet: $($_.Exception.Message)"
+                $preparedUser = ''
+            }
+        }
+
+        if ($preparedUser) {
             Write-Host '  [OK] Ubuntu already has a Linux user account; no account setup is needed.'
             Remove-DevBoxCredential
             exit 0
@@ -1856,7 +1951,7 @@ try {
     $passwordB64 = $null
 
     foreach ($line in $result.Lines) {
-        if ($line -notmatch '^VERIFIED:') { Write-Host $line }
+        if ($line -ne '' -and $line -notmatch '^VERIFIED:') { Write-Host $line }
     }
 
     if ($result.ExitCode -ne 0) {
@@ -1870,7 +1965,10 @@ try {
 
     if (-not $verifiedUser) {
         Write-Host '  [DEBUG] Current Ubuntu passwd entries:'
-        & wsl.exe -d $Distribution -u root -- getent passwd 2>$null | Write-Host
+        $passwdDump = Invoke-WslShellCommand -Command 'getent passwd'
+        foreach ($line in $passwdDump.Lines) {
+            if ($line -ne '') { Write-Host "    $line" }
+        }
         throw 'Ubuntu account setup completed, but no normal Linux user account was detected after creation.'
     }
 
@@ -3959,6 +4057,19 @@ if (
         'A separate Ubuntu terminal will open now.' in initialize_wsl_user_text
 ):
     raise SystemExit('Generated Ubuntu first-run helper validation failed: first-run must stay in the installer window and continue automatically.')
+
+# The Linux default shell expands the command line that wsl.exe receives, so a
+# WSL payload must never rely on positional parameters or shell variables that
+# are written into that command line. Doing so silently produced an empty
+# payload, exit code 0, and a missing Ubuntu user account.
+if (
+        'Invoke-WslShellCommand' not in initialize_wsl_user_text or
+        'base64 -d > $payloadPath' not in initialize_wsl_user_text or
+        'bash $payloadPath$quotedArguments' not in initialize_wsl_user_text or
+        '$bootstrap' in initialize_wsl_user_text or
+        'printf "%s" "$payload"' in initialize_wsl_user_text
+):
+    raise SystemExit('Generated Ubuntu first-run helper validation failed: WSL payload transport must not depend on shell expansion inside the wsl.exe command line.')
 
 if ('systemd=true' not in install_engine_sh_text or
         'wsl-engine' not in install_engine_sh_text or
