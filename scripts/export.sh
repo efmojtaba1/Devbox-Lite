@@ -1136,14 +1136,54 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-try {
-    $distros = @(
-        wsl.exe --list --quiet 2>$null |
+# Windows PowerShell turns anything a native command writes to stderr into a
+# terminating error while $ErrorActionPreference is 'Stop', even when that
+# stream is redirected to $null. wsl.exe writes to stderr both when WSL is not
+# installed yet and for harmless warnings, so every call must run with the
+# preference relaxed and be judged by its exit code alone.
+function Invoke-WslCli {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & wsl.exe @WslArguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        $output = @("wsl.exe could not be started: $($_.Exception.Message)")
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+
+    # wsl.exe writes UTF-16 text, which reaches PowerShell with embedded NUL
+    # bytes and can arrive as one multi-line string.
+    $lines = @(
+        @($output) |
+            ForEach-Object { ([string]$_) -replace "`0", '' } |
+            ForEach-Object { $_ -split "`r?`n" } |
             ForEach-Object { $_.Trim() } |
-            Where-Object { $_ }
+            Where-Object { $_ -ne '' }
     )
 
-    if ($distros -contains $Distribution) {
+    return [PSCustomObject]@{ ExitCode = $exitCode; Lines = $lines }
+}
+
+try {
+    $query = Invoke-WslCli -WslArguments @('--list', '--quiet')
+
+    if ($query.ExitCode -ne 0) {
+        # No distribution list means no distribution is registered yet. This is
+        # the normal state before WSL and Ubuntu are installed, so report it as
+        # "not present" instead of failing the installer.
+        exit 1
+    }
+
+    if ($query.Lines -contains $Distribution) {
         exit 0
     }
 
@@ -1166,6 +1206,30 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# wsl.exe reports "The Windows Subsystem for Linux is not installed" and several
+# harmless warnings on stderr. While $ErrorActionPreference is 'Stop' those
+# writes become terminating errors, so the call is made with the preference
+# relaxed and only the exit code decides.
+function Invoke-WslCli {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & wsl.exe @WslArguments *> $null
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return $exitCode
+}
+
 try {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $lastReason = 'Waiting for WSL virtualization backend.'
@@ -1183,10 +1247,8 @@ try {
             $lastReason = 'Windows hypervisor is not running yet.'
         }
         else {
-            wsl.exe --status *> $null
-            if ($LASTEXITCODE -eq 0) {
-                wsl.exe --version *> $null
-                if ($LASTEXITCODE -eq 0) { exit 0 }
+            if ((Invoke-WslCli -WslArguments @('--status')) -eq 0) {
+                if ((Invoke-WslCli -WslArguments @('--version')) -eq 0) { exit 0 }
                 $lastReason = 'WSL command is available but version query is not ready yet.'
             }
             else {
@@ -1390,7 +1452,8 @@ param(
     [ValidateSet('Prepare','Apply')]
     [string]$Mode = 'Apply',
     [string]$Distribution = 'Ubuntu-24.04',
-    [string]$StatePath = "$env:ProgramData\DevBoxLite\wsl-credentials.dat"
+    [string]$StatePath = "$env:ProgramData\DevBoxLite\wsl-credentials.dat",
+    [switch]$NoPrompt
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1398,6 +1461,45 @@ $ErrorActionPreference = 'Stop'
 # Base64 payloads are pure ASCII. Pin the pipe encoding so the password
 # reaches Ubuntu byte-for-byte on every Windows locale and code page.
 $OutputEncoding = [Text.Encoding]::ASCII
+
+# Windows PowerShell turns anything a native command writes to stderr into a
+# terminating error while $ErrorActionPreference is 'Stop', even when that
+# stream is redirected to $null. On a machine where WSL is not installed yet,
+# wsl.exe writes "The Windows Subsystem for Linux is not installed" to stderr,
+# which aborted the very first account stage instead of simply collecting the
+# account details. Every wsl.exe call therefore runs with the preference
+# relaxed and is judged by its exit code alone.
+function Invoke-WslCli {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & wsl.exe @WslArguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        $output = @("wsl.exe could not be started: $($_.Exception.Message)")
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+
+    # wsl.exe writes UTF-16 text, which reaches PowerShell with embedded NUL
+    # bytes and can arrive as one multi-line string.
+    $lines = @(
+        @($output) |
+            ForEach-Object { ([string]$_) -replace "`0", '' } |
+            ForEach-Object { $_ -split "`r?`n" } |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -ne '' }
+    )
+
+    return [PSCustomObject]@{ ExitCode = $exitCode; Lines = $lines }
+}
 
 function Convert-SecureStringToPlainText {
     param([Security.SecureString]$SecureString)
@@ -1769,12 +1871,14 @@ exit 0
 '@
 
 function Test-WslDistributionPresent {
-    $distros = @(
-        wsl.exe --list --quiet 2>$null |
-            ForEach-Object { ($_ -replace "`0", '').Trim() } |
-            Where-Object { $_ }
-    )
-    return ($distros -contains $Distribution)
+    # A missing WSL installation is a normal state during stage 2, so an
+    # unavailable distribution list only means "not registered yet".
+    $query = Invoke-WslCli -WslArguments @('--list', '--quiet')
+    if ($query.ExitCode -ne 0) {
+        return $false
+    }
+
+    return ($query.Lines -contains $Distribution)
 }
 
 function Get-ExistingWslUser {
@@ -1914,6 +2018,11 @@ try {
                 $preparedUser = ''
             }
         }
+        else {
+            # Expected on a fresh machine: WSL and Ubuntu are installed by the
+            # later stages. Only the account details are needed right now.
+            Write-Host '  [INFO] Ubuntu is not installed yet; only the account details are collected now.'
+        }
 
         if ($preparedUser) {
             Write-Host '  [OK] Ubuntu already has a Linux user account; no account setup is needed.'
@@ -1923,6 +2032,14 @@ try {
 
         if (Get-DevBoxCredential) {
             Write-Host '  [OK] Ubuntu account details were already provided for this installation.'
+            exit 0
+        }
+
+        if ($NoPrompt -or -not [Environment]::UserInteractive) {
+            # A resumed run has no usable console, so asking here would stall the
+            # whole installation. The account stage reports the missing details
+            # later if they are really needed.
+            Write-Host '  [INFO] No stored Ubuntu account details and no console to ask on; continuing.'
             exit 0
         }
 
@@ -1957,8 +2074,8 @@ try {
     $credential = Get-DevBoxCredential
 
     if (-not $credential) {
-        if (-not [Environment]::UserInteractive) {
-            throw 'No Ubuntu account details are available and this session cannot prompt. Run setup-offline.bat /resume from an elevated Command Prompt.'
+        if ($NoPrompt -or -not [Environment]::UserInteractive) {
+            throw 'No Ubuntu account details are available and this run cannot ask for them. Run setup-offline.bat again from an elevated Command Prompt.'
         }
 
         Write-Host ''
@@ -2023,12 +2140,12 @@ try {
     # /etc/wsl.conf is only evaluated while the distro boots, so the new
     # default user and systemd stay inactive until Ubuntu is restarted.
     Write-Host '  Restarting Ubuntu-24.04 so the new default user and systemd take effect...'
-    & wsl.exe --manage $Distribution --set-default-user $username *> $null
-    & wsl.exe --terminate $Distribution *> $null
+    Invoke-WslCli -WslArguments @('--manage', $Distribution, '--set-default-user', $username) | Out-Null
+    Invoke-WslCli -WslArguments @('--terminate', $Distribution) | Out-Null
     Start-Sleep -Seconds 3
 
-    & wsl.exe -d $Distribution -u root -- true *> $null
-    if ($LASTEXITCODE -ne 0) {
+    $restarted = Invoke-WslCli -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'true')
+    if ($restarted.ExitCode -ne 0) {
         throw 'Ubuntu-24.04 could not be restarted after account creation.'
     }
 
@@ -2354,6 +2471,32 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell turns anything a native command writes to stderr into a
+# terminating error while $ErrorActionPreference is 'Stop', even when that
+# stream is redirected. wsl.exe and the Linux side both use stderr for progress
+# and for harmless warnings, so every call runs with the preference relaxed and
+# is judged by its exit code alone.
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & wsl.exe @WslArguments 2>&1 | Out-Host
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return [int]$exitCode
+}
+
 try {
     $projectTarWin = Join-Path $PackageRoot 'project-src.tar.gz'
     if (-not (Test-Path -LiteralPath $projectTarWin -PathType Leaf)) {
@@ -2428,9 +2571,9 @@ printf '  [info] Windows UNC: \\\\wsl.localhost\\%s%s\n' "$distro" "${TARGET_DIR
     $command = "echo '$encoded' | base64 -d | bash -s -- '$projectTarWinB64' '$Distribution'"
 
     Write-Host '  [wsl] Restoring project source inside Ubuntu-24.04...'
-    & wsl.exe -d $Distribution -u root -- bash -lc $command
-    if ($LASTEXITCODE -ne 0) {
-        throw "WSL project restore exited with code $LASTEXITCODE."
+    $exitCode = Invoke-WslCommand -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-lc', $command)
+    if ($exitCode -ne 0) {
+        throw "WSL project restore exited with code $exitCode."
     }
 
     Write-Host '  [OK] Project source restored inside the WSL home directory.'
@@ -2507,6 +2650,32 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell turns anything a native command writes to stderr into a
+# terminating error while $ErrorActionPreference is 'Stop', even when that
+# stream is redirected. wsl.exe and the Linux side both use stderr for progress
+# and for harmless warnings, so every call runs with the preference relaxed and
+# is judged by its exit code alone.
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & wsl.exe @WslArguments 2>&1 | Out-Host
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return [int]$exitCode
+}
+
 try {
     $script = @'
 set -euo pipefail
@@ -2567,9 +2736,9 @@ echo '  [OK] WSL Docker Engine volumes: all 6 present'
     $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script))
     $command = "echo '$encoded' | base64 -d | bash -s -- '$Distribution' '$ImageName' '$ComposeProject'"
 
-    & wsl.exe -d $Distribution -u root -- bash -lc $command
-    if ($LASTEXITCODE -ne 0) {
-        throw "WSL DevBox verification exited with code $LASTEXITCODE."
+    $exitCode = Invoke-WslCommand -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-lc', $command)
+    if ($exitCode -ne 0) {
+        throw "WSL DevBox verification exited with code $exitCode."
     }
 
     exit 0
@@ -2589,6 +2758,32 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Windows PowerShell turns anything a native command writes to stderr into a
+# terminating error while $ErrorActionPreference is 'Stop', even when that
+# stream is redirected. wsl.exe and the Linux side both use stderr for progress
+# and for harmless warnings, so every call runs with the preference relaxed and
+# is judged by its exit code alone.
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & wsl.exe @WslArguments 2>&1 | Out-Host
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return [int]$exitCode
+}
 
 try {
     $verifyScript = @'
@@ -2652,8 +2847,7 @@ exit 0
 
     $command = "echo '$encoded' | base64 -d | bash -s"
 
-    & wsl.exe -d $Distribution -u root -- bash -lc $command
-    $exitCode = $LASTEXITCODE
+    $exitCode = Invoke-WslCommand -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-lc', $command)
 
     if ($exitCode -ne 0) {
         throw "WSL project verification exited with code $exitCode."
@@ -2679,6 +2873,32 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Windows PowerShell turns anything a native command writes to stderr into a
+# terminating error while $ErrorActionPreference is 'Stop', even when that
+# stream is redirected. wsl.exe and the Linux side both use stderr for progress
+# and for harmless warnings, so every call runs with the preference relaxed and
+# is judged by its exit code alone.
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & wsl.exe @WslArguments 2>&1 | Out-Host
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return [int]$exitCode
+}
 
 try {
     $required = @(
@@ -2834,9 +3054,9 @@ echo "  [OK] DevBox Compose started in WSL Docker Engine."
     $command = "echo '$encoded' | base64 -d | bash -s -- '$packageRootB64' '$ImageName' '$ComposeProject'"
 
     Write-Host '  [wsl] Restoring DevBox assets inside Ubuntu-24.04 Docker Engine...'
-    & wsl.exe -d $Distribution -u root -- bash -lc $command
-    if ($LASTEXITCODE -ne 0) {
-        throw "WSL DevBox restore exited with code $LASTEXITCODE."
+    $exitCode = Invoke-WslCommand -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-lc', $command)
+    if ($exitCode -ne 0) {
+        throw "WSL DevBox restore exited with code $exitCode."
     }
 
     Write-Host '  [OK] prebuilt, Docker image, Docker volumes, and Compose restored inside WSL.'
@@ -3036,6 +3256,32 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell turns anything a native command writes to stderr into a
+# terminating error while $ErrorActionPreference is 'Stop', even when that
+# stream is redirected. wsl.exe and the Linux side both use stderr for progress
+# and for harmless warnings, so every call runs with the preference relaxed and
+# is judged by its exit code alone.
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & wsl.exe @WslArguments 2>&1 | Out-Host
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return [int]$exitCode
+}
+
 try {
     $scriptWin = Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.sh'
     $debWin = Join-Path $PackageRoot 'docker-engine\debs'
@@ -3073,16 +3319,9 @@ bash "$script_wsl" "$deb_wsl"
         $bridgeB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pathBridge))
         $command = "echo '$bridgeB64' | base64 -d | bash -s -- '$ScriptB64' '$DebB64'"
 
-        # Capture WSL output so the function returns only the numeric process exit code.
-        # Without this, PowerShell assigns all WSL output plus $LASTEXITCODE to $rc.
-        $output = & wsl.exe -d $Distribution -u root -- bash -lc $command 2>&1
-        $exitCode = $LASTEXITCODE
-
-        foreach ($line in @($output)) {
-            Write-Host $line
-        }
-
-        return [int]$exitCode
+        # Invoke-WslCommand prints the WSL output itself and returns only the
+        # numeric process exit code, so no output can leak into $rc.
+        return Invoke-WslCommand -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-lc', $command)
     }
 
     Write-Host '  [wsl-engine] Installing Docker Engine inside Ubuntu-24.04...'
@@ -3090,12 +3329,14 @@ bash "$script_wsl" "$deb_wsl"
 
     if ($rc -eq 10) {
         Write-Host '  [wsl-engine] Restarting Ubuntu-24.04 to activate systemd...'
-        & wsl.exe --terminate $Distribution
-        if ($LASTEXITCODE -ne 0) { throw 'Could not terminate Ubuntu-24.04 for systemd activation.' }
+        if ((Invoke-WslCommand -WslArguments @('--terminate', $Distribution)) -ne 0) {
+            throw 'Could not terminate Ubuntu-24.04 for systemd activation.'
+        }
 
         Start-Sleep -Seconds 2
-        & wsl.exe -d $Distribution -u root -- true
-        if ($LASTEXITCODE -ne 0) { throw 'Could not restart Ubuntu-24.04 after enabling systemd.' }
+        if ((Invoke-WslCommand -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'true')) -ne 0) {
+            throw 'Could not restart Ubuntu-24.04 after enabling systemd.'
+        }
 
         $rc = Invoke-EngineInstall -ScriptB64 $scriptWinB64 -DebB64 $debWinB64
     }
@@ -3368,6 +3609,14 @@ echo   %DEST_PATH%
 echo.
 echo WSL2 + Ubuntu 24.04 + Docker Desktop + DevBox are ready.
 echo.
+call :wait_for_key
+exit /b 0
+
+:wait_for_key
+rem A resumed run is started by the scheduled task, so its console has no user
+rem to press a key. Waiting there would keep the installer alive forever and the
+rem resume task would never report a result, so the pause is skipped instead.
+if "%RESUME_MODE%"=="1" exit /b 0
 pause
 exit /b 0
 
@@ -3381,7 +3630,7 @@ echo [ERROR] Administrator privileges are required.
 echo         Right-click setup-offline.bat and choose:
 echo         Run as administrator
 echo.
-pause
+call :wait_for_key
 exit /b 1
 
 :validate_package
@@ -3482,14 +3731,24 @@ exit /b 0
 :prepare_wsl_credentials
 echo.
 echo [2/9] Preparing Ubuntu-24.04 account details...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Mode Prepare -Distribution "Ubuntu-24.04" -StatePath "%CRED_FILE%"
-if errorlevel 1 goto :wsl_user_init_error
+rem A resumed run is started by the scheduled task with its output redirected
+rem to the resume log, so a prompt there would be invisible and would stall the
+rem installation. Account details are only requested during the first run.
+set "PREPARE_ARGS="
+if "%RESUME_MODE%"=="1" set "PREPARE_ARGS=-NoPrompt"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Mode Prepare -Distribution "Ubuntu-24.04" -StatePath "%CRED_FILE%" %PREPARE_ARGS%
+if errorlevel 1 goto :wsl_credentials_error
 exit /b 0
 
 :initialize_wsl_user
 echo.
 echo [5/9] Initializing Ubuntu-24.04 first-run user...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Mode Apply -Distribution "Ubuntu-24.04" -StatePath "%CRED_FILE%"
+rem The same rule as stage 2: a resumed run has no reachable console, so the
+rem account stage must fail with a readable message instead of waiting for input
+rem that can never arrive. Account details were stored before the restart.
+set "APPLY_ARGS="
+if "%RESUME_MODE%"=="1" set "APPLY_ARGS=-NoPrompt"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Mode Apply -Distribution "Ubuntu-24.04" -StatePath "%CRED_FILE%" %APPLY_ARGS%
 if errorlevel 1 goto :wsl_user_init_error
 exit /b 0
 
@@ -3641,12 +3900,11 @@ echo   Windows restart is required before installation can continue.
 echo   The installer resumes automatically after you sign back in.
 echo.
 
-rem The resume task must run as the interactive administrator.
-rem WSL distributions are registered per Windows user, so a task
-rem running as SYSTEM cannot see Ubuntu-24.04 at all.
-schtasks /create /tn "%TASK_START%" /sc onstart /tr "\"%SETUP_SELF%\" /resume" /ru SYSTEM /f >nul 2>&1
-schtasks /create /tn "%TASK_LOGON%" /sc onlogon /tr "\"%SETUP_SELF%\" /resume" /ru SYSTEM /f >nul 2>&1
-
+rem The resume task must run as the interactive administrator, never as SYSTEM.
+rem WSL distributions are registered per Windows user, so a task running as
+rem SYSTEM cannot see Ubuntu-24.04 at all. Registration, the run-once lock and
+rem the retry loop all live in manage-resume-task.ps1, so exactly one resume
+rem instance can ever be running.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\manage-resume-task.ps1" -Mode Register -SetupPath "%SETUP_SELF%" -StateFile "%STATE_FILE%" -StateDir "%STATE_DIR%"
 if errorlevel 1 goto :resume_task_error
 
@@ -3764,6 +4022,11 @@ exit /b 1
 echo [ERROR] Could not set Ubuntu-24.04 as the default WSL distribution.
 exit /b 1
 
+:wsl_credentials_error
+echo [ERROR] Ubuntu account details could not be recorded.
+echo         Run setup-offline.bat again from an elevated Command Prompt.
+exit /b 1
+
 :wsl_user_init_error
 echo [ERROR] Ubuntu first-run user initialization failed.
 echo         Launch Ubuntu-24.04, create the Linux user, and run setup-offline.bat again.
@@ -3790,7 +4053,7 @@ echo [ERROR] Docker Engine did not become ready within 5 minutes.
 echo         Open Docker Desktop and check its status.
 exit /b 1
 
- :wsl_devbox_restore_error
+:wsl_devbox_restore_error
 echo [ERROR] DevBox restore inside Ubuntu-24.04 WSL Docker Engine failed.
 exit /b 1
 
@@ -3849,7 +4112,7 @@ echo Exit code: %FAIL_CODE%
 echo.
 echo Fix the reported problem and run setup-offline.bat again.
 echo.
-pause
+call :wait_for_key
 exit /b %FAIL_CODE%
 BAT
 
@@ -3892,12 +4155,12 @@ fi
 echo "  [ok] Docker Engine dependency collector validation passed"
 
 # Validate generated files before package creation continues.
-python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/restore-windows-devbox.ps1" "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" "$BUNDLE_DIR/scripts/verify-windows-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-project.ps1" "$BUNDLE_DIR/scripts/restore-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/import.ps1" <<'PY'
+python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/restore-windows-devbox.ps1" "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" "$BUNDLE_DIR/scripts/verify-windows-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-project.ps1" "$BUNDLE_DIR/scripts/restore-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/import.ps1" "$BUNDLE_DIR/scripts/manage-resume-task.ps1" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-EXPECTED_VALIDATOR_ARGS = 18
+EXPECTED_VALIDATOR_ARGS = 19
 actual_validator_args = len(sys.argv) - 1
 if actual_validator_args != EXPECTED_VALIDATOR_ARGS:
     raise SystemExit(
@@ -3923,6 +4186,7 @@ verify_wsl_devbox = Path(sys.argv[15])
 verify_wsl_project = Path(sys.argv[16])
 restore_wsl_devbox = Path(sys.argv[17])
 import_ps1 = Path(sys.argv[18])
+resume_task_ps1 = Path(sys.argv[19])
 
 bat_bytes = bat.read_bytes()
 if b"\r\n" not in bat_bytes:
@@ -3935,6 +4199,7 @@ bat_text = bat_bytes.decode('utf-8')
 # Keep bat_bytes unchanged above so CRLF validation remains strict.
 normalized_bat_text = bat_text.replace('\r\n', '\n').replace('\r', '\n')
 validate_text = validate.read_text(encoding='utf-8')
+resume_task_text = resume_task_ps1.read_text(encoding='utf-8')
 features_text = features.read_text(encoding='utf-8')
 distro_text = distro.read_text(encoding='utf-8')
 ready_text = ready.read_text(encoding='utf-8')
@@ -4032,6 +4297,45 @@ def find_label_line(text, label):
     match = re.search(rf'(?m)^:{re.escape(label)}\s*$', text)
     return match.start() if match else -1
 
+# cmd.exe aborts the whole installation with "The system cannot find the batch
+# label specified" when a GOTO or CALL target does not exist, and a label that
+# starts with a space is easy to write by accident. Both are checked here so a
+# broken jump can never reach a target machine.
+declared_labels = {}
+for label_line in normalized_bat_text.split('\n'):
+    if not label_line.startswith(':') or label_line.startswith('::'):
+        continue
+    label_name = label_line[1:].strip().lower()
+    if not re.fullmatch(r'[a-z0-9_]+', label_name or ''):
+        continue
+    declared_labels[label_name] = declared_labels.get(label_name, 0) + 1
+
+duplicate_labels = sorted(name for name, count in declared_labels.items() if count > 1)
+if duplicate_labels:
+    raise SystemExit(
+        'Generated BAT validation failed: duplicated labels: ' + ', '.join(duplicate_labels)
+    )
+
+indented_labels = sorted(
+    set(
+        re.findall(r'(?m)^[ \t]+:([A-Za-z0-9_]+)\s*$', normalized_bat_text)
+    )
+)
+if indented_labels:
+    raise SystemExit(
+        'Generated BAT validation failed: labels must start at column 1: ' + ', '.join(indented_labels)
+    )
+
+jump_targets = {
+    target.lower()
+    for target in re.findall(r'(?:goto|call)\s+:([A-Za-z0-9_]+)', normalized_bat_text, re.I)
+}
+undefined_targets = sorted(jump_targets - set(declared_labels) - {'eof'})
+if undefined_targets:
+    raise SystemExit(
+        'Generated BAT validation failed: undefined GOTO/CALL targets: ' + ', '.join(undefined_targets)
+    )
+
 install_wsl_start = find_label_line(normalized_bat_text, 'install_wsl')
 install_ubuntu_start = find_label_line(normalized_bat_text, 'install_ubuntu')
 if install_wsl_start == -1 or install_ubuntu_start == -1 or install_ubuntu_start <= install_wsl_start:
@@ -4043,13 +4347,15 @@ if 'WSL_INSTALLED_NOW=0' not in install_wsl_text or 'if not "%WSL_INSTALLED_NOW%
 if 'call :save_stage START' in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: startup must not depend on save_stage START.')
 
-# Resume must be registered for both Windows startup and interactive logon.
-# Keep a lock and diagnostic log so simultaneous triggers cannot run the installer twice.
+# Resume must be owned by exactly one component. manage-resume-task.ps1
+# registers a logon task for the interactive administrator, writes the locked
+# retry wrapper and keeps the diagnostic log, so no resume task may be created
+# anywhere else and none of them may run as SYSTEM: WSL distributions are
+# registered per Windows user and are invisible to SYSTEM.
 required_resume_markers = [
-    'DevBoxLite-OfflineSetup-Startup',
-    'DevBoxLite-OfflineSetup-Logon',
-    'schtasks /create /tn "%TASK_START%" /sc onstart',
-    'schtasks /create /tn "%TASK_LOGON%" /sc onlogon',
+    'manage-resume-task.ps1" -Mode Register',
+    'manage-resume-task.ps1" -Mode Status',
+    'manage-resume-task.ps1" -Mode Remove',
     'resume-offline-setup.lock',
     'resume.log',
 ]
@@ -4059,6 +4365,43 @@ if missing_resume_markers:
         'Generated BAT validation failed: automatic resume support is incomplete: '
         + ', '.join(missing_resume_markers)
     )
+
+if re.search(r'schtasks[^\n]*/create', normalized_bat_text, re.I):
+    raise SystemExit('Generated BAT validation failed: resume tasks must only be created by manage-resume-task.ps1.')
+
+if '/ru SYSTEM' in normalized_bat_text or '/ru SYSTEM' in resume_task_text:
+    raise SystemExit('Generated BAT validation failed: the resume task must never run as SYSTEM.')
+
+if (
+        'New-ScheduledTaskTrigger -AtLogOn -User $identity' not in resume_task_text or
+        'LogonType Interactive' not in resume_task_text or
+        'RunLevel Highest' not in resume_task_text or
+        'MultipleInstances IgnoreNew' not in resume_task_text or
+        'resume-offline-setup.lock' not in resume_task_text
+):
+    raise SystemExit('Generated resume task helper validation failed: the installer must resume automatically as the interactive administrator, exactly once.')
+
+# Nothing in a resumed run may wait for a keypress: the scheduled task console
+# has no user, so a pause would keep the installer alive forever and the resume
+# task would never report a result.
+bat_lines = normalized_bat_text.split('\n')
+for pause_line_number, pause_line in enumerate(bat_lines, start=1):
+    if pause_line.strip().lower() != 'pause':
+        continue
+    owning_label = ''
+    for previous_line in reversed(bat_lines[:pause_line_number - 1]):
+        if previous_line.startswith(':'):
+            owning_label = previous_line.strip().lower()
+            break
+    if owning_label != ':wait_for_key':
+        raise SystemExit(
+            f'Generated BAT validation failed: pause on line {pause_line_number} is outside :wait_for_key, '
+            'so a resumed run could wait forever.'
+        )
+if ':wait_for_key' not in normalized_bat_text:
+    raise SystemExit('Generated BAT validation failed: the :wait_for_key guard is missing.')
+if 'if "%RESUME_MODE%"=="1" exit /b 0' not in normalized_bat_text:
+    raise SystemExit('Generated BAT validation failed: :wait_for_key must skip the pause during a resumed run.')
 
 if re.search(r'for\s+/f[^\n]*powershell\.exe', normalized_bat_text, re.I):
     raise SystemExit('Generated BAT validation failed: inline PowerShell for /f parser pattern detected.')
@@ -4077,10 +4420,10 @@ if '$LASTEXITCODE' in features_text:
 if 'Get-WindowsOptionalFeature' not in features_text or 'VirtualMachinePlatform' not in features_text:
     raise SystemExit('Generated WSL feature script validation failed: feature verification is missing.')
 
-if 'wsl.exe --list --quiet' not in distro_text:
+if "Invoke-WslCli -WslArguments @('--list', '--quiet')" not in distro_text:
     raise SystemExit('Generated WSL distro helper validation failed.')
 
-if 'wsl.exe --status' not in ready_text or 'HypervisorPresent' not in ready_text:
+if "Invoke-WslCli -WslArguments @('--status')" not in ready_text or 'HypervisorPresent' not in ready_text:
     raise SystemExit('Generated WSL readiness helper validation failed.')
 
 if 'Microsoft-Hyper-V' not in docker_restart_text or 'Mode' not in docker_restart_text:
@@ -4127,6 +4470,55 @@ if (
         '$result.ExitCode -eq 22 -or $result.ExitCode -eq 23' not in initialize_wsl_user_text
 ):
     raise SystemExit('Generated Ubuntu first-run helper validation failed: the Linux password must survive an imperfect standard input pipe.')
+
+# wsl.exe writes "The Windows Subsystem for Linux is not installed" and several
+# harmless warnings to stderr. While $ErrorActionPreference is 'Stop', Windows
+# PowerShell turns those writes into terminating errors even when the stream is
+# redirected, which aborted stage 2 on a fresh machine before the account
+# details were collected. Every generated helper must call wsl.exe through a
+# guard that relaxes the preference and judges the exit code instead.
+wsl_caller_texts = {
+    'check-wsl-distro.ps1': distro_text,
+    'check-wsl-ready.ps1': ready_text,
+    'initialize-wsl-user.ps1': initialize_wsl_user_text,
+    'install-wsl-docker-engine.ps1': install_engine_ps1_text,
+    'restore-wsl-project.ps1': restore_wsl_project_text,
+    'restore-wsl-devbox.ps1': restore_wsl_devbox_text,
+    'verify-wsl-devbox.ps1': verify_wsl_devbox_text,
+    'verify-wsl-project.ps1': verify_wsl_project_text,
+}
+allowed_wsl_call_markers = (
+    '@WslArguments',
+    'could not be started',
+    '-u root -- bash -c $Command',
+)
+for helper_name, helper_text in wsl_caller_texts.items():
+    if 'wsl.exe' not in helper_text:
+        raise SystemExit(f'Generated WSL helper validation failed: {helper_name} no longer calls wsl.exe.')
+    if "$ErrorActionPreference = 'Continue'" not in helper_text:
+        raise SystemExit(f'Generated WSL helper validation failed: {helper_name} must relax $ErrorActionPreference around every wsl.exe call.')
+    for helper_line in helper_text.replace('\r\n', '\n').split('\n'):
+        stripped_line = helper_line.strip()
+        if stripped_line.startswith('#') or 'wsl.exe' not in stripped_line:
+            continue
+        if any(marker in stripped_line for marker in allowed_wsl_call_markers):
+            continue
+        raise SystemExit(f'Generated WSL helper validation failed: {helper_name} calls wsl.exe outside the guarded helper: {stripped_line}')
+
+# A resumed run is started by the scheduled task with its output redirected to
+# the resume log, so any prompt there is invisible and stalls the installation.
+if (
+        '[switch]$NoPrompt' not in initialize_wsl_user_text or
+        'no console to ask on' not in initialize_wsl_user_text or
+        'this run cannot ask for them' not in initialize_wsl_user_text
+):
+    raise SystemExit('Generated Ubuntu first-run helper validation failed: a resumed run must never wait for account input.')
+
+if (
+        'if "%RESUME_MODE%"=="1" set "PREPARE_ARGS=-NoPrompt"' not in normalized_bat_text or
+        'if "%RESUME_MODE%"=="1" set "APPLY_ARGS=-NoPrompt"' not in normalized_bat_text
+):
+    raise SystemExit('Generated BAT validation failed: a resumed run must call both account stages with -NoPrompt.')
 
 if ('systemd=true' not in install_engine_sh_text or
         'wsl-engine' not in install_engine_sh_text or
