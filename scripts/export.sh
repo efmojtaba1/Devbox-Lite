@@ -1020,6 +1020,9 @@ try {
         @{ Path = (Join-Path $PackageRoot 'scripts\verify-wsl-devbox.ps1'); Name = 'verify-wsl-devbox.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\verify-wsl-project.ps1'); Name = 'verify-wsl-project.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\install-wsl-docker-engine.sh'); Name = 'install-wsl-docker-engine.sh' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\manage-resume-task.ps1'); Name = 'manage-resume-task.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'scripts\restore-wsl-devbox.ps1'); Name = 'restore-wsl-devbox.ps1' },
+        @{ Path = (Join-Path $PackageRoot 'project-src.tar.gz'); Name = 'project-src.tar.gz' },
         @{ Path = (Join-Path $PackageRoot 'prebuilt.tar.gz'); Name = 'prebuilt.tar.gz' }
     )
 
@@ -1047,6 +1050,18 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
+# DISM does not always report a feature as 'Enabled' straight away. When the
+# component store still has work queued it answers 'EnablePending', which means
+# the feature is enabled and only needs the restart the installer is about to
+# perform. Treating that as a failure aborted the very first stage on machines
+# where the feature would have come up perfectly after the reboot.
+function Test-FeatureEnabled {
+    param($Feature)
+
+    if (-not $Feature) { return $false }
+    return @('Enabled', 'EnablePending') -contains [string]$Feature.State
+}
+
 try {
     Write-Host '  Checking WSL2 Windows features...'
 
@@ -1070,7 +1085,7 @@ try {
 
         $wsl = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
 
-        if ($wsl.State -ne 'Enabled') {
+        if (-not (Test-FeatureEnabled -Feature $wsl)) {
             Write-Host '[ERROR] Failed to enable Windows Subsystem for Linux.'
             Write-Host "        Current state: $($wsl.State)"
             exit 1
@@ -1095,7 +1110,7 @@ try {
 
         $vmp = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
 
-        if ($vmp.State -ne 'Enabled') {
+        if (-not (Test-FeatureEnabled -Feature $vmp)) {
             Write-Host '[ERROR] Failed to enable Virtual Machine Platform.'
             Write-Host "        Current state: $($vmp.State)"
             exit 1
@@ -1449,11 +1464,8 @@ echo "  [ok] wait-docker-install.ps1"
 cat > "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" <<'PS1'
 [CmdletBinding()]
 param(
-    [ValidateSet('Prepare','Apply')]
-    [string]$Mode = 'Apply',
     [string]$Distribution = 'Ubuntu-24.04',
-    [string]$StatePath = "$env:ProgramData\DevBoxLite\wsl-credentials.dat",
-    [switch]$NoPrompt
+    [string]$StatePath = "$env:ProgramData\DevBoxLite\wsl-credentials.dat"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1581,6 +1593,8 @@ function Invoke-WslShellCommand {
     # is ever read. Relax it around the wsl.exe call and judge the exit code.
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    $output = @()
+    $exitCode = $null
     try {
         if ($PSBoundParameters.ContainsKey('StdinText')) {
             $output = $StdinText | & wsl.exe -d $Distribution -u root -- bash -c $Command 2>&1
@@ -1591,9 +1605,17 @@ function Invoke-WslShellCommand {
 
         $exitCode = $LASTEXITCODE
     }
+    catch {
+        # wsl.exe could not be launched at all. Without this the exit code below
+        # would be whatever the previous native command left behind.
+        $output = @("[ERROR] wsl.exe could not be started: $($_.Exception.Message)")
+        $exitCode = 9009
+    }
     finally {
         $ErrorActionPreference = $previousPreference
     }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
 
     # wsl.exe can hand back the whole payload output as one multi-line string,
     # so split it into real lines before any marker is matched against it.
@@ -1971,7 +1993,26 @@ function Save-DevBoxCredential {
     Set-Content -LiteralPath $StatePath -Value $blob -Encoding ASCII -NoNewline
 
     # Machine-scoped DPAPI blob, readable only by SYSTEM and Administrators.
-    & icacls.exe $StatePath /inheritance:r /grant:r '*S-1-5-18:(F)' '*S-1-5-32-544:(F)' *> $null
+    # icacls.exe is a native command, so anything it writes to stderr would
+    # become a terminating error while $ErrorActionPreference is 'Stop'. The
+    # ACL is a hardening step, not a requirement of the installation, so the
+    # preference is relaxed and a failure is reported as a warning only.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & icacls.exe $StatePath /inheritance:r /grant:r '*S-1-5-18:(F)' '*S-1-5-32-544:(F)' *> $null
+        $aclExit = $LASTEXITCODE
+    }
+    catch {
+        $aclExit = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -ne $aclExit -and [int]$aclExit -ne 0) {
+        Write-Host '  [WARN] Could not restrict permissions on the stored account details.'
+    }
 }
 
 function Get-DevBoxCredential {
@@ -2002,64 +2043,11 @@ function Remove-DevBoxCredential {
 }
 
 try {
-    if ($Mode -eq 'Prepare') {
-        # Account details are collected BEFORE any Windows restart so the
-        # installer can finish unattended when it resumes automatically.
-        $preparedUser = ''
-        if (Test-WslDistributionPresent) {
-            try {
-                $preparedUser = Get-ExistingWslUser
-            }
-            catch {
-                # Ubuntu may not be able to start yet, for example while a
-                # Windows restart is still pending. Collect the account details
-                # now anyway; the Apply stage verifies the account later.
-                Write-Host "  [WARN] Ubuntu user state could not be checked yet: $($_.Exception.Message)"
-                $preparedUser = ''
-            }
-        }
-        else {
-            # Expected on a fresh machine: WSL and Ubuntu are installed by the
-            # later stages. Only the account details are needed right now.
-            Write-Host '  [INFO] Ubuntu is not installed yet; only the account details are collected now.'
-        }
-
-        if ($preparedUser) {
-            Write-Host '  [OK] Ubuntu already has a Linux user account; no account setup is needed.'
-            Remove-DevBoxCredential
-            exit 0
-        }
-
-        if (Get-DevBoxCredential) {
-            Write-Host '  [OK] Ubuntu account details were already provided for this installation.'
-            exit 0
-        }
-
-        if ($NoPrompt -or -not [Environment]::UserInteractive) {
-            # A resumed run has no usable console, so asking here would stall the
-            # whole installation. The account stage reports the missing details
-            # later if they are really needed.
-            Write-Host '  [INFO] No stored Ubuntu account details and no console to ask on; continuing.'
-            exit 0
-        }
-
-        Write-Host ''
-        Write-Host '  Ubuntu-24.04 requires first-run account setup.'
-        Write-Host '  The account will be created in this installer window.'
-        Write-Host '  Enter the Linux username and password below.'
-        Write-Host '  You do not need to open Ubuntu or type exit.'
-        Write-Host '  The installer will continue automatically after setup.'
-        Write-Host '  The password is used only by Ubuntu and is never stored in clear text.'
-        Write-Host ''
-
-        $credential = Read-DevBoxCredential
-        Save-DevBoxCredential -UserName $credential.UserName -Password $credential.Password
-        $credential = $null
-
-        Write-Host '  [OK] Ubuntu account details recorded for this installation.'
-        exit 0
-    }
-
+    # The account details are asked for exactly here, in the stage that runs
+    # after WSL is enabled and Ubuntu-24.04 is installed. An earlier "prepare"
+    # stage used to collect them before WSL even existed, which confused the
+    # order of the installation for the operator. This stage owns the whole
+    # account flow: ask, create, verify.
     if (-not (Test-WslDistributionPresent)) {
         throw "WSL distribution is not registered: $Distribution"
     }
@@ -2071,21 +2059,31 @@ try {
         exit 0
     }
 
+    # Details entered during an earlier attempt of this same stage are reused so
+    # a retry after a transport failure never asks the operator twice.
     $credential = Get-DevBoxCredential
 
     if (-not $credential) {
-        if ($NoPrompt -or -not [Environment]::UserInteractive) {
+        if (-not [Environment]::UserInteractive) {
             throw 'No Ubuntu account details are available and this run cannot ask for them. Run setup-offline.bat again from an elevated Command Prompt.'
         }
 
         Write-Host ''
-        Write-Host '  Ubuntu-24.04 requires first-run account setup.'
+        Write-Host '  Ubuntu-24.04 is installed and requires first-run account setup.'
         Write-Host '  The account will be created in this installer window.'
+        Write-Host '  Enter the Linux username and password below.'
         Write-Host '  You do not need to open Ubuntu or type exit.'
         Write-Host '  The installer will continue automatically after setup.'
+        Write-Host '  The password is used only by Ubuntu and is never stored in clear text.'
         Write-Host ''
 
         $credential = Read-DevBoxCredential
+
+        # Stored as a machine-scoped DPAPI blob so an automatic retry of this
+        # stage, including one that happens after a restart, can continue
+        # without a second prompt. The blob is deleted as soon as the Ubuntu
+        # account exists.
+        Save-DevBoxCredential -UserName $credential.UserName -Password $credential.Password
     }
 
     $username = $credential.UserName
@@ -2212,13 +2210,65 @@ function Get-InstallerIdentity {
     throw 'Could not determine the interactive Windows account for automatic resume.'
 }
 
-function Remove-ResumeTask {
-    foreach ($name in @($TaskName, 'DevBoxLite-OfflineSetup', 'DevBoxLite-OfflineSetup-Startup', 'DevBoxLite-OfflineSetup-Logon')) {
-        & schtasks.exe /delete /tn $name /f *> $null
+function Invoke-SchTasks {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+
+    # schtasks.exe writes "ERROR: The system cannot find the file specified."
+    # to stderr whenever a task does not exist, which is the normal case both
+    # when cleaning up and when querying. While $ErrorActionPreference is
+    # 'Stop', Windows PowerShell turns that write into a terminating error even
+    # though the stream is redirected, so registering the resume task always
+    # failed and the installer exited without ever restarting Windows. The
+    # preference is relaxed here and only the exit code is trusted.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & schtasks.exe @Arguments *> $null
+        $exitCode = $LASTEXITCODE
     }
+    catch {
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return [int]$exitCode
+}
+
+# Unregisters the scheduled task under every name this installer has ever used,
+# and nothing else. Registration calls this before writing the wrapper, so the
+# wrapper file and the resume lock must survive it: an earlier version cleaned
+# up after writing the wrapper, which deleted the file the task had just been
+# pointed at. Registration then succeeded, Windows restarted, and the logon task
+# died with "The system cannot find the path specified" - the installation
+# looked like it simply never resumed.
+function Remove-ResumeTaskRegistration {
+    foreach ($name in @($TaskName, 'DevBoxLite-OfflineSetup', 'DevBoxLite-OfflineSetup-Startup', 'DevBoxLite-OfflineSetup-Logon')) {
+        Invoke-SchTasks -Arguments @('/delete', '/tn', $name, '/f') | Out-Null
+    }
+}
+
+# Full teardown, used once the installation is finished or abandoned.
+function Remove-ResumeTask {
+    Remove-ResumeTaskRegistration
 
     if (Test-Path -LiteralPath $wrapperPath) {
         Remove-Item -LiteralPath $wrapperPath -Force -ErrorAction SilentlyContinue
+    }
+    Remove-ResumeLock
+}
+
+# The lock is held by a running resume wrapper, so it may only be cleared when
+# no wrapper is running. The wrapper exports DEVBOX_RESUME_WRAPPER=1 before it
+# calls the installer, which is how a nested run recognises that the lock it can
+# see is its own. A manually started installer sees no such marker, so it is
+# free to clear a lock left behind by a crash or a forced restart - without that
+# escape hatch a single stale lock would disable automatic resume forever.
+function Remove-ResumeLock {
+    if ($env:DEVBOX_RESUME_WRAPPER -eq '1') {
+        return
     }
     if (Test-Path -LiteralPath $lockDir) {
         Remove-Item -LiteralPath $lockDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -2233,24 +2283,49 @@ function Write-ResumeWrapper {
     # Delayed expansion is mandatory here. The previous wrapper read
     # %errorlevel% inside a FOR block, so it always saw the parse-time value
     # and the resume loop could never detect success or failure.
+    #
+    # The installer itself must NOT be redirected. The resumed run owns the
+    # console it was started in, and the Ubuntu account stage asks for the
+    # Linux username and password there. Redirecting the installer into
+    # resume.log made that prompt invisible and the installation looked frozen,
+    # so only the wrapper's own bookkeeping is written to the log.
+    #
+    # Every early exit is logged before it happens. A wrapper that gave up
+    # silently - missing package, cleared state file, lock still held - was
+    # indistinguishable from a wrapper that was never started at all, which made
+    # a failed resume impossible to diagnose from the target machine.
     $lines = @(
         '@echo off',
         'setlocal EnableExtensions EnableDelayedExpansion',
+        'title DevBox Lite - Resuming Offline Installation',
         ('set ' + $q + 'SETUP=' + $Setup + $q),
         ('set ' + $q + 'STATE_FILE=' + $StateFile + $q),
         ('set ' + $q + 'LOCK_DIR=' + $lockDir + $q),
         ('set ' + $q + 'RESUME_LOG=' + $logPath + $q),
-        'if not exist %SETUP% exit /b 0'.Replace('%SETUP%', $q + '%SETUP%' + $q),
-        'if not exist %STATE_FILE% exit /b 0'.Replace('%STATE_FILE%', $q + '%STATE_FILE%' + $q),
-        ('mkdir ' + $q + '%LOCK_DIR%' + $q + ' >nul 2>&1'),
-        'if errorlevel 1 exit /b 0',
-        ('set ' + $q + 'RESUME_RC=1' + $q),
+        # Lets a nested installer run recognise that the resume lock it can see
+        # belongs to this wrapper, so it never deletes a lock that is in use.
+        ('set ' + $q + 'DEVBOX_RESUME_WRAPPER=1' + $q),
         ('>>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume trigger started.'),
+        'if not exist %SETUP% ('.Replace('%SETUP%', $q + '%SETUP%' + $q),
+        ('  >>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Package not found, nothing to resume: %SETUP%'),
+        '  exit /b 0',
+        ')',
+        'if not exist %STATE_FILE% ('.Replace('%STATE_FILE%', $q + '%STATE_FILE%' + $q),
+        ('  >>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] No installer state file, nothing to resume.'),
+        '  exit /b 0',
+        ')',
+        ('mkdir ' + $q + '%LOCK_DIR%' + $q + ' >nul 2>&1'),
+        'if errorlevel 1 (',
+        ('  >>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Another resume is already running, or a previous one was interrupted. Run setup-offline.bat manually to clear it.'),
+        '  exit /b 0',
+        ')',
+        ('set ' + $q + 'RESUME_RC=1' + $q),
         'for /l %%N in (1,1,5) do (',
         ('  if not ' + $q + '!RESUME_RC!' + $q + '==' + $q + '0' + $q + ' ('),
         ('    >>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume attempt %%N of 5.'),
-        ('    call ' + $q + '%SETUP%' + $q + ' /resume >>' + $q + '%RESUME_LOG%' + $q + ' 2>&1'),
+        ('    call ' + $q + '%SETUP%' + $q + ' /resume'),
         ('    set ' + $q + 'RESUME_RC=!errorlevel!' + $q),
+        ('    >>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume attempt %%N exited with code !RESUME_RC!.'),
         ('    if ' + $q + '!RESUME_RC!' + $q + '==' + $q + '3010' + $q + ' goto :resume_done'),
         ('    if not ' + $q + '!RESUME_RC!' + $q + '==' + $q + '0' + $q + ' timeout /t 20 /nobreak >nul'),
         '  )',
@@ -2258,6 +2333,13 @@ function Write-ResumeWrapper {
         ':resume_done',
         ('>>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume exited with code !RESUME_RC!.'),
         ('rmdir /s /q ' + $q + '%LOCK_DIR%' + $q + ' >nul 2>&1'),
+        ('if ' + $q + '!RESUME_RC!' + $q + '==' + $q + '3010' + $q + ' goto :resume_exit'),
+        'echo.',
+        ('if ' + $q + '!RESUME_RC!' + $q + '==' + $q + '0' + $q + ' echo   DevBox Lite offline installation finished.'),
+        ('if not ' + $q + '!RESUME_RC!' + $q + '==' + $q + '0' + $q + ' echo   DevBox Lite offline installation stopped with exit code !RESUME_RC!.'),
+        'echo   This window stays open so the messages above can be read.',
+        'pause',
+        ':resume_exit',
         'for %%R in (!RESUME_RC!) do (endlocal & exit /b %%R)'
     )
 
@@ -2283,13 +2365,19 @@ try {
     }
 
     if ($Mode -eq 'Status') {
-        & schtasks.exe /query /tn $TaskName *> $null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  [OK] Automatic resume task is registered: $TaskName"
-            exit 0
+        if ((Invoke-SchTasks -Arguments @('/query', '/tn', $TaskName)) -ne 0) {
+            Write-Host "  [INFO] Automatic resume task is not registered: $TaskName"
+            exit 1
         }
-        Write-Host "  [INFO] Automatic resume task is not registered: $TaskName"
-        exit 1
+        # A registered task whose wrapper is missing is worse than no task at
+        # all: it reports healthy, the installer restarts Windows, and nothing
+        # runs at logon. The wrapper is therefore part of the verification.
+        if (-not (Test-Path -LiteralPath $wrapperPath -PathType Leaf)) {
+            Write-Host "  [INFO] Automatic resume task is registered but its launcher is missing: $wrapperPath"
+            exit 1
+        }
+        Write-Host "  [OK] Automatic resume task is registered: $TaskName"
+        exit 0
     }
 
     if (-not $SetupPath) {
@@ -2303,8 +2391,9 @@ try {
     }
 
     $identity = Get-InstallerIdentity
+    Remove-ResumeTaskRegistration
+    Remove-ResumeLock
     Write-ResumeWrapper -Setup ((Resolve-Path -LiteralPath $SetupPath).Path)
-    Remove-ResumeTask
 
     # Registered through the ScheduledTasks module so the task can run with an
     # interactive token at the highest privileges without a stored password.
@@ -2319,6 +2408,11 @@ try {
     $registered = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if (-not $registered) {
         throw 'The automatic resume task could not be verified after registration.'
+    }
+    # The task is only as good as the file it points at, and a task that exists
+    # without its launcher fails at logon with nothing in the installer log.
+    if (-not (Test-Path -LiteralPath $wrapperPath -PathType Leaf)) {
+        throw "The automatic resume task was registered but its launcher is missing: $wrapperPath"
     }
 
     Write-Host "  [OK] Automatic resume task registered: $TaskName"
@@ -2346,6 +2440,65 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell turns anything a native command writes to stderr into a
+# terminating error while $ErrorActionPreference is 'Stop', even when that
+# stream is redirected to $null. tar.exe reports progress on stderr and
+# docker.exe answers "no such volume" there, which are both normal states of a
+# fresh machine, so every native call runs with the preference relaxed and is
+# judged by its exit code alone.
+function Invoke-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$CommandArguments,
+        [switch]$Quiet
+    )
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($Quiet) {
+            & $FilePath @CommandArguments *> $null
+        }
+        else {
+            # Merged stderr arrives as ErrorRecord objects. Casting each one to
+            # a string keeps the installer log readable instead of printing a
+            # NativeCommandError block for ordinary progress messages.
+            & $FilePath @CommandArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        }
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        Write-Host "  [WARN] $FilePath could not be started: $($_.Exception.Message)"
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return [int]$exitCode
+}
+
+# Docker Desktop and the WSL Engine are independent daemons, so every call is
+# pinned to the Docker Desktop context explicitly.
+$dockerContext = @('--context', 'desktop-linux')
+
+# Docker Desktop is installed by the same installer run that starts this script,
+# so the PATH inherited from the installer console predates it and a bare
+# 'docker.exe' cannot be found. The known installation path is preferred and
+# PATH lookup is only the fallback for custom installation directories.
+function Resolve-DockerCli {
+    $roots = @($env:ProgramFiles, $env:ProgramW6432, ${env:ProgramFiles(x86)})
+    foreach ($root in $roots) {
+        if (-not $root) { continue }
+        $candidate = Join-Path $root 'Docker\Docker\resources\bin\docker.exe'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    return 'docker.exe'
+}
+
+$dockerCli = Resolve-DockerCli
+
 function Require-File([string]$Path, [string]$Name) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "Required offline file not found: $Name`n        $Path"
@@ -2372,18 +2525,18 @@ try {
 
     # project-src.tar.gz intentionally excludes prebuilt/.
     Write-Host "  [windows] Restoring project source to: $DestinationPath"
-    tar.exe -xzf $projectTar -C $DestinationPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Windows project source extraction failed with code $LASTEXITCODE."
+    $tarExit = Invoke-NativeCommand -FilePath 'tar.exe' -CommandArguments @('-xzf', $projectTar, '-C', $DestinationPath)
+    if ($tarExit -ne 0) {
+        throw "Windows project source extraction failed with code $tarExit."
     }
 
     Write-Host "  [windows] Restoring prebuilt directory to: $DestinationPath\prebuilt"
     if (Test-Path -LiteralPath (Join-Path $DestinationPath 'prebuilt')) {
         Remove-Item -LiteralPath (Join-Path $DestinationPath 'prebuilt') -Recurse -Force
     }
-    tar.exe -xzf $prebuiltTar -C $DestinationPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Windows prebuilt extraction failed with code $LASTEXITCODE."
+    $tarExit = Invoke-NativeCommand -FilePath 'tar.exe' -CommandArguments @('-xzf', $prebuiltTar, '-C', $DestinationPath)
+    if ($tarExit -ne 0) {
+        throw "Windows prebuilt extraction failed with code $tarExit."
     }
 
     $composeFile = Join-Path $DestinationPath 'docker\compose\docker-compose.yml'
@@ -2399,9 +2552,9 @@ try {
     # Docker Desktop explicitly so a WSL-specific context cannot receive these
     # imports accidentally.
     Write-Host '  [docker-desktop] Loading DevBox Docker image into Docker Desktop...'
-    & docker.exe --context desktop-linux load -i $imageTar
-    if ($LASTEXITCODE -ne 0) {
-        throw "Docker Desktop image load failed with code $LASTEXITCODE."
+    $dockerExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('load', '-i', $imageTar))
+    if ($dockerExit -ne 0) {
+        throw "Docker Desktop image load failed with code $dockerExit."
     }
 
     $volumeNames = @(
@@ -2418,19 +2571,26 @@ try {
         $actualVolume = "${ComposeProject}_${logicalVolume}"
 
         Write-Host "  [docker-desktop] Restoring volume: $actualVolume"
-        & docker.exe --context desktop-linux volume inspect $actualVolume *> $null
-        if ($LASTEXITCODE -eq 0) {
-            & docker.exe --context desktop-linux volume rm $actualVolume *> $null
-            if ($LASTEXITCODE -ne 0) {
+
+        # A missing volume is the normal case on a fresh machine and docker.exe
+        # reports it on stderr, so only the exit code decides here.
+        $inspectExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('volume', 'inspect', $actualVolume)) -Quiet
+        if ($inspectExit -eq 0) {
+            $removeExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('volume', 'rm', $actualVolume)) -Quiet
+            if ($removeExit -ne 0) {
                 throw "Could not remove existing Docker Desktop volume: $actualVolume"
             }
         }
 
-        & docker.exe --context desktop-linux volume create `
-            --label "com.docker.compose.project=$ComposeProject" `
-            --label "com.docker.compose.volume=$logicalVolume" `
-            $actualVolume *> $null
-        if ($LASTEXITCODE -ne 0) {
+        $createExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments (
+            $dockerContext + @(
+                'volume', 'create',
+                '--label', "com.docker.compose.project=$ComposeProject",
+                '--label', "com.docker.compose.volume=$logicalVolume",
+                $actualVolume
+            )
+        ) -Quiet
+        if ($createExit -ne 0) {
             throw "Could not create Docker Desktop volume: $actualVolume"
         }
 
@@ -2438,14 +2598,17 @@ try {
         $volumeMount = "type=volume,source=$actualVolume,target=/volume"
         $cleanupAndExtract = "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar --no-same-owner -xzf /backup/vol-$logicalVolume.tar.gz -C /volume"
 
-        & docker.exe --context desktop-linux run --rm `
-            --mount $volumeMount `
-            --mount $mountSpec `
-            $ImageName `
-            sh -c $cleanupAndExtract
-
-        if ($LASTEXITCODE -ne 0) {
-            throw "Docker Desktop volume restore failed for $actualVolume with code $LASTEXITCODE."
+        $runExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments (
+            $dockerContext + @(
+                'run', '--rm',
+                '--mount', $volumeMount,
+                '--mount', $mountSpec,
+                $ImageName,
+                'sh', '-c', $cleanupAndExtract
+            )
+        )
+        if ($runExit -ne 0) {
+            throw "Docker Desktop volume restore failed for $actualVolume with code $runExit."
         }
     }
 
@@ -2482,7 +2645,10 @@ function Invoke-WslCommand {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & wsl.exe @WslArguments 2>&1 | Out-Host
+        # Merged stderr arrives as ErrorRecord objects, which the console host
+        # would render as a multi-line NativeCommandError block even for
+        # harmless progress messages. Casting to string keeps the log readable.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -2597,6 +2763,56 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell turns anything a native command writes to stderr into a
+# terminating error while $ErrorActionPreference is 'Stop', even when that
+# stream is redirected to $null. docker.exe reports a missing image or volume
+# and a daemon that is still starting on stderr, and all of those are answers
+# this verification must be able to read, so every native call runs with the
+# preference relaxed and is judged by its exit code alone.
+function Invoke-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$CommandArguments
+    )
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $FilePath @CommandArguments *> $null
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        Write-Host "  [WARN] $FilePath could not be started: $($_.Exception.Message)"
+        $exitCode = 9009
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return [int]$exitCode
+}
+
+# Docker Desktop and the WSL Engine are independent daemons, so every call is
+# pinned to the Docker Desktop context explicitly.
+$dockerContext = @('--context', 'desktop-linux')
+
+# Docker Desktop is installed by the same installer run that starts this script,
+# so the PATH inherited from the installer console predates it and a bare
+# 'docker.exe' cannot be found. The known installation path is preferred and
+# PATH lookup is only the fallback for custom installation directories.
+function Resolve-DockerCli {
+    $roots = @($env:ProgramFiles, $env:ProgramW6432, ${env:ProgramFiles(x86)})
+    foreach ($root in $roots) {
+        if (-not $root) { continue }
+        $candidate = Join-Path $root 'Docker\Docker\resources\bin\docker.exe'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    return 'docker.exe'
+}
+
+$dockerCli = Resolve-DockerCli
+
 try {
     $composeFile = Join-Path $DestinationPath 'docker\compose\docker-compose.yml'
     $prebuiltDir = Join-Path $DestinationPath 'prebuilt'
@@ -2608,20 +2824,17 @@ try {
         throw "Windows DevBox prebuilt directory is missing: $prebuiltDir"
     }
 
-    $null = & docker.exe --context desktop-linux version 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    if ((Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('version'))) -ne 0) {
         throw 'Docker Desktop daemon is not available on context desktop-linux.'
     }
 
-    $imageInspect = & docker.exe --context desktop-linux image inspect $ImageName 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    if ((Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('image', 'inspect', $ImageName))) -ne 0) {
         throw "DevBox Docker image is missing from Docker Desktop: $ImageName"
     }
 
     foreach ($name in @('pnpm-store','bruno-config','example-templates','devbox-deps','composer-cache','bruno-collections')) {
         $volumeName = "${ComposeProject}_${name}"
-        & docker.exe --context desktop-linux volume inspect $volumeName *> $null
-        if ($LASTEXITCODE -ne 0) {
+        if ((Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('volume', 'inspect', $volumeName))) -ne 0) {
             throw "Docker Desktop volume is missing: $volumeName"
         }
     }
@@ -2642,7 +2855,9 @@ echo "  [ok] verify-windows-devbox.ps1"
 cat > "$BUNDLE_DIR/scripts/verify-wsl-devbox.ps1" <<'PS1'
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
+    # No Mandatory attribute here on purpose: a mandatory parameter that also has
+    # a default value still prompts on the console when it is omitted, which
+    # would hang an unattended run instead of using the default.
     [string]$Distribution = 'Ubuntu-24.04',
     [string]$ImageName = 'devbox-lite:latest',
     [string]$ComposeProject = 'devbox'
@@ -2661,7 +2876,10 @@ function Invoke-WslCommand {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & wsl.exe @WslArguments 2>&1 | Out-Host
+        # Merged stderr arrives as ErrorRecord objects, which the console host
+        # would render as a multi-line NativeCommandError block even for
+        # harmless progress messages. Casting to string keeps the log readable.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -2753,7 +2971,9 @@ echo "  [ok] verify-wsl-devbox.ps1"
 cat > "$BUNDLE_DIR/scripts/verify-wsl-project.ps1" <<'PS1'
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
+    # No Mandatory attribute here on purpose: a mandatory parameter that also has
+    # a default value still prompts on the console when it is omitted, which
+    # would hang an unattended run instead of using the default.
     [string]$Distribution = 'Ubuntu-24.04'
 )
 
@@ -2770,7 +2990,10 @@ function Invoke-WslCommand {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & wsl.exe @WslArguments 2>&1 | Out-Host
+        # Merged stderr arrives as ErrorRecord objects, which the console host
+        # would render as a multi-line NativeCommandError block even for
+        # harmless progress messages. Casting to string keeps the log readable.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -2885,7 +3108,10 @@ function Invoke-WslCommand {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & wsl.exe @WslArguments 2>&1 | Out-Host
+        # Merged stderr arrives as ErrorRecord objects, which the console host
+        # would render as a multi-line NativeCommandError block even for
+        # harmless progress messages. Casting to string keeps the log readable.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -3267,7 +3493,10 @@ function Invoke-WslCommand {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & wsl.exe @WslArguments 2>&1 | Out-Host
+        # Merged stderr arrives as ErrorRecord objects, which the console host
+        # would render as a multi-line NativeCommandError block even for
+        # harmless progress messages. Casting to string keeps the log readable.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -3440,10 +3669,11 @@ call :validate_package
 set "VALIDATE_RC=%errorlevel%"
 if not "%VALIDATE_RC%"=="0" goto :fail_validate
 
-rem Account details are collected before any restart so the installer can
-rem finish unattended when it resumes automatically.
-call :prepare_wsl_credentials
-if errorlevel 1 goto :fail
+rem The Linux account details are NOT collected here. They are asked for in the
+rem Ubuntu account stage, which runs after WSL is enabled and Ubuntu-24.04 is
+rem installed, so the operator is only asked once the distribution really
+rem exists. The resumed run owns a visible console, so the prompt is reachable
+rem after a restart as well.
 
 if /I "%STAGE%"=="START" goto :stage_features
 if /I "%STAGE%"=="FEATURES_ENABLED" goto :stage_wsl
@@ -3488,7 +3718,13 @@ goto :stage_ubuntu
 :features_restart
 call :save_stage FEATURES_ENABLED
 if errorlevel 1 goto :fail
+rem The exit code of :schedule_restart must always be checked. When the resume
+rem task cannot be registered or the shutdown command fails, exiting with 3010
+rem anyway closes this window without restarting Windows and without anything
+rem left behind to continue the installation, which looks exactly like a silent
+rem crash. A failure here is a hard failure.
 call :schedule_restart
+if errorlevel 1 goto :fail
 exit /b 3010
 
 :stage_wsl
@@ -3503,6 +3739,7 @@ goto :fail
 call :save_stage WSL_INSTALLED
 if errorlevel 1 goto :fail
 call :schedule_restart
+if errorlevel 1 goto :fail
 exit /b 3010
 
 :stage_ubuntu
@@ -3517,6 +3754,7 @@ goto :fail
 call :save_stage WSL_INSTALLED
 if errorlevel 1 goto :fail
 call :schedule_restart
+if errorlevel 1 goto :fail
 exit /b 3010
 
 :ubuntu_install_continue
@@ -3568,6 +3806,7 @@ goto :stage_restore
 call :save_stage DOCKER_INSTALLED
 if errorlevel 1 goto :fail
 call :schedule_restart
+if errorlevel 1 goto :fail
 exit /b 3010
 
 :stage_restore
@@ -3613,9 +3852,11 @@ call :wait_for_key
 exit /b 0
 
 :wait_for_key
-rem A resumed run is started by the scheduled task, so its console has no user
-rem to press a key. Waiting there would keep the installer alive forever and the
-rem resume task would never report a result, so the pause is skipped instead.
+rem A resumed run is started by the resume task, which owns the retry loop and
+rem keeps its own window open at the end. Pausing here would block that loop and
+rem the resume task would never report a result, so the keypress is skipped in
+rem resume mode. Interactive prompts of the account stage are not affected: the
+rem resumed console is visible and Read-Host still works there.
 if "%RESUME_MODE%"=="1" exit /b 0
 pause
 exit /b 0
@@ -3728,27 +3969,16 @@ if errorlevel 1 goto :ubuntu_default_error
 echo   [OK] Ubuntu-24.04 is installed as WSL2 and set as default distro.
 exit /b 0
 
-:prepare_wsl_credentials
-echo.
-echo [2/9] Preparing Ubuntu-24.04 account details...
-rem A resumed run is started by the scheduled task with its output redirected
-rem to the resume log, so a prompt there would be invisible and would stall the
-rem installation. Account details are only requested during the first run.
-set "PREPARE_ARGS="
-if "%RESUME_MODE%"=="1" set "PREPARE_ARGS=-NoPrompt"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Mode Prepare -Distribution "Ubuntu-24.04" -StatePath "%CRED_FILE%" %PREPARE_ARGS%
-if errorlevel 1 goto :wsl_credentials_error
-exit /b 0
-
 :initialize_wsl_user
 echo.
 echo [5/9] Initializing Ubuntu-24.04 first-run user...
-rem The same rule as stage 2: a resumed run has no reachable console, so the
-rem account stage must fail with a readable message instead of waiting for input
-rem that can never arrive. Account details were stored before the restart.
-set "APPLY_ARGS="
-if "%RESUME_MODE%"=="1" set "APPLY_ARGS=-NoPrompt"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Mode Apply -Distribution "Ubuntu-24.04" -StatePath "%CRED_FILE%" %APPLY_ARGS%
+rem This is the only stage that asks the operator anything. WSL is enabled and
+rem Ubuntu-24.04 is installed by now, so the Linux username and password are
+rem requested here and the account is created immediately. A resumed run is
+rem started by the resume task in a visible console, so the prompt works after a
+rem restart too. If the details were already entered in a previous attempt they
+rem are reused from the encrypted state file instead of being asked again.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\initialize-wsl-user.ps1" -Distribution "Ubuntu-24.04" -StatePath "%CRED_FILE%"
 if errorlevel 1 goto :wsl_user_init_error
 exit /b 0
 
@@ -3805,18 +4035,33 @@ if "%RESTART_RC%"=="3010" exit /b 3010
 if not "%RESTART_RC%"=="0" goto :docker_install_error
 
 echo   Waiting for Docker Engine...
+call :resolve_docker_cli
 set /a WAIT_COUNT=0
 
 :docker_wait_loop
 set /a WAIT_COUNT+=1
 timeout /t 5 /nobreak >nul
-docker version >nul 2>&1
+"%DOCKER_CLI%" version >nul 2>&1
 if not errorlevel 1 goto :docker_ready
 if %WAIT_COUNT% GEQ 60 goto :docker_timeout
 goto :docker_wait_loop
 
 :docker_ready
 echo   [OK] Docker Engine is ready.
+exit /b 0
+
+:resolve_docker_cli
+rem Docker Desktop is installed by this very run, so the PATH this console
+rem inherited when it started still has no entry for docker.exe. cmd.exe never
+rem refreshes its own environment, so relying on PATH here made every engine
+rem check fail with 9009 and the installer timed out after five minutes even
+rem though Docker had installed perfectly. The known location is tried first and
+rem PATH is only a fallback for custom installation directories.
+set "DOCKER_CLI=%ProgramFiles%\Docker\Docker\resources\bin\docker.exe"
+if exist "%DOCKER_CLI%" exit /b 0
+set "DOCKER_CLI=%ProgramW6432%\Docker\Docker\resources\bin\docker.exe"
+if exist "%DOCKER_CLI%" exit /b 0
+set "DOCKER_CLI=docker.exe"
 exit /b 0
 
 :docker_installer_restart
@@ -3827,11 +4072,12 @@ if not exist "%DOCKER_DESKTOP_EXE%" goto :docker_exe_missing
 tasklist /fi "imagename eq Docker Desktop.exe" 2>nul | findstr /i "Docker Desktop.exe" >nul 2>&1
 if errorlevel 1 start "" "%DOCKER_DESKTOP_EXE%"
 echo   Waiting for the Docker Desktop engine...
+call :resolve_docker_cli
 set /a DD_WAIT=0
 
 :ensure_docker_desktop_wait
 set /a DD_WAIT+=1
-docker.exe --context desktop-linux version >nul 2>&1
+"%DOCKER_CLI%" --context desktop-linux version >nul 2>&1
 if not errorlevel 1 goto :ensure_docker_desktop_ok
 if %DD_WAIT% GEQ 60 goto :docker_timeout
 timeout /t 5 /nobreak >nul
@@ -4020,11 +4266,6 @@ exit /b 1
 
 :ubuntu_default_error
 echo [ERROR] Could not set Ubuntu-24.04 as the default WSL distribution.
-exit /b 1
-
-:wsl_credentials_error
-echo [ERROR] Ubuntu account details could not be recorded.
-echo         Run setup-offline.bat again from an elevated Command Prompt.
 exit /b 1
 
 :wsl_user_init_error
@@ -4257,6 +4498,22 @@ if missing_refs:
 if 'docker_wait_loop' in normalized_bat_text and ':docker_wait_loop' not in normalized_bat_text:
     raise SystemExit('Generated BAT validation failed: docker_wait_loop label is malformed.')
 
+# cmd.exe never refreshes its own environment, so the console that installed
+# Docker Desktop still has the PATH it started with. Probing the engine through
+# a bare 'docker' there always failed with 9009 and the installer timed out
+# after five minutes on a machine where Docker had installed perfectly.
+if ':resolve_docker_cli' not in normalized_bat_text:
+    raise SystemExit('Generated BAT validation failed: the Docker CLI must be resolved by absolute path through :resolve_docker_cli.')
+for bat_line in normalized_bat_text.split('\n'):
+    stripped_bat_line = bat_line.strip()
+    if stripped_bat_line.startswith('rem ') or 'version >nul' not in stripped_bat_line:
+        continue
+    if 'docker' not in stripped_bat_line.lower():
+        continue
+    if stripped_bat_line.startswith('"%DOCKER_CLI%" '):
+        continue
+    raise SystemExit('Generated BAT validation failed: a Docker engine probe does not use the resolved CLI path: ' + stripped_bat_line)
+
 save_stage_marker = ':save_stage\n'
 save_stage_error_marker = ':save_stage_error\n'
 if save_stage_marker not in normalized_bat_text:
@@ -4381,9 +4638,10 @@ if (
 ):
     raise SystemExit('Generated resume task helper validation failed: the installer must resume automatically as the interactive administrator, exactly once.')
 
-# Nothing in a resumed run may wait for a keypress: the scheduled task console
-# has no user, so a pause would keep the installer alive forever and the resume
-# task would never report a result.
+# Nothing in a resumed run may wait for a keypress inside the installer itself:
+# the resume wrapper owns the retry loop and keeps its own window open at the
+# end, so a pause here would block that loop and the resume task would never
+# report a result.
 bat_lines = normalized_bat_text.split('\n')
 for pause_line_number, pause_line in enumerate(bat_lines, start=1):
     if pause_line.strip().lower() != 'pause':
@@ -4433,7 +4691,7 @@ if 'Installation succeeded' not in wait_docker_text or 'Start-Process' not in wa
     raise SystemExit('Generated Docker install waiter validation failed.')
 
 if (
-        'Ubuntu-24.04 requires first-run account setup.' not in initialize_wsl_user_text or
+        'Ubuntu-24.04 is installed and requires first-run account setup.' not in initialize_wsl_user_text or
         'The account will be created in this installer window.' not in initialize_wsl_user_text or
         'You do not need to open Ubuntu or type exit.' not in initialize_wsl_user_text or
         'Installer will continue automatically.' not in initialize_wsl_user_text or
@@ -4505,20 +4763,116 @@ for helper_name, helper_text in wsl_caller_texts.items():
             continue
         raise SystemExit(f'Generated WSL helper validation failed: {helper_name} calls wsl.exe outside the guarded helper: {stripped_line}')
 
-# A resumed run is started by the scheduled task with its output redirected to
-# the resume log, so any prompt there is invisible and stalls the installation.
+# The Ubuntu account details are requested by exactly one stage, the one that
+# runs after WSL and Ubuntu are installed, and only when a console is really
+# available. The old two-stage Prepare/Apply split must stay removed.
 if (
-        '[switch]$NoPrompt' not in initialize_wsl_user_text or
-        'no console to ask on' not in initialize_wsl_user_text or
-        'this run cannot ask for them' not in initialize_wsl_user_text
+        'if (-not [Environment]::UserInteractive)' not in initialize_wsl_user_text or
+        'this run cannot ask for them' not in initialize_wsl_user_text or
+        'Save-DevBoxCredential -UserName $credential.UserName' not in initialize_wsl_user_text
 ):
-    raise SystemExit('Generated Ubuntu first-run helper validation failed: a resumed run must never wait for account input.')
+    raise SystemExit('Generated Ubuntu first-run helper validation failed: the account stage must ask once, store the details and guard against a non-interactive run.')
 
 if (
-        'if "%RESUME_MODE%"=="1" set "PREPARE_ARGS=-NoPrompt"' not in normalized_bat_text or
-        'if "%RESUME_MODE%"=="1" set "APPLY_ARGS=-NoPrompt"' not in normalized_bat_text
+        "$Mode -eq 'Prepare'" in initialize_wsl_user_text or
+        "ValidateSet('Prepare','Apply')" in initialize_wsl_user_text or
+        '$NoPrompt' in initialize_wsl_user_text
 ):
-    raise SystemExit('Generated BAT validation failed: a resumed run must call both account stages with -NoPrompt.')
+    raise SystemExit('Generated Ubuntu first-run helper validation failed: the Prepare stage and the -NoPrompt switch must no longer exist.')
+
+if (
+        '-Mode Prepare' in normalized_bat_text or
+        '-Mode Apply' in normalized_bat_text or
+        'PREPARE_ARGS' in normalized_bat_text or
+        'APPLY_ARGS' in normalized_bat_text or
+        'prepare_wsl_credentials' in normalized_bat_text
+):
+    raise SystemExit('Generated BAT validation failed: account details must not be collected in a separate stage before Ubuntu is installed.')
+
+# The account stage must run after the Ubuntu installation stage, otherwise the
+# operator is asked for a Linux account of a distribution that does not exist.
+ubuntu_install_line = find_label_line(normalized_bat_text, 'install_ubuntu')
+account_stage_line = find_label_line(normalized_bat_text, 'initialize_wsl_user')
+if ubuntu_install_line == -1 or account_stage_line == -1 or account_stage_line <= ubuntu_install_line:
+    raise SystemExit('Generated BAT validation failed: the Ubuntu account stage must be defined after the Ubuntu installation stage.')
+
+if '[5/9] Initializing Ubuntu-24.04 first-run user' not in normalized_bat_text:
+    raise SystemExit('Generated BAT validation failed: the Ubuntu account stage must be stage 5 of 9.')
+
+# Every stage number is printed exactly once. A duplicated number made the log
+# unreadable, because two different stages reported themselves as [2/9].
+for stage_number in range(1, 10):
+    stage_marker = '[%d/9]' % stage_number
+    stage_hits = normalized_bat_text.count(stage_marker)
+    if stage_hits != 1:
+        raise SystemExit('Generated BAT validation failed: stage marker %s is printed %d times instead of once.' % (stage_marker, stage_hits))
+
+# A failing :schedule_restart must never be ignored. Exiting with 3010 after a
+# failed registration closed the installer window without restarting Windows and
+# without anything left to resume the installation.
+bat_lines_for_restart = normalized_bat_text.split('\n')
+for line_index, bat_line in enumerate(bat_lines_for_restart):
+    if bat_line.strip().lower() != 'call :schedule_restart':
+        continue
+    following = bat_lines_for_restart[line_index + 1].strip().lower() if line_index + 1 < len(bat_lines_for_restart) else ''
+    if following != 'if errorlevel 1 goto :fail':
+        raise SystemExit('Generated BAT validation failed: every "call :schedule_restart" must be followed by "if errorlevel 1 goto :fail".')
+
+# schtasks.exe writes to stderr for a task that does not exist, which is a
+# terminating error while $ErrorActionPreference is 'Stop'. Registration of the
+# resume task must therefore go through the guarded helper only.
+if 'function Invoke-SchTasks' not in resume_task_text:
+    raise SystemExit('Generated resume task helper validation failed: schtasks.exe must be called through the guarded Invoke-SchTasks helper.')
+for resume_line in resume_task_text.split('\n'):
+    stripped_resume_line = resume_line.strip()
+    if stripped_resume_line.startswith('#') or 'schtasks.exe' not in stripped_resume_line:
+        continue
+    if '& schtasks.exe @Arguments' in stripped_resume_line:
+        continue
+    raise SystemExit(f'Generated resume task helper validation failed: schtasks.exe is called outside the guarded helper: {stripped_resume_line}')
+
+# The resumed installer must keep its console. Redirecting it into resume.log
+# made the account prompt invisible and the installation looked frozen.
+if "'    call ' + $q + '%SETUP%' + $q + ' /resume'" not in resume_task_text:
+    raise SystemExit('Generated resume task helper validation failed: the resume wrapper must call setup-offline.bat /resume without redirecting its console.')
+if "/resume >>" in resume_task_text:
+    raise SystemExit('Generated resume task helper validation failed: the resumed installer output must not be redirected to the resume log.')
+
+# The wrapper file must outlive registration. An earlier version wrote the
+# wrapper and then ran the full cleanup, which deleted the exact file the
+# scheduled task had just been pointed at: registration reported success,
+# Windows restarted, and the logon task died on a missing path, so the
+# installation silently never resumed.
+if 'function Remove-ResumeTaskRegistration' not in resume_task_text:
+    raise SystemExit('Generated resume task helper validation failed: registration must clean up only the scheduled task, through Remove-ResumeTaskRegistration.')
+register_body = resume_task_text.split('$identity = Get-InstallerIdentity', 1)
+if len(register_body) != 2:
+    raise SystemExit('Generated resume task helper validation failed: the registration branch could not be located.')
+register_body = register_body[1].split('Register-ScheduledTask ', 1)[0]
+if 'Write-ResumeWrapper' not in register_body:
+    raise SystemExit('Generated resume task helper validation failed: the wrapper must be written before the task is registered.')
+for forbidden_call in ('Remove-ResumeTask\n', 'Remove-ResumeTask '):
+    if forbidden_call in register_body:
+        raise SystemExit('Generated resume task helper validation failed: registration must not run the full teardown, which deletes the wrapper it just wrote.')
+if register_body.index('Remove-ResumeTaskRegistration') > register_body.index('Write-ResumeWrapper'):
+    raise SystemExit('Generated resume task helper validation failed: the stale task must be removed before the wrapper is written.')
+
+# A registered task with a missing wrapper reports healthy and still fails at
+# logon, so the wrapper is part of the status check.
+status_branch = resume_task_text.split("if ($Mode -eq 'Status')", 1)
+if len(status_branch) != 2:
+    raise SystemExit('Generated resume task helper validation failed: the status branch could not be located.')
+if 'Test-Path -LiteralPath $wrapperPath' not in status_branch[1].split('if (-not $SetupPath)', 1)[0]:
+    raise SystemExit('Generated resume task helper validation failed: the status check must verify the resume wrapper exists.')
+
+# The lock belongs to a running wrapper. Clearing it from a nested installer run
+# would drop the mutual exclusion mid-install; never clearing it would disable
+# automatic resume permanently after a crash, so the marker decides.
+if ("$env:DEVBOX_RESUME_WRAPPER -eq '1'" not in resume_task_text or
+        'function Remove-ResumeLock' not in resume_task_text):
+    raise SystemExit('Generated resume task helper validation failed: the resume lock must only be cleared when no wrapper is running.')
+if "'set ' + $q + 'DEVBOX_RESUME_WRAPPER=1' + $q" not in resume_task_text:
+    raise SystemExit('Generated resume task helper validation failed: the wrapper must mark nested installer runs as its own.')
 
 if ('systemd=true' not in install_engine_sh_text or
         'wsl-engine' not in install_engine_sh_text or
@@ -4534,14 +4888,73 @@ if ('wsl-engine' not in install_engine_ps1_text or
 
 if ('project-src.tar.gz' not in restore_windows_devbox_text or
         'prebuilt.tar.gz' not in restore_windows_devbox_text or
-        'tar.exe -xzf' not in restore_windows_devbox_text or
-        'docker.exe --context desktop-linux load' not in restore_windows_devbox_text or
-        'docker.exe --context desktop-linux volume create' not in restore_windows_devbox_text):
+        "-FilePath 'tar.exe' -CommandArguments @('-xzf'" not in restore_windows_devbox_text or
+        "@('load', '-i', $imageTar)" not in restore_windows_devbox_text or
+        "'volume', 'create'," not in restore_windows_devbox_text or
+        "$dockerContext = @('--context', 'desktop-linux')" not in restore_windows_devbox_text):
     raise SystemExit('Generated Windows DevBox restore helper validation failed.')
 
-if ('docker.exe --context desktop-linux image inspect' not in verify_windows_devbox_text or
-        'docker.exe --context desktop-linux volume inspect' not in verify_windows_devbox_text):
+if ("'image', 'inspect', $ImageName" not in verify_windows_devbox_text or
+        "'volume', 'inspect', $volumeName" not in verify_windows_devbox_text or
+        "$dockerContext = @('--context', 'desktop-linux')" not in verify_windows_devbox_text):
     raise SystemExit('Generated Windows DevBox verification helper validation failed.')
+
+# Docker Desktop is installed during the same run, so the PATH these helpers
+# inherit from the installer console has no docker.exe in it. Resolving the CLI
+# by absolute path is what keeps the engine checks from failing with 9009.
+for helper_name in ('restore-windows-devbox.ps1', 'verify-windows-devbox.ps1'):
+    helper_text = {
+        'restore-windows-devbox.ps1': restore_windows_devbox_text,
+        'verify-windows-devbox.ps1': verify_windows_devbox_text,
+    }[helper_name]
+    if ('function Resolve-DockerCli' not in helper_text or
+            '$dockerCli = Resolve-DockerCli' not in helper_text):
+        raise SystemExit(f'Generated helper validation failed: {helper_name} must resolve docker.exe by absolute path.')
+
+# tar.exe, docker.exe and icacls.exe all write to stderr in states that are
+# completely normal on a fresh machine, for example a volume that does not exist
+# yet or a Docker daemon that is still starting. While $ErrorActionPreference is
+# 'Stop' such a write is a terminating error even when the stream is redirected,
+# so these helpers may only reach a native executable through their guard.
+native_caller_texts = {
+    'restore-windows-devbox.ps1': restore_windows_devbox_text,
+    'verify-windows-devbox.ps1': verify_windows_devbox_text,
+    'initialize-wsl-user.ps1': initialize_wsl_user_text,
+}
+allowed_native_markers = (
+    "-FilePath 'tar.exe'",
+    "-FilePath $dockerCli",
+    '& $FilePath @CommandArguments',
+    '& icacls.exe $StatePath /inheritance:r',
+    "'Docker\\Docker\\resources\\bin\\docker.exe'",
+    "return 'docker.exe'",
+)
+guarded_native_executables = ('tar.exe', 'docker.exe', 'icacls.exe', 'schtasks.exe')
+for helper_name, helper_text in native_caller_texts.items():
+    if "$ErrorActionPreference = 'Continue'" not in helper_text:
+        raise SystemExit(f'Generated helper validation failed: {helper_name} must relax $ErrorActionPreference around every native call.')
+    for helper_line in helper_text.replace('\r\n', '\n').split('\n'):
+        stripped_line = helper_line.strip()
+        if stripped_line.startswith('#'):
+            continue
+        if not any(exe in stripped_line for exe in guarded_native_executables):
+            continue
+        if any(marker in stripped_line for marker in allowed_native_markers):
+            continue
+        raise SystemExit(f'Generated helper validation failed: {helper_name} calls a native executable outside its guard: {stripped_line}')
+
+# With the preference relaxed, merged stderr arrives as ErrorRecord objects.
+# Out-Host renders those as a NativeCommandError block, which is how a harmless
+# "Successfully created context" message ended up looking like a crash in the
+# installer log, so streaming helpers must cast every line to a string.
+for helper_name, helper_text in list(wsl_caller_texts.items()) + list(native_caller_texts.items()):
+    if 'Out-Host' in helper_text:
+        raise SystemExit(f'Generated helper validation failed: {helper_name} must not render native output through Out-Host.')
+    for streaming_marker in ('@WslArguments 2>&1 |', '@CommandArguments 2>&1 |'):
+        if streaming_marker not in helper_text:
+            continue
+        if (streaming_marker + ' ForEach-Object { Write-Host ([string]$_) }') not in helper_text:
+            raise SystemExit(f'Generated helper validation failed: {helper_name} must print merged native output as plain strings.')
 
 if ('/run/devbox-docker.sock' not in verify_wsl_devbox_text or
         'docker image inspect' not in verify_wsl_devbox_text or
