@@ -1512,12 +1512,26 @@ function Invoke-WslPayload {
     param(
         [Parameter(Mandatory = $true)][string]$ScriptText,
         [string[]]$Arguments = @(),
-        [string]$StdinText
+        [string]$StdinText,
+        [string]$EmbeddedSecretB64
     )
 
     # Ubuntu runs the payload with bash, so it must use LF line endings even
     # when this installer script itself is stored with CRLF.
     $normalized = $ScriptText -replace "`r`n", "`n"
+
+    # Fallback channel for the base64 password. Standard input is preferred
+    # because it never appears in any command line, but when PowerShell's text
+    # pipeline mangles it the secret is defined inside the payload instead. The
+    # payload file is created with umask 077 (root-only) and deleted right
+    # after it runs, so the value is never left readable on disk.
+    if ($PSBoundParameters.ContainsKey('EmbeddedSecretB64')) {
+        if ($EmbeddedSecretB64 -notmatch '^[A-Za-z0-9+/=]+$') {
+            throw 'Unsupported embedded WSL payload secret; only base64 text is allowed.'
+        }
+        $normalized = "DEVBOX_PASSWORD_B64='$EmbeddedSecretB64'`n" + $normalized
+    }
+
     $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($normalized))
 
     # Payload arguments are base64 text. Reject anything else so no argument
@@ -1604,17 +1618,34 @@ if [ -z "${TARGET_USER:-}" ]; then
     exit 21
 fi
 
-# Standard input carries only the base64 password, so it can be read safely.
-PASSWORD_B64="$(tr -d '\r\n' 2>/dev/null || true)"
-if [ -z "${PASSWORD_B64:-}" ]; then
-    echo "[error] The Linux password did not reach Ubuntu."
+# The base64 password normally arrives on standard input. When PowerShell
+# cannot deliver it that way, the installer retries with DEVBOX_PASSWORD_B64
+# prepended to this script instead, so both channels are accepted here.
+#
+# PowerShell writes to a native command through its own text pipeline, which
+# may add a BOM, pad the line with spaces, wrap it, or re-encode it. Anything
+# outside the base64 alphabet is therefore dropped before decoding, and the
+# observed lengths are reported when the decode still fails, so this step can
+# never be opaque again.
+RECEIVED_LENGTH=0
+if [ -z "${DEVBOX_PASSWORD_B64:-}" ]; then
+    RECEIVED_INPUT="$(cat 2>/dev/null | tr -d '\000' 2>/dev/null || true)"
+    RECEIVED_LENGTH="${#RECEIVED_INPUT}"
+    DEVBOX_PASSWORD_B64="$(printf '%s' "$RECEIVED_INPUT" | tr -cd 'A-Za-z0-9+/=')"
+    unset RECEIVED_INPUT
+fi
+
+USABLE_LENGTH="${#DEVBOX_PASSWORD_B64}"
+if [ "$USABLE_LENGTH" -eq 0 ]; then
+    echo "[error] The Linux password did not reach Ubuntu (received $RECEIVED_LENGTH characters)."
     exit 22
 fi
 
-PASSWORD="$(printf '%s' "$PASSWORD_B64" | base64 -d 2>/dev/null || true)"
-unset PASSWORD_B64
+PASSWORD="$(printf '%s' "$DEVBOX_PASSWORD_B64" | base64 -d 2>/dev/null || true)"
+unset DEVBOX_PASSWORD_B64
 if [ -z "${PASSWORD:-}" ]; then
     echo "[error] The Linux password could not be decoded inside Ubuntu."
+    echo "        received=$RECEIVED_LENGTH base64=$USABLE_LENGTH remainder=$((USABLE_LENGTH % 4))"
     exit 23
 fi
 
@@ -1948,6 +1979,19 @@ try {
     # The payload runs through wsl.exe -d $Distribution -u root in this same
     # installer window. No separate Ubuntu window is opened.
     $result = Invoke-WslPayload -ScriptText $setupScript -Arguments @($usernameB64) -StdinText $passwordB64
+
+    # Exit code 22 means the piped password never arrived inside Ubuntu and 23
+    # means it arrived unusable. Both are transport problems of the PowerShell
+    # standard input pipe, not wrong input from the user, so retry once over the
+    # payload file itself before giving up on the whole stage.
+    if ($result.ExitCode -eq 22 -or $result.ExitCode -eq 23) {
+        foreach ($line in $result.Lines) {
+            if ($line -ne '') { Write-Host $line }
+        }
+        Write-Host '  [WARN] The password could not be delivered through standard input; retrying inside the payload.'
+        $result = Invoke-WslPayload -ScriptText $setupScript -Arguments @($usernameB64) -EmbeddedSecretB64 $passwordB64
+    }
+
     $passwordB64 = $null
 
     foreach ($line in $result.Lines) {
@@ -4070,6 +4114,19 @@ if (
         'printf "%s" "$payload"' in initialize_wsl_user_text
 ):
     raise SystemExit('Generated Ubuntu first-run helper validation failed: WSL payload transport must not depend on shell expansion inside the wsl.exe command line.')
+
+# PowerShell writes to a native command through its own text pipeline, so the
+# base64 password can reach Ubuntu padded, wrapped or re-encoded. The payload
+# must sanitize it, report the observed lengths when it still cannot decode, and
+# the caller must retry over the payload file instead of standard input.
+if (
+        "tr -cd 'A-Za-z0-9+/='" not in initialize_wsl_user_text or
+        'received=$RECEIVED_LENGTH' not in initialize_wsl_user_text or
+        'EmbeddedSecretB64' not in initialize_wsl_user_text or
+        "DEVBOX_PASSWORD_B64='$EmbeddedSecretB64'" not in initialize_wsl_user_text or
+        '$result.ExitCode -eq 22 -or $result.ExitCode -eq 23' not in initialize_wsl_user_text
+):
+    raise SystemExit('Generated Ubuntu first-run helper validation failed: the Linux password must survive an imperfect standard input pipe.')
 
 if ('systemd=true' not in install_engine_sh_text or
         'wsl-engine' not in install_engine_sh_text or
