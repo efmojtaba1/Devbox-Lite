@@ -16,7 +16,6 @@ set -euo pipefail
 #   - project source
 #   - prebuilt directory
 #   - setup-offline.bat
-#   - scripts/import.ps1
 #   - offline Docker Engine .deb packages for Ubuntu WSL
 #   - Ubuntu Mono font packages for offline WSL use
 #
@@ -927,21 +926,6 @@ echo "[export] Copying offline installer scripts..."
 rm -rf "$BUNDLE_DIR/scripts"
 mkdir -p "$BUNDLE_DIR/scripts"
 
-cp "$PROJECT_ROOT/scripts/import.ps1" "$BUNDLE_DIR/scripts/import.ps1"
-
-if [ ! -f "$PROJECT_ROOT/scripts/import.ps1" ]; then
-  echo "[error] scripts/import.ps1 not found in project."
-  exit 1
-fi
-
-if grep -q "Get-FileHash" "$PROJECT_ROOT/scripts/import.ps1"; then
-  echo "[error] scripts/import.ps1 still depends on Get-FileHash."
-  echo "        Replace it with the portable .NET SHA256 implementation before exporting."
-  exit 1
-fi
-
-echo "  [ok] import.ps1"
-
 # Generate Windows-side validation and feature-management scripts first.
 # Complex PowerShell logic is kept outside CMD to avoid cmd.exe parser issues.
 cat > "$BUNDLE_DIR/scripts/validate-offline.ps1" <<'PS1'
@@ -1005,7 +989,6 @@ try {
         @{ Path = (Join-Path $PackageRoot 'offline-deps\ubuntu-24.04.4-wsl-amd64.wsl'); Name = 'Ubuntu 24.04 WSL package' },
         @{ Path = (Join-Path $PackageRoot 'offline-deps\Docker Desktop Installer.exe'); Name = 'Docker Desktop installer' },
         @{ Path = (Join-Path $PackageRoot 'image.tar'); Name = 'DevBox Docker image' },
-        @{ Path = (Join-Path $PackageRoot 'scripts\import.ps1'); Name = 'import.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\manage-wsl-features.ps1'); Name = 'manage-wsl-features.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-distro.ps1'); Name = 'check-wsl-distro.ps1' },
         @{ Path = (Join-Path $PackageRoot 'scripts\check-wsl-ready.ps1'); Name = 'check-wsl-ready.ps1' },
@@ -4396,12 +4379,12 @@ fi
 echo "  [ok] Docker Engine dependency collector validation passed"
 
 # Validate generated files before package creation continues.
-python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/restore-windows-devbox.ps1" "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" "$BUNDLE_DIR/scripts/verify-windows-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-project.ps1" "$BUNDLE_DIR/scripts/restore-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/import.ps1" "$BUNDLE_DIR/scripts/manage-resume-task.ps1" <<'PY'
+python3 - "$ABS_OUT/setup-offline.bat" "$BUNDLE_DIR/scripts/validate-offline.ps1" "$BUNDLE_DIR/scripts/manage-wsl-features.ps1" "$BUNDLE_DIR/scripts/check-wsl-distro.ps1" "$BUNDLE_DIR/scripts/check-wsl-ready.ps1" "$BUNDLE_DIR/scripts/check-restart-required.ps1" "$BUNDLE_DIR/scripts/check-docker-restart-required.ps1" "$BUNDLE_DIR/scripts/wait-docker-install.ps1" "$BUNDLE_DIR/scripts/initialize-wsl-user.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.ps1" "$BUNDLE_DIR/scripts/install-wsl-docker-engine.sh" "$BUNDLE_DIR/scripts/restore-windows-devbox.ps1" "$BUNDLE_DIR/scripts/restore-wsl-project.ps1" "$BUNDLE_DIR/scripts/verify-windows-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/verify-wsl-project.ps1" "$BUNDLE_DIR/scripts/restore-wsl-devbox.ps1" "$BUNDLE_DIR/scripts/manage-resume-task.ps1" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-EXPECTED_VALIDATOR_ARGS = 19
+EXPECTED_VALIDATOR_ARGS = 18
 actual_validator_args = len(sys.argv) - 1
 if actual_validator_args != EXPECTED_VALIDATOR_ARGS:
     raise SystemExit(
@@ -4426,8 +4409,7 @@ verify_windows_devbox = Path(sys.argv[14])
 verify_wsl_devbox = Path(sys.argv[15])
 verify_wsl_project = Path(sys.argv[16])
 restore_wsl_devbox = Path(sys.argv[17])
-import_ps1 = Path(sys.argv[18])
-resume_task_ps1 = Path(sys.argv[19])
+resume_task_ps1 = Path(sys.argv[18])
 
 bat_bytes = bat.read_bytes()
 if b"\r\n" not in bat_bytes:
@@ -4456,7 +4438,6 @@ verify_wsl_devbox_text = verify_wsl_devbox.read_text(encoding='utf-8')
 restore_wsl_project_text = restore_wsl_project.read_text(encoding='utf-8')
 verify_wsl_project_text = verify_wsl_project.read_text(encoding='utf-8')
 restore_wsl_devbox_text = restore_wsl_devbox.read_text(encoding='utf-8')
-import_text = import_ps1.read_text(encoding='utf-8')
 
 required_labels = [
     'main', 'resume', 'require_admin', 'validate_package',
@@ -4666,12 +4647,6 @@ if re.search(r'for\s+/f[^\n]*powershell\.exe', normalized_bat_text, re.I):
 
 if 'param(' not in validate_text or '-LiteralPath' not in validate_text:
     raise SystemExit('Generated validation script check failed.')
-import_text = import_ps1.read_text(encoding='utf-8')
-if 'Get-FileHash' in import_text:
-    raise SystemExit('Generated import.ps1 validation failed: Get-FileHash dependency detected.')
-if 'System.Security.Cryptography.SHA256' not in import_text:
-    raise SystemExit('Generated import.ps1 validation failed: portable SHA256 implementation is missing.')
-
 if '$LASTEXITCODE' in features_text:
     raise SystemExit('Generated WSL feature script validation failed: LASTEXITCODE must not be used.')
 
@@ -5130,7 +5105,6 @@ required_files=(
   "$BUNDLE_DIR/offline-deps/ubuntu-24.04.4-wsl-amd64.wsl"
   "$BUNDLE_DIR/offline-deps/Docker Desktop Installer.exe"
   "$BUNDLE_DIR/offline-deps/docker-desktop.sha256"
-  "$BUNDLE_DIR/scripts/import.ps1"
   "$BUNDLE_DIR/scripts/validate-offline.ps1"
   "$BUNDLE_DIR/scripts/manage-wsl-features.ps1"
   "$BUNDLE_DIR/scripts/check-wsl-distro.ps1"

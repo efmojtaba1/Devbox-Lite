@@ -20,7 +20,8 @@ function restore { & "$DevBoxRoot\scripts\restore.ps1" }
 function test-api { & "$DevBoxRoot\scripts\test-api.ps1" }
 function run { & "$DevBoxRoot\scripts\run.ps1" $args }
 function export-box { & "$DevBoxRoot\scripts\export.ps1" @args }
-function import-box { & "$DevBoxRoot\scripts\import.ps1" @args }
+# There is no import-box counterpart on purpose: an offline bundle is imported
+# on the target machine by running setup-offline.bat from the bundle itself.
 function setup-deps {
     . "$DevBoxRoot\scripts\common.ps1"
     Show-Header "Setting up Dependencies"

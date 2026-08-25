@@ -174,10 +174,6 @@
             "type": "shell",
             "command": "bash",
             "args": ["-lc", "./scripts/import.sh"],
-            "windows": {
-                "command": "pwsh",
-                "args": ["-NoProfile", "-Command", "./scripts/import.ps1"]
-            },
             "group": "none",
             "presentation": { "reveal": "always", "panel": "shared" }
         }
