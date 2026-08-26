@@ -3386,7 +3386,23 @@ chown -R "$TARGET_USER":"$TARGET_USER" "$PROJECT_DIR/prebuilt"
 echo "  [OK] WSL prebuilt restored: $PROJECT_DIR/prebuilt"
 
 echo "  [wsl-engine] Loading DevBox Docker image..."
-docker load -i "$image_tar"
+
+image_load_log="$(mktemp)"
+
+if ! docker load -i "$image_tar" >"$image_load_log" 2>&1; then
+  echo "  [error] Failed to load DevBox Docker image."
+  sed 's/\r/\n/g' "$image_load_log" | sed '/^[[:space:]]*$/d' | sed 's/^/             /'
+  rm -f "$image_load_log"
+  exit 1
+fi
+
+loaded_image="$(sed 's/\r/\n/g' "$image_load_log" | grep -E '^Loaded image: ' | tail -n 1 || true)"
+rm -f "$image_load_log"
+
+if [ -n "$loaded_image" ]; then
+  echo "  [wsl-engine] $loaded_image"
+fi
+
 echo "  [OK] WSL Docker image loaded: $image_name"
 
 VOLUMES=(
