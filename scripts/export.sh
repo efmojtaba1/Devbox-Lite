@@ -2303,14 +2303,21 @@ function Write-ResumeWrapper {
         '  exit /b 0',
         ')',
         ('set ' + $q + 'RESUME_RC=1' + $q),
-        'for /l %%N in (1,1,5) do (',
+        # Two attempts, not five. The retry only exists for a genuinely transient
+        # failure such as a service that is still coming up after logon, and the
+        # stages already wait for those on their own. A deterministic failure used
+        # to be repeated five times, which buried the single useful error message
+        # under five identical stage logs.
+        'for /l %%N in (1,1,2) do (',
         ('  if not ' + $q + '!RESUME_RC!' + $q + '==' + $q + '0' + $q + ' ('),
-        ('    >>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume attempt %%N of 5.'),
+        ('    >>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume attempt %%N of 2.'),
         ('    call ' + $q + '%SETUP%' + $q + ' /resume'),
         ('    set ' + $q + 'RESUME_RC=!errorlevel!' + $q),
         ('    >>' + $q + '%RESUME_LOG%' + $q + ' echo [!date! !time!] Resume attempt %%N exited with code !RESUME_RC!.'),
         ('    if ' + $q + '!RESUME_RC!' + $q + '==' + $q + '3010' + $q + ' goto :resume_done'),
-        ('    if not ' + $q + '!RESUME_RC!' + $q + '==' + $q + '0' + $q + ' timeout /t 20 /nobreak >nul'),
+        # Only wait when another attempt actually follows. Sleeping after the last
+        # attempt just delays the failure banner by 20 seconds.
+        ('    if not ' + $q + '%%N' + $q + '==' + $q + '2' + $q + ' if not ' + $q + '!RESUME_RC!' + $q + '==' + $q + '0' + $q + ' timeout /t 20 /nobreak >nul'),
         '  )',
         ')',
         ':resume_done',
@@ -2423,6 +2430,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Native tools hand their output over in whatever chunks the pipe delivers, so a
+# single pipeline object can carry several lines at once. Windows moves the cursor
+# down but not back to column 0 for a bare line feed, which is what turned the
+# tail of the installer log into a staircase, and text that started life as UTF-16
+# still carries NUL bytes. Every chunk is therefore stripped and split into real
+# lines before it is printed.
+function Write-NativeLine {
+    param($InputObject)
+
+    $text = ([string]$InputObject) -replace "`0", ''
+    if ($text -eq '') {
+        Write-Host ''
+        return
+    }
+
+    foreach ($line in ($text -split "`r?`n")) {
+        Write-Host $line.TrimEnd("`r")
+    }
+}
+
 # Windows PowerShell turns anything a native command writes to stderr into a
 # terminating error while $ErrorActionPreference is 'Stop', even when that
 # stream is redirected to $null. tar.exe reports progress on stderr and
@@ -2446,7 +2473,7 @@ function Invoke-NativeCommand {
             # Merged stderr arrives as ErrorRecord objects. Casting each one to
             # a string keeps the installer log readable instead of printing a
             # NativeCommandError block for ordinary progress messages.
-            & $FilePath @CommandArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+            & $FilePath @CommandArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
         }
         $exitCode = $LASTEXITCODE
     }
@@ -2460,6 +2487,36 @@ function Invoke-NativeCommand {
 
     if ($null -eq $exitCode) { $exitCode = 9009 }
     return [int]$exitCode
+}
+
+# Same stderr precaution as Invoke-NativeCommand, but here the caller needs the
+# standard output as text instead of on the console. Used to list the containers
+# that still reference a volume, because a referenced volume cannot be removed.
+function Get-NativeOutput {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$CommandArguments
+    )
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $captured = & $FilePath @CommandArguments 2>$null
+    }
+    catch {
+        $captured = @()
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    return @(
+        @($captured) |
+            ForEach-Object { ([string]$_) -replace "`0", '' } |
+            ForEach-Object { $_ -split "`r?`n" } |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -ne '' }
+    )
 }
 
 # Docker Desktop and the WSL Engine are independent daemons, so every call is
@@ -2555,30 +2612,54 @@ try {
 
         Write-Host "  [docker-desktop] Restoring volume: $actualVolume"
 
+        # This stage has to survive being run again after a failed attempt. A
+        # container that still references the volume makes 'docker volume rm'
+        # fail with "volume is in use", and the helper container below is exactly
+        # such a leftover whenever an earlier attempt died mid-extract, because
+        # --rm cleanup is asynchronous. Holders are therefore cleared first.
+        $holders = Get-NativeOutput -FilePath $dockerCli -CommandArguments (
+            $dockerContext + @('ps', '-aq', '--filter', "volume=$actualVolume")
+        )
+        foreach ($holder in $holders) {
+            Write-Host "  [docker-desktop] Clearing container still attached to ${actualVolume}: $holder"
+            Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('rm', '-f', $holder)) -Quiet | Out-Null
+        }
+
         # A missing volume is the normal case on a fresh machine and docker.exe
         # reports it on stderr, so only the exit code decides here.
         $inspectExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('volume', 'inspect', $actualVolume)) -Quiet
         if ($inspectExit -eq 0) {
-            $removeExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('volume', 'rm', $actualVolume)) -Quiet
-            if ($removeExit -ne 0) {
-                throw "Could not remove existing Docker Desktop volume: $actualVolume"
+            # Deliberately not fatal: removing the volume only exists to drop
+            # stale labels, and the contents are wiped from inside the helper
+            # container anyway. Aborting the whole installation because one
+            # volume refused to go would be far worse than reusing it.
+            Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('volume', 'rm', $actualVolume)) -Quiet | Out-Null
+            $inspectExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments ($dockerContext + @('volume', 'inspect', $actualVolume)) -Quiet
+            if ($inspectExit -eq 0) {
+                # Say so out loud - a silently reused volume is undiagnosable
+                # from the target machine.
+                Write-Host "  [docker-desktop] $actualVolume could not be removed; reusing it and replacing its contents."
             }
         }
 
-        $createExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments (
-            $dockerContext + @(
-                'volume', 'create',
-                '--label', "com.docker.compose.project=$ComposeProject",
-                '--label', "com.docker.compose.volume=$logicalVolume",
-                $actualVolume
-            )
-        ) -Quiet
-        if ($createExit -ne 0) {
-            throw "Could not create Docker Desktop volume: $actualVolume"
+        if ($inspectExit -ne 0) {
+            $createExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments (
+                $dockerContext + @(
+                    'volume', 'create',
+                    '--label', "com.docker.compose.project=$ComposeProject",
+                    '--label', "com.docker.compose.volume=$logicalVolume",
+                    $actualVolume
+                )
+            ) -Quiet
+            if ($createExit -ne 0) {
+                throw "Could not create Docker Desktop volume: $actualVolume"
+            }
         }
 
         $mountSpec = "type=bind,source=$volumesDir,target=/backup,readonly"
         $volumeMount = "type=volume,source=$actualVolume,target=/volume"
+        # No chown: the devbox-lite image declares no USER, so the container runs
+        # as root and every named volume is mounted under a root-owned path.
         $cleanupAndExtract = "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar --no-same-owner -xzf /backup/vol-$logicalVolume.tar.gz -C /volume"
 
         $runExit = Invoke-NativeCommand -FilePath $dockerCli -CommandArguments (
@@ -2617,6 +2698,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
+# delivers, so one pipeline object can carry several lines and still contain the
+# NUL bytes of that encoding. Windows moves the console cursor down but not back
+# to column 0 for a bare line feed, which is what turned the tail of the
+# installer log into an ever deeper staircase, so every chunk is cleaned up and
+# split into real lines before it is printed.
+function Write-NativeLine {
+    param($InputObject)
+
+    $text = ([string]$InputObject) -replace "`0", ''
+    if ($text -eq '') {
+        Write-Host ''
+        return
+    }
+
+    foreach ($line in ($text -split "`r?`n")) {
+        Write-Host $line.TrimEnd("`r")
+    }
+}
+
 # Windows PowerShell turns anything a native command writes to stderr into a
 # terminating error while $ErrorActionPreference is 'Stop', even when that
 # stream is redirected. wsl.exe and the Linux side both use stderr for progress
@@ -2630,8 +2731,9 @@ function Invoke-WslCommand {
     try {
         # Merged stderr arrives as ErrorRecord objects, which the console host
         # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Casting to string keeps the log readable.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        # harmless progress messages. Write-NativeLine turns each chunk into
+        # plain, properly terminated console lines.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -2848,6 +2950,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
+# delivers, so one pipeline object can carry several lines and still contain the
+# NUL bytes of that encoding. Windows moves the console cursor down but not back
+# to column 0 for a bare line feed, which is what turned the tail of the
+# installer log into an ever deeper staircase, so every chunk is cleaned up and
+# split into real lines before it is printed.
+function Write-NativeLine {
+    param($InputObject)
+
+    $text = ([string]$InputObject) -replace "`0", ''
+    if ($text -eq '') {
+        Write-Host ''
+        return
+    }
+
+    foreach ($line in ($text -split "`r?`n")) {
+        Write-Host $line.TrimEnd("`r")
+    }
+}
+
 # Windows PowerShell turns anything a native command writes to stderr into a
 # terminating error while $ErrorActionPreference is 'Stop', even when that
 # stream is redirected. wsl.exe and the Linux side both use stderr for progress
@@ -2861,8 +2983,9 @@ function Invoke-WslCommand {
     try {
         # Merged stderr arrives as ErrorRecord objects, which the console host
         # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Casting to string keeps the log readable.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        # harmless progress messages. Write-NativeLine turns each chunk into
+        # plain, properly terminated console lines.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -2962,6 +3085,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
+# delivers, so one pipeline object can carry several lines and still contain the
+# NUL bytes of that encoding. Windows moves the console cursor down but not back
+# to column 0 for a bare line feed, which is what turned the tail of the
+# installer log into an ever deeper staircase, so every chunk is cleaned up and
+# split into real lines before it is printed.
+function Write-NativeLine {
+    param($InputObject)
+
+    $text = ([string]$InputObject) -replace "`0", ''
+    if ($text -eq '') {
+        Write-Host ''
+        return
+    }
+
+    foreach ($line in ($text -split "`r?`n")) {
+        Write-Host $line.TrimEnd("`r")
+    }
+}
+
 # Windows PowerShell turns anything a native command writes to stderr into a
 # terminating error while $ErrorActionPreference is 'Stop', even when that
 # stream is redirected. wsl.exe and the Linux side both use stderr for progress
@@ -2975,8 +3118,9 @@ function Invoke-WslCommand {
     try {
         # Merged stderr arrives as ErrorRecord objects, which the console host
         # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Casting to string keeps the log readable.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        # harmless progress messages. Write-NativeLine turns each chunk into
+        # plain, properly terminated console lines.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -3080,6 +3224,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
+# delivers, so one pipeline object can carry several lines and still contain the
+# NUL bytes of that encoding. Windows moves the console cursor down but not back
+# to column 0 for a bare line feed, which is what turned the tail of the
+# installer log into an ever deeper staircase, so every chunk is cleaned up and
+# split into real lines before it is printed.
+function Write-NativeLine {
+    param($InputObject)
+
+    $text = ([string]$InputObject) -replace "`0", ''
+    if ($text -eq '') {
+        Write-Host ''
+        return
+    }
+
+    foreach ($line in ($text -split "`r?`n")) {
+        Write-Host $line.TrimEnd("`r")
+    }
+}
+
 # Windows PowerShell turns anything a native command writes to stderr into a
 # terminating error while $ErrorActionPreference is 'Stop', even when that
 # stream is redirected. wsl.exe and the Linux side both use stderr for progress
@@ -3093,8 +3257,9 @@ function Invoke-WslCommand {
     try {
         # Merged stderr arrives as ErrorRecord objects, which the console host
         # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Casting to string keeps the log readable.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        # harmless progress messages. Write-NativeLine turns each chunk into
+        # plain, properly terminated console lines.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -3142,6 +3307,12 @@ try {
 
     $restoreScript = @'
 set -euo pipefail
+
+# Under set -e a failing docker command kills this script with the child's exit
+# code and nothing else, which is how a field log ended up saying only "WSL DevBox
+# restore exited with code 1" while the real message sat far to the right of the
+# console. Name the failing line before the shell goes away.
+trap 'echo "[error] WSL restore aborted at line $LINENO (volume: ${logical_volume:-none})" >&2' ERR
 
 package_root_win="$(printf '%s' "$1" | base64 -d)"
 image_name="$2"
@@ -3202,6 +3373,12 @@ fi
 
 export DOCKER_HOST=unix:///run/devbox-docker.sock
 
+# This output travels through wsl.exe into a plain cmd.exe window, so the
+# interactive progress writers contribute nothing but escape sequences and cursor
+# moves to the installer log. Keep every docker command line-oriented.
+export DOCKER_CLI_HINTS=false
+export COMPOSE_ANSI=never
+
 echo "  [wsl] Restoring prebuilt directory inside Ubuntu-24.04..."
 rm -rf "$PROJECT_DIR/prebuilt"
 tar --no-same-owner -xzf "$prebuilt_tar" -C "$PROJECT_DIR"
@@ -3231,21 +3408,50 @@ for logical_volume in "${VOLUMES[@]}"; do
   fi
 
   echo "  [wsl-engine] Restoring volume: $actual_volume"
-  if docker volume inspect "$actual_volume" >/dev/null 2>&1; then
-    docker volume rm "$actual_volume" >/dev/null
-  fi
-  docker volume create \
-    --label "com.docker.compose.project=$compose_project" \
-    --label "com.docker.compose.volume=$logical_volume" \
-    "$actual_volume" >/dev/null
 
+  # This whole stage has to survive being run again. A container that still
+  # references the volume makes "docker volume rm" fail with "volume is in use",
+  # and the helper container below is exactly such a leftover whenever a previous
+  # attempt died mid-extract: --rm cleanup is asynchronous, so an aborted run can
+  # leave the container behind. Holders are therefore removed first.
+  holders="$(docker ps -aq --filter "volume=$actual_volume" 2>/dev/null || true)"
+  if [ -n "$holders" ]; then
+    echo "  [wsl-engine] Clearing containers still attached to $actual_volume"
+    # Word splitting is wanted here: docker prints one id per line.
+    docker rm -f $holders >/dev/null 2>&1 || true
+  fi
+
+  # Removing the volume is a convenience, not a requirement - the contents are
+  # wiped from inside the container below either way - so a stubborn volume must
+  # not abort the installation. The volume is only created when it is really
+  # absent, which is also what keeps the compose labels correct on the happy path.
+  if docker volume inspect "$actual_volume" >/dev/null 2>&1; then
+    docker volume rm "$actual_volume" >/dev/null 2>&1 || true
+  fi
+  if docker volume inspect "$actual_volume" >/dev/null 2>&1; then
+    # Say so out loud. A silently reused volume is undiagnosable from the target
+    # machine, which is what made the original failure so hard to read.
+    echo "  [wsl-engine] $actual_volume could not be removed; reusing it and replacing its contents."
+  else
+    docker volume create \
+      --label "com.docker.compose.project=$compose_project" \
+      --label "com.docker.compose.volume=$logical_volume" \
+      "$actual_volume" >/dev/null
+  fi
+
+  # No chown here on purpose. The devbox-lite image declares no USER, so the
+  # container runs as root, and every named volume is mounted on a path root owns
+  # (/root/..., /workspace/.deps, /example-data). An earlier version chowned the
+  # volume to the WSL account name and failed with "chown: invalid user", because
+  # that account exists on the Ubuntu host and not inside the container. The
+  # Docker Desktop restore has never done this and has always worked.
   docker run --rm \
     --mount "type=volume,source=${actual_volume},target=/volume" \
     --mount "type=bind,source=${volumes_dir},target=/backup,readonly" \
     "$image_name" \
-    sh -c "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar --no-same-owner -xzf /backup/vol-${logical_volume}.tar.gz -C /volume; chown -R $TARGET_USER:$TARGET_USER /volume"
+    sh -c "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true; tar --no-same-owner -xzf /backup/vol-${logical_volume}.tar.gz -C /volume"
 
-  echo "  [OK] $actual_volume (owner: $TARGET_USER)"
+  echo "  [OK] $actual_volume"
 done
 
 echo "  [wsl-engine] Starting DevBox Compose inside Ubuntu-24.04..."
@@ -3465,6 +3671,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
+# delivers, so one pipeline object can carry several lines and still contain the
+# NUL bytes of that encoding. Windows moves the console cursor down but not back
+# to column 0 for a bare line feed, which is what turned the tail of the
+# installer log into an ever deeper staircase, so every chunk is cleaned up and
+# split into real lines before it is printed.
+function Write-NativeLine {
+    param($InputObject)
+
+    $text = ([string]$InputObject) -replace "`0", ''
+    if ($text -eq '') {
+        Write-Host ''
+        return
+    }
+
+    foreach ($line in ($text -split "`r?`n")) {
+        Write-Host $line.TrimEnd("`r")
+    }
+}
+
 # Windows PowerShell turns anything a native command writes to stderr into a
 # terminating error while $ErrorActionPreference is 'Stop', even when that
 # stream is redirected. wsl.exe and the Linux side both use stderr for progress
@@ -3478,8 +3704,9 @@ function Invoke-WslCommand {
     try {
         # Merged stderr arrives as ErrorRecord objects, which the console host
         # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Casting to string keeps the log readable.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        # harmless progress messages. Write-NativeLine turns each chunk into
+        # plain, properly terminated console lines.
+        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
         $exitCode = $LASTEXITCODE
     }
     catch {
@@ -3795,17 +4022,31 @@ exit /b 3010
 :stage_restore
 set "STAGE=RESTORE_DEVBOX"
 
+rem The stage header belongs at the top of the stage. It used to sit inside
+rem :restore_devbox, which meant it was printed after the Docker Desktop wait and
+rem the whole WSL restore had already scrolled past - the log read as if the last
+rem stage started twice.
+echo.
+echo [9/9] Restoring DevBox Lite to:
+echo        %DEST_PATH%
+
 rem After a restart Docker Desktop may still be starting up.
 call :ensure_docker_desktop_ready
 if errorlevel 1 goto :fail
 
 rem Restore the DevBox runtime inside the dedicated WSL Docker Engine first.
+rem A failure here must not skip the Docker Desktop restore. The two engines are
+rem completely independent, and aborting the stage on the WSL error left Docker
+rem Desktop with neither the image nor the volumes - exactly the second half of
+rem what he reported from the field. Both restores are attempted, and only then
+rem is the first failure reported.
 call :restore_wsl_devbox
-if errorlevel 1 goto :wsl_devbox_restore_error
+set "WSL_RESTORE_RC=%errorlevel%"
 
 rem Restore the Windows project and Docker Desktop runtime separately.
 call :restore_devbox
 if errorlevel 1 goto :restore_error
+if not "%WSL_RESTORE_RC%"=="0" goto :wsl_devbox_restore_error
 
 call :save_stage RESTORED
 if errorlevel 1 goto :fail
@@ -4077,16 +4318,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\
 exit /b %errorlevel%
 
 :restore_devbox
-echo.
-echo [9/9] Restoring DevBox Lite to:
-echo        %DEST_PATH%
-
 rem Restore the Windows project, prebuilt directory, Docker Desktop image,
 rem and Docker Desktop volumes through the dedicated restore helper.
+rem The exit code is handed straight back to the caller. Reporting the failure
+rem here as well printed the same error twice and jumped to :restore_error from
+rem inside a CALL, so the second jump ended the script through a bare EXIT /B
+rem instead of the :fail banner.
 call :restore_windows_devbox
-set "WINDOWS_RESTORE_RC=%errorlevel%"
-if not "%WINDOWS_RESTORE_RC%"=="0" goto :restore_error
-exit /b 0
+exit /b %errorlevel%
 
 :restore_windows_devbox
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_ROOT%\scripts\restore-windows-devbox.ps1" -PackageRoot "%PACKAGE_ROOT%" -DestinationPath "%DEST_PATH%"
@@ -4279,7 +4518,14 @@ exit /b 1
 
 :wsl_devbox_restore_error
 echo [ERROR] DevBox restore inside Ubuntu-24.04 WSL Docker Engine failed.
-exit /b 1
+echo         The Docker Desktop side was restored anyway, so only the WSL Docker
+echo         Engine is incomplete. Run setup-offline.bat again once the cause
+echo         above is resolved; the whole stage is safe to repeat.
+rem Both of these labels are reached from the main flow, not from inside a CALL,
+rem so a bare EXIT /B would end the script immediately and a manually started
+rem window would close before the operator could read the error. Route through
+rem :fail, which prints the summary and holds the window open.
+goto :fail
 
 :verify_wsl_devbox_error
 echo [ERROR] WSL DevBox verification failed.
@@ -4291,7 +4537,7 @@ exit /b 1
 
 :restore_error
 echo [ERROR] DevBox restore on Windows/Docker Desktop failed.
-exit /b 1
+goto :fail
 
 :verify_wsl_missing
 echo [ERROR] wsl.exe is not available.
@@ -4793,6 +5039,45 @@ for line_index, bat_line in enumerate(bat_lines_for_restart):
     if following != 'if errorlevel 1 goto :fail':
         raise SystemExit('Generated BAT validation failed: every "call :schedule_restart" must be followed by "if errorlevel 1 goto :fail".')
 
+# :main is reached with GOTO, not CALL, so the stage blocks run at top level. A
+# label they jump to that ends in a bare "exit /b <nonzero>" therefore terminates
+# the installer on the spot - no :fail banner, no :wait_for_key - and a manually
+# started window simply disappears before the error can be read. That is exactly
+# how :restore_error and :wsl_devbox_restore_error used to behave. Any label a
+# stage block jumps to must either route through :fail, fall through, or be one of
+# the deliberate 3010 restart signals.
+bat_blocks = {}
+current_block = '<top>'
+bat_blocks[current_block] = []
+for bat_line in normalized_bat_text.split('\n'):
+    block_label = re.match(r'^\s*:([A-Za-z0-9_]+)\s*$', bat_line)
+    if block_label:
+        current_block = block_label.group(1)
+        bat_blocks[current_block] = []
+        continue
+    bat_blocks[current_block].append(bat_line)
+
+main_flow_blocks = sorted(name for name in bat_blocks if name == 'main' or name == 'resume' or name.startswith('stage_'))
+if 'main' not in main_flow_blocks or not any(name.startswith('stage_') for name in main_flow_blocks):
+    raise SystemExit('Generated BAT validation failed: the main flow blocks could not be identified.')
+for main_flow_block in main_flow_blocks:
+    block_text = '\n'.join(bat_blocks[main_flow_block])
+    for jump_target in re.findall(r'\bgoto\s+:([A-Za-z0-9_]+)', block_text, re.I):
+        if jump_target in ('fail', 'eof') or jump_target in main_flow_blocks:
+            continue
+        target_lines = [
+            candidate.strip() for candidate in bat_blocks.get(jump_target, [])
+            if candidate.strip() and not candidate.strip().lower().startswith('rem ')
+        ]
+        if not target_lines:
+            continue
+        hard_exit = re.match(r'^exit /b\s+(\d+)$', target_lines[-1].lower())
+        if hard_exit and hard_exit.group(1) not in ('0', '3010'):
+            raise SystemExit(
+                'Generated BAT validation failed: :%s is reached from the main flow (:%s) but ends in "%s", '
+                'which closes the installer without the :fail summary.' % (jump_target, main_flow_block, target_lines[-1])
+            )
+
 # schtasks.exe writes to stderr for a task that does not exist, which is a
 # terminating error while $ErrorActionPreference is 'Stop'. Registration of the
 # resume task must therefore go through the guarded helper only.
@@ -4921,15 +5206,23 @@ for helper_name, helper_text in native_caller_texts.items():
 # With the preference relaxed, merged stderr arrives as ErrorRecord objects.
 # Out-Host renders those as a NativeCommandError block, which is how a harmless
 # "Successfully created context" message ended up looking like a crash in the
-# installer log, so streaming helpers must cast every line to a string.
+# installer log. Casting to a string is not enough on its own either: wsl.exe
+# speaks UTF-16 and delivers whole blocks at a time, so one object can carry
+# several lines plus the NUL bytes of that encoding, and a bare line feed walks
+# the console cursor down without returning it to column 0 - the staircased log
+# he reported from the final stage. Streaming helpers must normalise every chunk.
 for helper_name, helper_text in list(wsl_caller_texts.items()) + list(native_caller_texts.items()):
     if 'Out-Host' in helper_text:
         raise SystemExit(f'Generated helper validation failed: {helper_name} must not render native output through Out-Host.')
     for streaming_marker in ('@WslArguments 2>&1 |', '@CommandArguments 2>&1 |'):
         if streaming_marker not in helper_text:
             continue
-        if (streaming_marker + ' ForEach-Object { Write-Host ([string]$_) }') not in helper_text:
-            raise SystemExit(f'Generated helper validation failed: {helper_name} must print merged native output as plain strings.')
+        if (streaming_marker + ' ForEach-Object { Write-NativeLine $_ }') not in helper_text:
+            raise SystemExit(f'Generated helper validation failed: {helper_name} must stream merged native output through Write-NativeLine.')
+        if 'function Write-NativeLine' not in helper_text:
+            raise SystemExit(f'Generated helper validation failed: {helper_name} streams native output but never defines Write-NativeLine.')
+        if '"`0"' not in helper_text or '-split "`r?`n"' not in helper_text:
+            raise SystemExit(f'Generated helper validation failed: {helper_name} must strip NUL bytes and split native output into real console lines.')
 
 if ('/run/devbox-docker.sock' not in verify_wsl_devbox_text or
         'docker image inspect' not in verify_wsl_devbox_text or
@@ -4941,11 +5234,33 @@ if ('prebuilt.tar.gz' not in restore_wsl_devbox_text or
         'docker load -i' not in restore_wsl_devbox_text or
         'docker volume create' not in restore_wsl_devbox_text or
         '--no-same-owner' not in restore_wsl_devbox_text or
-        'chown -R $TARGET_USER:$TARGET_USER /volume' not in restore_wsl_devbox_text or
         'com.docker.compose.project' not in restore_wsl_devbox_text or
         'docker compose -p' not in restore_wsl_devbox_text or
         'devbox-network' not in restore_wsl_devbox_text and 'docker compose' not in restore_wsl_devbox_text):
     raise SystemExit('Generated WSL DevBox restore helper validation failed.')
+
+# The volume payload is extracted inside the devbox-lite image, which declares no
+# USER and mounts every named volume under a path root owns. Chowning the volume
+# to the WSL account name killed the final stage with "chown: invalid user",
+# because that account exists on the Ubuntu host and not in the container.
+if 'chown -R $TARGET_USER:$TARGET_USER /volume' in restore_wsl_devbox_text:
+    raise SystemExit('Generated WSL DevBox restore helper must not chown volume contents from inside the container.')
+
+# Both volume restores have to survive being run a second time. A container that
+# still references a volume makes "docker volume rm" fail with "volume is in use",
+# and an attempt that died mid-extract leaves exactly such a container behind
+# because --rm cleanup is asynchronous. Holders must be cleared first, and a
+# volume that still refuses to go must not abort the installation.
+if ('docker ps -aq --filter "volume=$actual_volume"' not in restore_wsl_devbox_text or
+        'docker rm -f $holders' not in restore_wsl_devbox_text or
+        'docker volume rm "$actual_volume" >/dev/null 2>&1 || true' not in restore_wsl_devbox_text):
+    raise SystemExit('Generated WSL DevBox restore helper must clear volume holders and tolerate a volume it cannot remove.')
+
+if ('function Get-NativeOutput' not in restore_windows_devbox_text or
+        "'ps', '-aq', '--filter'" not in restore_windows_devbox_text or
+        "'rm', '-f', $holder" not in restore_windows_devbox_text or
+        'Could not remove existing Docker Desktop volume' in restore_windows_devbox_text):
+    raise SystemExit('Generated Windows DevBox restore helper must clear volume holders and tolerate a volume it cannot remove.')
 
 if ('project-src.tar.gz' not in restore_wsl_project_text or
         'projects/DevBox-Lite' not in restore_wsl_project_text or
