@@ -10,20 +10,34 @@ if ! docker info >/dev/null 2>&1; then
     echo "⚠️  Docker daemon is not running. Attempting to start Docker service..."
 
     # Try starting Docker using service command (WSL / native Linux)
-    sudo service docker start >/dev/null 2>&1 || sudo systemctl start docker >/dev/null 2>&1 || true
+    echo "  Trying 'service docker start'..."
+    sudo service docker start 2>&1 || {
+        echo "  service docker start failed."
+        echo "  Trying 'sudo dockerd' as fallback..."
+        sudo dockerd >&2 &
+        sleep 2
+    }
 
-    # Wait up to 10 seconds for Docker daemon to respond
+    # Wait up to 30 seconds for Docker daemon to respond
     COUNTER=0
-    until docker info >/dev/null 2>&1 || [ $COUNTER -eq 10 ]; do
-        echo "Waiting for Docker daemon to initialize... ($((10 - COUNTER))s)"
+    until docker info >/dev/null 2>&1 || [ $COUNTER -eq 30 ]; do
+        echo "Waiting for Docker daemon to initialize... ($((30 - COUNTER))s)"
         sleep 1
         COUNTER=$((COUNTER + 1))
     done
 
     # Final verification check
     if ! docker info >/dev/null 2>&1; then
+        echo ""
         echo "❌ Error: Could not connect to Docker daemon."
         echo "Please ensure Docker is installed and running (or start Docker Desktop on Windows)."
+        echo ""
+        echo "Debug info:"
+        echo "  Docker binary: $(which docker 2>/dev/null || echo 'not found')"
+        echo "  Dockerd binary: $(which dockerd 2>/dev/null || echo 'not found')"
+        echo "  Docker socket: $(ls -la /var/run/docker.sock 2>/dev/null || echo 'not found')"
+        echo "  Service status:"
+        service docker status 2>&1 | head -5 || true
         exit 1
     fi
     echo "✅ Docker daemon started successfully!"
