@@ -6,38 +6,78 @@ set -e
 # ==========================================
 # 🚀 Ensure Docker Daemon is Running
 # ==========================================
+start_docker_daemon() {
+    local method="$1"
+
+    case "$method" in
+        service)
+            echo "  [1/4] Trying 'service docker start'..."
+            sudo service docker start 2>&1
+            ;;
+        systemctl)
+            echo "  [2/4] Trying 'systemctl start docker'..."
+            sudo systemctl start docker 2>&1
+            ;;
+        dockerd)
+            echo "  [3/4] Trying 'dockerd' directly..."
+            sudo dockerd --iptables=false --bridge=none >/dev/null 2>&1 &
+            sleep 3
+            ;;
+        dockerd-verbose)
+            echo "  [4/4] Trying 'dockerd' with verbose output..."
+            sudo dockerd --iptables=false --bridge=none 2>&1 &
+            sleep 5
+            ;;
+    esac
+}
+
 if ! docker info >/dev/null 2>&1; then
     echo "⚠️  Docker daemon is not running. Attempting to start Docker service..."
 
-    # Try starting Docker using service command (WSL / native Linux)
-    echo "  Trying 'service docker start'..."
-    sudo service docker start 2>&1 || {
-        echo "  service docker start failed."
-        echo "  Trying 'sudo dockerd' as fallback..."
-        sudo dockerd >&2 &
-        sleep 2
-    }
+    # Try multiple startup methods in sequence
+    local started=false
 
-    # Wait up to 30 seconds for Docker daemon to respond
-    COUNTER=0
-    until docker info >/dev/null 2>&1 || [ $COUNTER -eq 30 ]; do
-        echo "Waiting for Docker daemon to initialize... ($((30 - COUNTER))s)"
-        sleep 1
-        COUNTER=$((COUNTER + 1))
+    for method in service systemctl dockerd dockerd-verbose; do
+        echo ""
+        start_docker_daemon "$method"
+
+        # Check if Docker is now running
+        local waited=0
+        while [ $waited -lt 15 ]; do
+            if docker info >/dev/null 2>&1; then
+                started=true
+                break 2
+            fi
+            sleep 1
+            waited=$((waited + 1))
+        done
     done
 
     # Final verification check
-    if ! docker info >/dev/null 2>&1; then
+    if [ "$started" != "true" ] && ! docker info >/dev/null 2>&1; then
         echo ""
-        echo "❌ Error: Could not connect to Docker daemon."
-        echo "Please ensure Docker is installed and running (or start Docker Desktop on Windows)."
+        echo "❌ Error: Could not start Docker daemon."
         echo ""
-        echo "Debug info:"
+        echo "Debug information:"
         echo "  Docker binary: $(which docker 2>/dev/null || echo 'not found')"
         echo "  Dockerd binary: $(which dockerd 2>/dev/null || echo 'not found')"
         echo "  Docker socket: $(ls -la /var/run/docker.sock 2>/dev/null || echo 'not found')"
+        echo ""
         echo "  Service status:"
-        service docker status 2>&1 | head -5 || true
+        sudo service docker status 2>&1 | head -10 || true
+        echo ""
+        echo "  systemd running:"
+        systemctl is-system-running 2>&1 || true
+        echo ""
+        echo "  User groups:"
+        groups 2>&1 || true
+        echo ""
+        echo "  WSL version:"
+        uname -r 2>&1 || true
+        echo ""
+        echo "Try manually:"
+        echo "  sudo service docker start"
+        echo "  sudo dockerd --iptables=false --bridge=none"
         exit 1
     fi
     echo "✅ Docker daemon started successfully!"
