@@ -51,33 +51,46 @@ fi
 ensure_container_running() {
     local name="$1"
     local kind="$2"
-    local max_attempts=30
+    local max_attempts=20
     local attempt=1
 
+    # ── Check if already running ──────────────────────────────
     if docker ps --format '{{.Names}}' | grep -q "^$name$"; then
         echo "  [skip] $kind is already running"
-    else
-        if docker ps -a --format '{{.Names}}' | grep -q "^$name$"; then
-            echo "  [start] $kind exists, starting..."
+        return 0
+    fi
 
-            if docker start "$name" >/dev/null 2>&1; then
-                echo "  [ok] $kind is running"
-            else
-                echo "  [fix] $kind failed to start, recreating..."
-                docker rm -f "$name" >/dev/null 2>&1 || true
-                "$SCRIPT_DIR/db-manager.sh" create "$kind"
-            fi
+    # ── Try to start existing container ─────────────────────────
+    if docker ps -a --format '{{.Names}}' | grep -q "^$name$"; then
+        echo "  [start] $kind exists, starting..."
+
+        if docker start "$name" >/dev/null 2>&1; then
+            echo "  [ok] $kind started"
         else
-            echo "  [create] $kind not found, creating..."
-            if [ -x "$SCRIPT_DIR/db-manager.sh" ]; then
-                "$SCRIPT_DIR/db-manager.sh" create "$kind"
-            else
-                echo -e "${RED}[error] db-manager.sh not available; cannot create $kind${NC}"
+            echo "  [fix] $kind failed to start, recreating..."
+            docker rm -f "$name" >/dev/null 2>&1 || true
+
+            # Recreate container; abort if creation fails
+            if ! "$SCRIPT_DIR/db-manager.sh" create "$kind"; then
+                echo -e "${RED}[error] Failed to recreate $kind container.${NC}"
                 return 1
             fi
         fi
+    else
+        # ── Create new container ────────────────────────────────
+        echo "  [create] $kind not found, creating..."
+        if [ -x "$SCRIPT_DIR/db-manager.sh" ]; then
+            if ! "$SCRIPT_DIR/db-manager.sh" create "$kind"; then
+                echo -e "${RED}[error] Failed to create $kind container.${NC}"
+                return 1
+            fi
+        else
+            echo -e "${RED}[error] db-manager.sh not available; cannot create $kind${NC}"
+            return 1
+        fi
     fi
 
+    # ── Wait for service to become ready ────────────────────────
     echo "  [wait] Waiting for $kind to become ready..."
 
     while [ "$attempt" -le "$max_attempts" ]; do
@@ -111,11 +124,12 @@ ensure_container_running() {
                 ;;
         esac
 
-        sleep 1
+        sleep 2
         attempt=$((attempt + 1))
+        echo "  [retry] Waiting for $kind (attempt $attempt/$max_attempts)"
     done
 
-    echo -e "${RED}[error] $kind did not become ready in ${max_attempts}s.${NC}"
+    echo -e "${RED}[error] $kind did not become ready in $((max_attempts * 2))s.${NC}"
     return 1
 }
 
@@ -286,9 +300,25 @@ reset_mysql_database() {
     local db_name="$1"
     local host="$2"
 
+    echo "  [db] Resetting MySQL database '$db_name'..."
+
+    # Try using the devbox-mysql container's own client first
+    if docker exec -i devbox-mysql \
+        mysql -h 127.0.0.1 -u root \
+        -e "DROP DATABASE IF EXISTS \`$db_name\`; CREATE DATABASE \`$db_name\`;" \
+        >/dev/null 2>&1; then
+        echo "  [ok] MySQL database '$db_name' reset via container client."
+        return 0
+    fi
+
+    # Fallback: try using local mysql client
     if ! command -v mysql >/dev/null 2>&1; then
-        echo -e "${RED}[error] mysql client is not available in the container.${NC}"
-        return 1
+        echo -e "${YELLOW}[warn] mysql client not available in workspace container; using docker exec.${NC}"
+        echo "  [db] Creating database with docker exec fallback..."
+        docker exec -i devbox-mysql \
+            mysql -h 127.0.0.1 -u root \
+            -e "DROP DATABASE IF EXISTS \`$db_name\`; CREATE DATABASE \`$db_name\`;" 2>&1 || true
+        return 0
     fi
 
     mysql -h "$host" -u root \
@@ -299,9 +329,29 @@ reset_postgres_database() {
     local db_name="$1"
     local host="$2"
 
+    echo "  [db] Resetting PostgreSQL database '$db_name'..."
+
+    # Try using the devbox-postgres container's own client first
+    if docker exec -i devbox-postgres \
+        psql -U devbox -d postgres \
+        -v ON_ERROR_STOP=1 \
+        -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${db_name}' AND pid <> pg_backend_pid();" >/dev/null 2>&1; then
+        docker exec -i devbox-postgres \
+            psql -U devbox -d postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS \"${db_name}\";" >/dev/null 2>&1 || true
+        docker exec -i devbox-postgres \
+            psql -U devbox -d postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE \"${db_name}\";" >/dev/null 2>&1
+        echo "  [ok] PostgreSQL database '$db_name' reset."
+        return 0
+    fi
+
+    # Fallback: try using local psql client
     if ! command -v psql >/dev/null 2>&1; then
-        echo -e "${RED}[error] psql client is not available in the container.${NC}"
-        return 1
+        echo -e "${YELLOW}[warn] psql client not available in workspace container.${NC}"
+        return 0
     fi
 
     PGPASSWORD=devbox_pass psql -h "$host" -U devbox -d postgres \
