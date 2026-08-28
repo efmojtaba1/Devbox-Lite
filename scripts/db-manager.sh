@@ -31,7 +31,10 @@ usage() {
 }
 
 # Prebuilt images directory (Compatible with both WSL2 and Windows/Docker Desktop)
-if [ -d "/workspace/prebuilt/images" ]; then
+# Priority order: container mount first, then WSL, then script-relative
+if [ -d "/prebuilt/images" ]; then
+    PREBUILT_DIR="${PREBUILT_DIR:-/prebuilt/images}"
+elif [ -d "/workspace/prebuilt/images" ]; then
     PREBUILT_DIR="${PREBUILT_DIR:-/workspace/prebuilt/images}"
 elif [ -d "$(pwd)/prebuilt/images" ]; then
     PREBUILT_DIR="${PREBUILT_DIR:-$(pwd)/prebuilt/images}"
