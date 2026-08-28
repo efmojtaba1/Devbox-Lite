@@ -193,17 +193,21 @@ RUN cd /prebuilt/example/laravel && \
     pip install --find-links=/root/.cache/pip/wheels -r requirements.txt 2>/dev/null; \
     echo "[build] Python done"
 
-# Smart project helper functions
+# Smart project helper functions (installed in /etc/profile.d so they work in all login shells)
+RUN mkdir -p /etc/profile.d && \
+    cat > /etc/profile.d/devbox-aliases.sh <<'EOF'
+# ── DevBox Lite smart aliases ─────────────────────────────────
+# ensure_db: lightweight wrapper that only checks/runs the named container
 ensure_db() {
     local db="$1"
     local name="devbox-${db}"
 
-    if docker ps --format '{{.Names}}' | grep -q "^${name}$" 2>/dev/null; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${name}$"; then
         echo "  [skip] ${db} is already running"
         return 0
     fi
 
-    if docker ps -a --format '{{.Names}}' | grep -q "^${name}$" 2>/dev/null; then
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${name}$"; then
         echo "  [start] ${db} exists, starting..."
         docker start "${name}" >/dev/null 2>&1 && sleep 3 || true
     else
@@ -214,7 +218,7 @@ ensure_db() {
 
     # Wait for readiness (up to 12s)
     local i=0
-    until docker exec "${name}" >/dev/null 2>&1 || [ "${i}" -ge 12 ]; do
+    until docker exec "${name}" true >/dev/null 2>&1 || [ "${i}" -ge 12 ]; do
         sleep 1
         i=$((i + 1))
     done
@@ -227,7 +231,6 @@ serve() {
         echo "Error: No artisan file found. You are not in a Laravel project."
         return 1
     fi
-    # Detect deps from .env or default to mysql redis
     local dbs="mysql redis"
     if [ -f .env ]; then
         local db_type
@@ -238,40 +241,31 @@ serve() {
             sqlsrv) dbs="sqlsrv" ;;
         esac
     fi
-    # Ensure required DBs
     for db in ${dbs}; do
         ensure_db "${db}"
     done
-    # Start Laravel
     php artisan serve --host=0.0.0.0 --port="${1:-8000}" "${@:2}"
 }
 
-# Smart dev: for Next.js / React projects
+# Smart dev: Next.js / React projects (auto-postgres if Prisma/pg is used)
 dev() {
     if [ ! -f package.json ]; then
         echo "Error: No package.json found. You are not in a Node.js project."
         return 1
     fi
-    # Check if it's Next.js
-    if grep -q '"next"' package.json 2>/dev/null || [ -f next.config.js ] || [ -f next.config.mjs ]; then
-        # Next.js: ensure postgres if used
-        if grep -qE "prisma|@prisma/client|pg|postgres" package.json 2>/dev/null; then
-            ensure_db postgres
-        fi
-        pnpm dev -- -p "${1:-3000}" "${@:2}"
-    else
-        # React/Vite: just start dev server
-        pnpm dev -- -p "${1:-5173}" "${@:2}"
+    if grep -qE "prisma|@prisma/client|pg|postgres" package.json 2>/dev/null; then
+        ensure_db postgres
     fi
+    pnpm dev -- -p "${1:-3000}" "${@:2}"
 }
 
-# Python dev: ensures postgres if FastAPI/Django
+# Smart Python dev: FastAPI / Django (auto-postgres)
 py-dev() {
-    if [ ! -f app.py ] && [ ! -f manage.py ] && [ ! -f main.py ]; then
-        echo "Error: No app.py/manage.py/main.py found in current directory."
+    if [ ! -f app.py ] && [ ! -f manage.py ]; then
+        echo "Error: No app.py/manage.py found in current directory."
         return 1
     fi
-    if grep -qE "fastapi|uvicorn|django" app.py manage.py main.py 2>/dev/null; then
+    if grep -qE "fastapi|django" app.py manage.py 2>/dev/null; then
         ensure_db postgres
     fi
     if [ -f manage.py ]; then
@@ -284,6 +278,8 @@ py-dev() {
         python app.py "${@:2}"
     fi
 }
+EOF
+RUN chmod +x /etc/profile.d/devbox-aliases.sh
 
 # Database management short commands (like VS Code helper scripts)
 RUN echo '' >> /root/.bashrc && \
@@ -300,14 +296,8 @@ RUN echo '' >> /root/.bashrc && \
     echo '# API testing shortcuts' >> /root/.bashrc && \
     echo 'bruno() { /usr/local/bin/start-bruno "$@"; }' >> /root/.bashrc && \
     echo '' >> /root/.bashrc && \
-    echo '# Laravel shortcuts' >> /root/.bashrc && \
-    echo 'serve() { if [ ! -f artisan ]; then echo "Error: No artisan file found."; return 1; fi; for db in mysql redis; do if ! docker ps --format "{{.Names}}" | grep -q "^devbox-${db}$" 2>/dev/null; then if docker ps -a --format "{{.Names}}" | grep -q "^devbox-${db}$" 2>/dev/null; then docker start "${db}" >/dev/null 2>&1 || true; else /workspace/scripts/db-manager.sh create "${db}" >/dev/null 2>&1 || true; fi; sleep 3; fi; done; php artisan serve --host=0.0.0.0 --port="${1:-8000}" "${@:2}"; }' >> /root/.bashrc && \
-    echo '' >> /root/.bashrc && \
-    echo '# Next.js / React dev shortcuts' >> /root/.bashrc && \
-    echo 'dev() { if [ ! -f package.json ]; then echo "Error: No package.json found."; return 1; fi; if grep -qE "prisma|@prisma/client|pg|postgres" package.json 2>/dev/null; then if ! docker ps --format "{{.Names}}" | grep -q "^devbox-postgres$" 2>/dev/null; then if docker ps -a --format "{{.Names}}" | grep -q "^devbox-postgres$" 2>/dev/null; then docker start devbox-postgres >/dev/null 2>&1 || true; else /workspace/scripts/db-manager.sh create postgres >/dev/null 2>&1 || true; fi; fi; sleep 3; fi; pnpm dev -- -p "${1:-3000}" "${@:2}"; }' >> /root/.bashrc && \
-    echo '' >> /root/.bashrc && \
-    echo '# Python dev shortcuts' >> /root/.bashrc && \
-    echo 'py-dev() { if [ ! -f app.py ] && [ ! -f manage.py ]; then echo "Error: No app.py/manage.py found."; return 1; fi; if grep -qE "fastapi|django" app.py manage.py 2>/dev/null; then if ! docker ps --format "{{.Names}}" | grep -q "^devbox-postgres$" 2>/dev/null; then if docker ps -a --format "{{.Names}}" | grep -q "^devbox-postgres$" 2>/dev/null; then docker start devbox-postgres >/dev/null 2>&1 || true; else /workspace/scripts/db-manager.sh create postgres >/dev/null 2>&1 || true; fi; fi; fi; sleep 3; if [ -f manage.py ]; then python manage.py runserver "0.0.0.0:${1:-8000}" "${@:2}"; else . venv/bin/activate 2>/dev/null && python app.py "${@:2}"; fi; }' >> /root/.bashrc && \
+    echo '# Laravel / Next.js / Python smart aliases (loaded from /etc/profile.d)' >> /root/.bashrc && \
+    echo 'source /etc/profile.d/devbox-aliases.sh 2>/dev/null || true' >> /root/.bashrc && \
     echo '' >> /root/.bashrc && \
     echo '# Project creation' >> /root/.bashrc && \
     echo 'new-project() { /workspace/scripts/new-project.sh "$@"; }' >> /root/.bashrc
