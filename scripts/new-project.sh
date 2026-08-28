@@ -417,18 +417,28 @@ else
         mkdir -p "$project_dir"
         case "$TEMPLATE" in
             next-js) pnpm create next-app "$project_dir" $TS_FLAG $TW_FLAG --eslint$AR_FLAG --src-dir --import-alias "@/*" --use-pnpm ;;
-            react)   pnpm create vite "$project_dir" --template react-ts --no-interactive ;;
-            python)  python3 -m venv "$project_dir/venv"
+            react)   pnpm create vite "$project_dir" -- --template react-ts ;;
+            python)  python3 -m venv "$project_dir/venv" 2>/dev/null || true
                      if [ ! -f "$project_dir/app.py" ]; then
                          cat > "$project_dir/app.py" << 'EOF'
 from fastapi import FastAPI
+import uvicorn
 
 app = FastAPI()
 
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 EOF
+                     fi
+                     if [ -d "$project_dir/venv" ]; then
+                         . "$project_dir/venv/bin/activate"
+                         pip install -q fastapi uvicorn flask 2>/dev/null || true
+                         deactivate 2>/dev/null || true
+                     fi
      fi
         esac
     fi
@@ -691,6 +701,6 @@ echo ""
 case "$TEMPLATE" in
     laravel)       echo "  serve" ;;
     next-js|react) echo "  pnpm dev" ;;
-    python)        echo "  source venv/bin/activate && python main.py" ;;
+    python)        echo "  py-dev" ;;
 esac
 echo ""

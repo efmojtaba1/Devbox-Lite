@@ -862,6 +862,7 @@ if ! tar \
   --owner="$EXPORT_UID" \
   --group="$EXPORT_GID" \
   --numeric-owner \
+  --ignore-failed-read \
   --exclude='.git' \
   --exclude='node_modules' \
   --exclude='vendor' \
