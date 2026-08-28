@@ -19,13 +19,14 @@ setup_deps_links() {
     mkdir -p "$deps"
 
     # Find all project directories in workspace
-    for project_dir in "$workspace"/*/; do
+    for project_dir in "$workspace"/*/ "$workspace/projects"/*/; do
         [ -d "$project_dir" ] || continue
         local project_name=$(basename "$project_dir")
 
         # Skip hidden directories and .deps itself
         [[ "$project_name" == .* ]] && continue
         [ "$project_name" = ".deps" ] && continue
+        [ "$project_name" = "projects" ] && continue
 
         # Create corresponding .deps subdirectory
         mkdir -p "$deps/$project_name"

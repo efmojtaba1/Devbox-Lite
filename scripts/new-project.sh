@@ -140,7 +140,7 @@ if [ -z "$PROJECT_NAME" ]; then
     exit 1
 fi
 
-project_dir="$WORKSPACE/$PROJECT_NAME"
+project_dir="$WORKSPACE/projects/$PROJECT_NAME"
 if [ -d "$project_dir" ]; then
     echo -e "${RED}[error] Directory $project_dir already exists.${NC}"
     exit 1

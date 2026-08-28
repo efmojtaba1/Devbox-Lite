@@ -568,7 +568,9 @@ main() {
     local auto_all="${3:-}"
 
     if [ "$project_dir" = "." ] && [ -z "$template" ]; then
-        if [ -d "/workspace/workspace" ]; then
+        if [ -d "/workspace/projects" ]; then
+            project_dir="/workspace/projects"
+        elif [ -d "/workspace/workspace" ]; then
             project_dir="/workspace/workspace"
         fi
     fi
