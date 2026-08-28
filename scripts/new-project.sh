@@ -439,7 +439,6 @@ EOF
                          pip install -q fastapi uvicorn flask 2>/dev/null || true
                          deactivate 2>/dev/null || true
                      fi
-     fi
         esac
     fi
 fi
