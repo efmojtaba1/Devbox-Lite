@@ -417,7 +417,21 @@ else
         mkdir -p "$project_dir"
         case "$TEMPLATE" in
             next-js) pnpm create next-app "$project_dir" $TS_FLAG $TW_FLAG --eslint$AR_FLAG --src-dir --import-alias "@/*" --use-pnpm ;;
-            react)   (cd "$WORKSPACE/projects" && pnpm create vite@latest "$PROJECT_NAME" -- --template react-ts --yes --no-open --force) ;;
+            react)   (cd "$WORKSPACE/projects" && pnpm create vite@latest "$PROJECT_NAME" -- --template react-ts --yes --no-open --force)
+                        # Configure Vite to listen on all interfaces for Docker access
+                        cat > "$project_dir/vite.config.js" << 'VITE_EOF'
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: '0.0.0.0',
+    port: 5173,
+  },
+})
+VITE_EOF
+                        ;;
             python)  python3 -m venv "$project_dir/venv" 2>/dev/null || true
                      if [ ! -f "$project_dir/app.py" ]; then
                          cat > "$project_dir/app.py" << 'EOF'
