@@ -193,6 +193,98 @@ RUN cd /prebuilt/example/laravel && \
     pip install --find-links=/root/.cache/pip/wheels -r requirements.txt 2>/dev/null; \
     echo "[build] Python done"
 
+# Smart project helper functions
+ensure_db() {
+    local db="$1"
+    local name="devbox-${db}"
+
+    if docker ps --format '{{.Names}}' | grep -q "^${name}$" 2>/dev/null; then
+        echo "  [skip] ${db} is already running"
+        return 0
+    fi
+
+    if docker ps -a --format '{{.Names}}' | grep -q "^${name}$" 2>/dev/null; then
+        echo "  [start] ${db} exists, starting..."
+        docker start "${name}" >/dev/null 2>&1 && sleep 3 || true
+    else
+        echo "  [create] ${db} not found, creating..."
+        /workspace/scripts/db-manager.sh create "${db}" >/dev/null 2>&1 || true
+        sleep 3
+    fi
+
+    # Wait for readiness (up to 12s)
+    local i=0
+    until docker exec "${name}" >/dev/null 2>&1 || [ "${i}" -ge 12 ]; do
+        sleep 1
+        i=$((i + 1))
+    done
+    echo "  [ok] ${db} is ready"
+}
+
+# Smart serve: ensures DB deps then runs php artisan serve
+serve() {
+    if [ ! -f artisan ]; then
+        echo "Error: No artisan file found. You are not in a Laravel project."
+        return 1
+    fi
+    # Detect deps from .env or default to mysql redis
+    local dbs="mysql redis"
+    if [ -f .env ]; then
+        local db_type
+        db_type=$(grep -E '^DB_CONNECTION=' .env 2>/dev/null | head -1 | cut -d= -f2)
+        case "${db_type}" in
+            pgsql|postgres) dbs="postgres" ;;
+            sqlite) dbs="" ;;
+            sqlsrv) dbs="sqlsrv" ;;
+        esac
+    fi
+    # Ensure required DBs
+    for db in ${dbs}; do
+        ensure_db "${db}"
+    done
+    # Start Laravel
+    php artisan serve --host=0.0.0.0 --port="${1:-8000}" "${@:2}"
+}
+
+# Smart dev: for Next.js / React projects
+dev() {
+    if [ ! -f package.json ]; then
+        echo "Error: No package.json found. You are not in a Node.js project."
+        return 1
+    fi
+    # Check if it's Next.js
+    if grep -q '"next"' package.json 2>/dev/null || [ -f next.config.js ] || [ -f next.config.mjs ]; then
+        # Next.js: ensure postgres if used
+        if grep -qE "prisma|@prisma/client|pg|postgres" package.json 2>/dev/null; then
+            ensure_db postgres
+        fi
+        pnpm dev -- -p "${1:-3000}" "${@:2}"
+    else
+        # React/Vite: just start dev server
+        pnpm dev -- -p "${1:-5173}" "${@:2}"
+    fi
+}
+
+# Python dev: ensures postgres if FastAPI/Django
+py-dev() {
+    if [ ! -f app.py ] && [ ! -f manage.py ] && [ ! -f main.py ]; then
+        echo "Error: No app.py/manage.py/main.py found in current directory."
+        return 1
+    fi
+    if grep -qE "fastapi|uvicorn|django" app.py manage.py main.py 2>/dev/null; then
+        ensure_db postgres
+    fi
+    if [ -f manage.py ]; then
+        python manage.py runserver "0.0.0.0:${1:-8000}" "${@:2}"
+    elif grep -q fastapi app.py 2>/dev/null; then
+        . venv/bin/activate 2>/dev/null
+        uvicorn app:app --reload --host 0.0.0.0 --port="${1:-8000}" "${@:2}"
+    else
+        . venv/bin/activate 2>/dev/null
+        python app.py "${@:2}"
+    fi
+}
+
 # Database management short commands (like VS Code helper scripts)
 RUN echo '' >> /root/.bashrc && \
     echo '# Database management shortcuts' >> /root/.bashrc && \
@@ -209,13 +301,16 @@ RUN echo '' >> /root/.bashrc && \
     echo 'bruno() { /usr/local/bin/start-bruno "$@"; }' >> /root/.bashrc && \
     echo '' >> /root/.bashrc && \
     echo '# Laravel shortcuts' >> /root/.bashrc && \
-    echo 'serve() { php artisan serve --host=0.0.0.0 --port="${1:-8000}"; }' >> /root/.bashrc && \
+    echo 'serve() { if [ ! -f artisan ]; then echo "Error: No artisan file found."; return 1; fi; for db in mysql redis; do if ! docker ps --format "{{.Names}}" | grep -q "^devbox-${db}$" 2>/dev/null; then if docker ps -a --format "{{.Names}}" | grep -q "^devbox-${db}$" 2>/dev/null; then docker start "${db}" >/dev/null 2>&1 || true; else /workspace/scripts/db-manager.sh create "${db}" >/dev/null 2>&1 || true; fi; sleep 3; fi; done; php artisan serve --host=0.0.0.0 --port="${1:-8000}" "${@:2}"; }' >> /root/.bashrc && \
+    echo '' >> /root/.bashrc && \
+    echo '# Next.js / React dev shortcuts' >> /root/.bashrc && \
+    echo 'dev() { if [ ! -f package.json ]; then echo "Error: No package.json found."; return 1; fi; if grep -qE "prisma|@prisma/client|pg|postgres" package.json 2>/dev/null; then if ! docker ps --format "{{.Names}}" | grep -q "^devbox-postgres$" 2>/dev/null; then if docker ps -a --format "{{.Names}}" | grep -q "^devbox-postgres$" 2>/dev/null; then docker start devbox-postgres >/dev/null 2>&1 || true; else /workspace/scripts/db-manager.sh create postgres >/dev/null 2>&1 || true; fi; fi; sleep 3; fi; pnpm dev -- -p "${1:-3000}" "${@:2}"; }' >> /root/.bashrc && \
+    echo '' >> /root/.bashrc && \
+    echo '# Python dev shortcuts' >> /root/.bashrc && \
+    echo 'py-dev() { if [ ! -f app.py ] && [ ! -f manage.py ]; then echo "Error: No app.py/manage.py found."; return 1; fi; if grep -qE "fastapi|django" app.py manage.py 2>/dev/null; then if ! docker ps --format "{{.Names}}" | grep -q "^devbox-postgres$" 2>/dev/null; then if docker ps -a --format "{{.Names}}" | grep -q "^devbox-postgres$" 2>/dev/null; then docker start devbox-postgres >/dev/null 2>&1 || true; else /workspace/scripts/db-manager.sh create postgres >/dev/null 2>&1 || true; fi; fi; fi; sleep 3; if [ -f manage.py ]; then python manage.py runserver "0.0.0.0:${1:-8000}" "${@:2}"; else . venv/bin/activate 2>/dev/null && python app.py "${@:2}"; fi; }' >> /root/.bashrc && \
     echo '' >> /root/.bashrc && \
     echo '# Project creation' >> /root/.bashrc && \
-    echo 'new-project() { /workspace/scripts/new-project.sh "$@"; }' >> /root/.bashrc && \
-    echo '' >> /root/.bashrc && \
-    echo '# Python shortcuts' >> /root/.bashrc && \
-    echo 'dev() { if [ ! -f app.py ]; then echo "app.py not found."; return 1; fi; if grep -q "FastAPI" app.py 2>/dev/null; then . venv/bin/activate 2>/dev/null && uvicorn app:app --reload --host 0.0.0.0 --port="${1:-8000}"; else . venv/bin/activate 2>/dev/null && python app.py; fi; }' >> /root/.bashrc
+    echo 'new-project() { /workspace/scripts/new-project.sh "$@"; }' >> /root/.bashrc
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
