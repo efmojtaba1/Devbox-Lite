@@ -848,7 +848,10 @@ done
 echo ""
 echo "[export] Normalizing archive ownership..."
 echo "  [ok] Archive owner: $EXPORT_USER (UID $EXPORT_UID / GID $EXPORT_GID)"
-echo "  [info] Source files are not modified; ownership is normalized inside exported archives."
+echo "  [info] Ownership normalized inside exported archives."
+
+# Make all files owned by current user on the host (for proper import on target systems)
+chown -R "$EXPORT_USER:$EXPORT_USER" "$PROJECT_ROOT" 2>/dev/null || true
 
 # ------------------------------------------------------------
 # Project source
