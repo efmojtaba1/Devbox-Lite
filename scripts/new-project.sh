@@ -417,7 +417,7 @@ else
         mkdir -p "$project_dir"
         case "$TEMPLATE" in
             next-js) pnpm create next-app "$project_dir" $TS_FLAG $TW_FLAG --eslint$AR_FLAG --src-dir --import-alias "@/*" --use-pnpm ;;
-            react)   pnpm create vite "$project_dir" -- --template react-ts ;;
+            react)   pnpm create vite@latest "$project_dir" -- --template react-ts --yes ;;
             python)  python3 -m venv "$project_dir/venv" 2>/dev/null || true
                      if [ ! -f "$project_dir/app.py" ]; then
                          cat > "$project_dir/app.py" << 'EOF'
