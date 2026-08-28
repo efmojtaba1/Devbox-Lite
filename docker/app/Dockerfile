@@ -256,7 +256,12 @@ dev() {
     if grep -qE "prisma|@prisma/client|pg|postgres" package.json 2>/dev/null; then
         ensure_db postgres
     fi
-    pnpm dev -- -p "${1:-3000}" "${@:2}"
+    # Detect Vite project and add --host for external access
+    if grep -q '"vite"' package.json 2>/dev/null; then
+        pnpm dev -- --host -p "${1:-5173}" "${@:2}"
+    else
+        pnpm dev -- -p "${1:-3000}" "${@:2}"
+    fi
 }
 
 # Smart Python dev: FastAPI / Django (auto-postgres)
