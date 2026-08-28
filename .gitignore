@@ -24,10 +24,11 @@ backups/*
 *.log
 
 prebuilt
-MEMORY.md
+.claude
+.agents
+skills-lock.json
 
 # Python virtual environments
 my-env/
 venv/
 .venv/
-.claude
