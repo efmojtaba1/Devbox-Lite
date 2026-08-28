@@ -417,7 +417,7 @@ else
         mkdir -p "$project_dir"
         case "$TEMPLATE" in
             next-js) pnpm create next-app "$project_dir" $TS_FLAG $TW_FLAG --eslint$AR_FLAG --src-dir --import-alias "@/*" --use-pnpm ;;
-            react)   (cd "$WORKSPACE/projects" && pnpm create vite@latest "$PROJECT_NAME" -- --template react-ts --no-interactive --no-immediate --eslint --overwrite)
+            react)   npx --yes create-vite@latest "$WORKSPACE/projects/$PROJECT_NAME" -- --template react-ts --no-interactive --no-immediate --eslint --overwrite
                         # Configure Vite to listen on all interfaces for Docker access
                         cat > "$project_dir/vite.config.js" << 'VITE_EOF'
 import { defineConfig } from 'vite'
