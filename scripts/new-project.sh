@@ -691,12 +691,15 @@ if [ -f "$SCRIPT_DIR/setup-deps.sh" ]; then
 fi
 
 # ── Step 5: Final Message ────────────────────────────────────
+# Extract just the project name for display (since user is already in /workspace)
+PROJECT_DISPLAY="${project_dir##*/}"
+
 echo ""
 echo "========================================="
 echo -e "${GREEN}  Project ready: $PROJECT_NAME${NC}"
 echo "========================================="
 echo ""
-echo "  cd $project_dir"
+echo "  cd projects/$PROJECT_DISPLAY"
 echo ""
 case "$TEMPLATE" in
     laravel)       echo "  serve" ;;
