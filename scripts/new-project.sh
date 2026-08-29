@@ -424,10 +424,8 @@ else
                             cd "$WORKSPACE/projects"
 
                             npx --yes create-vite@latest "$PROJECT_NAME" \
-                                --template react-ts \
-                                --no-interactive \
+                                --interactive \
                                 --no-immediate \
-                                --eslint \
                                 --overwrite
                         )
 
