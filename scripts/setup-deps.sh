@@ -79,10 +79,12 @@ container_exists() {
     docker ps -a --format '{{.Names}}' | grep -q "^$1$"
 }
 
-# Start or create a database
+# Start or create a database with operational readiness verification
 ensure_db() {
     local db="$1"
     local name="devbox-${db}"
+    local max_attempts=30
+    local attempt=1
 
     if is_running "$name"; then
         echo "  [skip] $db is already running"
@@ -92,18 +94,52 @@ ensure_db() {
     if container_exists "$name"; then
         echo "  [start] $db exists, starting..."
         if docker start "$name" 2>/dev/null; then
-            echo "  [ok] $db is running"
-            sleep 3 # تاخیر برای لود کامل انجین دیتابیس
-            return 0
+            echo "  [ok] $db started"
         else
             echo "  [fix] $db failed to start, recreating..."
             docker rm -f "$name" > /dev/null 2>&1 || true
         fi
     fi
 
-    echo "  [create] $db not found, creating..."
-    "$SCRIPT_DIR/db-manager.sh" create "$db"
-    sleep 4 # تاخیر پس از ساخت برای آماده شدن پورت
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
+        echo "  [create] $db not found, creating..."
+        "$SCRIPT_DIR/db-manager.sh" create "$db"
+    fi
+
+    # Wait for operational readiness (not just process alive)
+    echo "  [wait] Waiting for $db to become ready..."
+    while [ "$attempt" -le "$max_attempts" ]; do
+        case "$db" in
+            mysql)
+                if docker exec "$name" mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+                    echo "  [ok] $db is ready"
+                    return 0
+                fi
+                ;;
+            postgres)
+                if docker exec "$name" psql -U postgres -d template1 -c "SELECT 1" >/dev/null 2>&1; then
+                    echo "  [ok] $db is ready"
+                    return 0
+                fi
+                ;;
+            redis)
+                if docker exec "$name" redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
+                    echo "  [ok] $db is ready"
+                    return 0
+                fi
+                ;;
+            *)
+                echo "  [ok] $db is running"
+                return 0
+                ;;
+        esac
+        sleep 2
+        attempt=$((attempt + 1))
+        echo "  [retry] Waiting for $db (attempt $attempt/$max_attempts)"
+    done
+
+    echo "  [error] $db did not become ready in $((max_attempts * 2))s."
+    return 1
 }
 
 # Start a GUI tool

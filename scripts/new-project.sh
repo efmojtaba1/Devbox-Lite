@@ -51,7 +51,7 @@ fi
 ensure_container_running() {
     local name="$1"
     local kind="$2"
-    local max_attempts=20
+    local max_attempts=30
     local attempt=1
 
     # ── Check if already running ──────────────────────────────
@@ -90,28 +90,32 @@ ensure_container_running() {
         fi
     fi
 
-    # ── Wait for service to become ready ────────────────────────
+    # ── Wait for service to become TRULY ready (operational, not just process) ────────────────────────
     echo "  [wait] Waiting for $kind to become ready..."
 
     while [ "$attempt" -le "$max_attempts" ]; do
         case "$kind" in
             mysql)
+                # Real operational check: can we actually execute a query?
                 if docker exec "$name" \
-                    mysqladmin ping -h 127.0.0.1 -u root --silent \
+                    mysql -u root -e "SELECT 1" \
                     >/dev/null 2>&1; then
                     echo "  [ok] $kind is ready"
                     return 0
                 fi
                 ;;
             postgres)
+                # Real operational check: can we connect to template1 and query?
+                # Use postgres user (default in container), not devbox
                 if docker exec "$name" \
-                    pg_isready -U devbox -h 127.0.0.1 \
+                    psql -U postgres -d template1 -c "SELECT 1" \
                     >/dev/null 2>&1; then
                     echo "  [ok] $kind is ready"
                     return 0
                 fi
                 ;;
             redis)
+                # Redis ping is usually sufficient, but verify PONG
                 if docker exec "$name" \
                     redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
                     echo "  [ok] $kind is ready"

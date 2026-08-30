@@ -1569,33 +1569,28 @@ function Unprotect-DevBoxSecret {
 # file also keeps standard input free, so the password can still be piped in.
 $payloadPath = '/tmp/.devbox-wsl-init.sh'
 
-function Invoke-WslShellCommand {
+# Buffered output pattern to prevent log garbling when multiple native commands
+# run in loops. wsl.exe writes UTF-16 text with embedded NUL bytes; each chunk
+# can carry several lines. Collect all output first, then write clean lines.
+function Get-WslOutput {
     param(
-        [Parameter(Mandatory = $true)][string]$Command,
+        [Parameter(Mandatory = $true)][string[]]$WslArguments,
         [string]$StdinText
     )
 
-    # While $ErrorActionPreference is 'Stop', PowerShell can turn anything the
-    # Linux side writes to stderr into a terminating error before the exit code
-    # is ever read. Relax it around the wsl.exe call and judge the exit code.
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $output = @()
-    $exitCode = $null
     try {
         if ($PSBoundParameters.ContainsKey('StdinText')) {
-            $output = $StdinText | & wsl.exe -d $Distribution -u root -- bash -c $Command 2>&1
+            $output = $StdinText | & wsl.exe @WslArguments 2>&1
         }
         else {
-            $output = & wsl.exe -d $Distribution -u root -- bash -c $Command 2>&1
+            $output = & wsl.exe @WslArguments 2>&1
         }
-
         $exitCode = $LASTEXITCODE
     }
     catch {
-        # wsl.exe could not be launched at all. Without this the exit code below
-        # would be whatever the previous native command left behind.
-        $output = @("[ERROR] wsl.exe could not be started: $($_.Exception.Message)")
+        $output = @("wsl.exe could not be started: $($_.Exception.Message)")
         $exitCode = 9009
     }
     finally {
@@ -1604,19 +1599,29 @@ function Invoke-WslShellCommand {
 
     if ($null -eq $exitCode) { $exitCode = 9009 }
 
-    # wsl.exe can hand back the whole payload output as one multi-line string,
-    # so split it into real lines before any marker is matched against it.
+    # wsl.exe writes UTF-16 text with embedded NUL bytes; split into clean lines
     $lines = @(
         @($output) |
             ForEach-Object { ([string]$_) -replace "`0", '' } |
             ForEach-Object { $_ -split "`r?`n" } |
-            ForEach-Object { $_.TrimEnd("`r") }
+            ForEach-Object { $_.TrimEnd("`r") } |
+            Where-Object { $_ -ne '' }
     )
 
-    return [PSCustomObject]@{
-        ExitCode = $exitCode
-        Lines    = $lines
+    return [PSCustomObject]@{ ExitCode = $exitCode; Lines = $lines }
+}
+
+function Invoke-WslShellCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [string]$StdinText
+    )
+
+    $result = Get-WslOutput -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-c', $Command) -StdinText $StdinText
+    foreach ($line in $result.Lines) {
+        Write-Host $line
     }
+    return $result
 }
 
 function Invoke-WslPayload {
@@ -2434,68 +2439,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Native tools hand their output over in whatever chunks the pipe delivers, so a
-# single pipeline object can carry several lines at once. Windows moves the cursor
-# down but not back to column 0 for a bare line feed, which is what turned the
-# tail of the installer log into a staircase, and text that started life as UTF-16
-# still carries NUL bytes. Every chunk is therefore stripped and split into real
-# lines before it is printed.
-function Write-NativeLine {
-    param($InputObject)
-
-    $text = ([string]$InputObject) -replace "`0", ''
-    if ($text -eq '') {
-        Write-Host ''
-        return
-    }
-
-    foreach ($line in ($text -split "`r?`n")) {
-        Write-Host $line.TrimEnd("`r")
-    }
-}
-
-# Windows PowerShell turns anything a native command writes to stderr into a
-# terminating error while $ErrorActionPreference is 'Stop', even when that
-# stream is redirected to $null. tar.exe reports progress on stderr and
-# docker.exe answers "no such volume" there, which are both normal states of a
-# fresh machine, so every native call runs with the preference relaxed and is
-# judged by its exit code alone.
-function Invoke-NativeCommand {
-    param(
-        [Parameter(Mandatory = $true)][string]$FilePath,
-        [Parameter(Mandatory = $true)][string[]]$CommandArguments,
-        [switch]$Quiet
-    )
-
-    $previousPreference = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        if ($Quiet) {
-            & $FilePath @CommandArguments *> $null
-        }
-        else {
-            # Merged stderr arrives as ErrorRecord objects. Casting each one to
-            # a string keeps the installer log readable instead of printing a
-            # NativeCommandError block for ordinary progress messages.
-            & $FilePath @CommandArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
-        }
-        $exitCode = $LASTEXITCODE
-    }
-    catch {
-        Write-Host "  [WARN] $FilePath could not be started: $($_.Exception.Message)"
-        $exitCode = 9009
-    }
-    finally {
-        $ErrorActionPreference = $previousPreference
-    }
-
-    if ($null -eq $exitCode) { $exitCode = 9009 }
-    return [int]$exitCode
-}
-
-# Same stderr precaution as Invoke-NativeCommand, but here the caller needs the
-# standard output as text instead of on the console. Used to list the containers
-# that still reference a volume, because a referenced volume cannot be removed.
+# Collect and normalize native command output (stdout+stderr) into clean lines.
+# Returns an array of strings. Does NOT write to host — caller decides how to display.
 function Get-NativeOutput {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
@@ -2505,22 +2450,49 @@ function Get-NativeOutput {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $captured = & $FilePath @CommandArguments 2>$null
+        # Capture merged stdout+stderr as text, split into clean lines.
+        $raw = & $FilePath @CommandArguments 2>&1
     }
     catch {
-        $captured = @()
+        $raw = @()
     }
     finally {
         $ErrorActionPreference = $previousPreference
     }
 
     return @(
-        @($captured) |
+        @($raw) |
             ForEach-Object { ([string]$_) -replace "`0", '' } |
             ForEach-Object { $_ -split "`r?`n" } |
-            ForEach-Object { $_.Trim() } |
+            ForEach-Object { $_.TrimEnd("`r") } |
             Where-Object { $_ -ne '' }
     )
+}
+
+# Run a native command, capture its output, write it cleanly, return exit code.
+function Invoke-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$CommandArguments,
+        [switch]$Quiet
+    )
+
+    if ($Quiet) {
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try { & $FilePath @CommandArguments *> $null }
+        catch { }
+        finally { $ErrorActionPreference = $previousPreference }
+        $exitCode = $LASTEXITCODE
+        if ($null -eq $exitCode) { $exitCode = 9009 }
+        return [int]$exitCode
+    }
+
+    $lines = Get-NativeOutput -FilePath $FilePath -CommandArguments $CommandArguments
+    foreach ($line in $lines) { Write-Host $line }
+    $exitCode = $LASTEXITCODE
+    if ($null -eq $exitCode) { $exitCode = 9009 }
+    return [int]$exitCode
 }
 
 # Docker Desktop and the WSL Engine are independent daemons, so every call is
@@ -2702,52 +2674,39 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
-# delivers, so one pipeline object can carry several lines and still contain the
-# NUL bytes of that encoding. Windows moves the console cursor down but not back
-# to column 0 for a bare line feed, which is what turned the tail of the
-# installer log into an ever deeper staircase, so every chunk is cleaned up and
-# split into real lines before it is printed.
-function Write-NativeLine {
-    param($InputObject)
-
-    $text = ([string]$InputObject) -replace "`0", ''
-    if ($text -eq '') {
-        Write-Host ''
-        return
-    }
-
-    foreach ($line in ($text -split "`r?`n")) {
-        Write-Host $line.TrimEnd("`r")
-    }
-}
-
-# Windows PowerShell turns anything a native command writes to stderr into a
-# terminating error while $ErrorActionPreference is 'Stop', even when that
-# stream is redirected. wsl.exe and the Linux side both use stderr for progress
-# and for harmless warnings, so every call runs with the preference relaxed and
-# is judged by its exit code alone.
-function Invoke-WslCommand {
+# Collect and normalize WSL command output (stdout+stderr) into clean lines.
+# Returns an array of strings. Does NOT write to host — caller decides how to display.
+function Get-WslOutput {
     param([Parameter(Mandatory = $true)][string[]]$WslArguments)
 
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        # Merged stderr arrives as ErrorRecord objects, which the console host
-        # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Write-NativeLine turns each chunk into
-        # plain, properly terminated console lines.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
-        $exitCode = $LASTEXITCODE
+        $raw = & wsl.exe @WslArguments 2>&1
     }
     catch {
-        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
-        $exitCode = 9009
+        $raw = @()
     }
     finally {
         $ErrorActionPreference = $previousPreference
     }
 
+    return @(
+        @($raw) |
+            ForEach-Object { ([string]$_) -replace "`0", '' } |
+            ForEach-Object { $_ -split "`r?`n" } |
+            ForEach-Object { $_.TrimEnd("`r") } |
+            Where-Object { $_ -ne '' }
+    )
+}
+
+# Run a WSL command, capture its output, write it cleanly, return exit code.
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $lines = Get-WslOutput -WslArguments $WslArguments
+    foreach ($line in $lines) { Write-Host $line }
+    $exitCode = $LASTEXITCODE
     if ($null -eq $exitCode) { $exitCode = 9009 }
     return [int]$exitCode
 }
@@ -2954,52 +2913,39 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
-# delivers, so one pipeline object can carry several lines and still contain the
-# NUL bytes of that encoding. Windows moves the console cursor down but not back
-# to column 0 for a bare line feed, which is what turned the tail of the
-# installer log into an ever deeper staircase, so every chunk is cleaned up and
-# split into real lines before it is printed.
-function Write-NativeLine {
-    param($InputObject)
-
-    $text = ([string]$InputObject) -replace "`0", ''
-    if ($text -eq '') {
-        Write-Host ''
-        return
-    }
-
-    foreach ($line in ($text -split "`r?`n")) {
-        Write-Host $line.TrimEnd("`r")
-    }
-}
-
-# Windows PowerShell turns anything a native command writes to stderr into a
-# terminating error while $ErrorActionPreference is 'Stop', even when that
-# stream is redirected. wsl.exe and the Linux side both use stderr for progress
-# and for harmless warnings, so every call runs with the preference relaxed and
-# is judged by its exit code alone.
-function Invoke-WslCommand {
+# Collect and normalize WSL command output (stdout+stderr) into clean lines.
+# Returns an array of strings. Does NOT write to host — caller decides how to display.
+function Get-WslOutput {
     param([Parameter(Mandatory = $true)][string[]]$WslArguments)
 
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        # Merged stderr arrives as ErrorRecord objects, which the console host
-        # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Write-NativeLine turns each chunk into
-        # plain, properly terminated console lines.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
-        $exitCode = $LASTEXITCODE
+        $raw = & wsl.exe @WslArguments 2>&1
     }
     catch {
-        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
-        $exitCode = 9009
+        $raw = @()
     }
     finally {
         $ErrorActionPreference = $previousPreference
     }
 
+    return @(
+        @($raw) |
+            ForEach-Object { ([string]$_) -replace "`0", '' } |
+            ForEach-Object { $_ -split "`r?`n" } |
+            ForEach-Object { $_.TrimEnd("`r") } |
+            Where-Object { $_ -ne '' }
+    )
+}
+
+# Run a WSL command, capture its output, write it cleanly, return exit code.
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $lines = Get-WslOutput -WslArguments $WslArguments
+    foreach ($line in $lines) { Write-Host $line }
+    $exitCode = $LASTEXITCODE
     if ($null -eq $exitCode) { $exitCode = 9009 }
     return [int]$exitCode
 }
@@ -3089,46 +3035,20 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
-# delivers, so one pipeline object can carry several lines and still contain the
-# NUL bytes of that encoding. Windows moves the console cursor down but not back
-# to column 0 for a bare line feed, which is what turned the tail of the
-# installer log into an ever deeper staircase, so every chunk is cleaned up and
-# split into real lines before it is printed.
-function Write-NativeLine {
-    param($InputObject)
-
-    $text = ([string]$InputObject) -replace "`0", ''
-    if ($text -eq '') {
-        Write-Host ''
-        return
-    }
-
-    foreach ($line in ($text -split "`r?`n")) {
-        Write-Host $line.TrimEnd("`r")
-    }
-}
-
-# Windows PowerShell turns anything a native command writes to stderr into a
-# terminating error while $ErrorActionPreference is 'Stop', even when that
-# stream is redirected. wsl.exe and the Linux side both use stderr for progress
-# and for harmless warnings, so every call runs with the preference relaxed and
-# is judged by its exit code alone.
-function Invoke-WslCommand {
+# Buffered output pattern to prevent log garbling when multiple native commands
+# run in loops. wsl.exe writes UTF-16 text with embedded NUL bytes; each chunk
+# can carry several lines. Collect all output first, then write clean lines.
+function Get-WslOutput {
     param([Parameter(Mandatory = $true)][string[]]$WslArguments)
 
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        # Merged stderr arrives as ErrorRecord objects, which the console host
-        # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Write-NativeLine turns each chunk into
-        # plain, properly terminated console lines.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
+        $output = & wsl.exe @WslArguments 2>&1
         $exitCode = $LASTEXITCODE
     }
     catch {
-        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
+        $output = @("wsl.exe could not be started: $($_.Exception.Message)")
         $exitCode = 9009
     }
     finally {
@@ -3136,7 +3056,27 @@ function Invoke-WslCommand {
     }
 
     if ($null -eq $exitCode) { $exitCode = 9009 }
-    return [int]$exitCode
+
+    # wsl.exe writes UTF-16 text with embedded NUL bytes; split into clean lines
+    $lines = @(
+        @($output) |
+            ForEach-Object { ([string]$_) -replace "`0", '' } |
+            ForEach-Object { $_ -split "`r?`n" } |
+            ForEach-Object { $_.TrimEnd("`r") } |
+            Where-Object { $_ -ne '' }
+    )
+
+    return [PSCustomObject]@{ ExitCode = $exitCode; Lines = $lines }
+}
+
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $result = Get-WslOutput -WslArguments $WslArguments
+    foreach ($line in $result.Lines) {
+        Write-Host $line
+    }
+    return $result.ExitCode
 }
 
 try {
@@ -3228,46 +3168,20 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
-# delivers, so one pipeline object can carry several lines and still contain the
-# NUL bytes of that encoding. Windows moves the console cursor down but not back
-# to column 0 for a bare line feed, which is what turned the tail of the
-# installer log into an ever deeper staircase, so every chunk is cleaned up and
-# split into real lines before it is printed.
-function Write-NativeLine {
-    param($InputObject)
-
-    $text = ([string]$InputObject) -replace "`0", ''
-    if ($text -eq '') {
-        Write-Host ''
-        return
-    }
-
-    foreach ($line in ($text -split "`r?`n")) {
-        Write-Host $line.TrimEnd("`r")
-    }
-}
-
-# Windows PowerShell turns anything a native command writes to stderr into a
-# terminating error while $ErrorActionPreference is 'Stop', even when that
-# stream is redirected. wsl.exe and the Linux side both use stderr for progress
-# and for harmless warnings, so every call runs with the preference relaxed and
-# is judged by its exit code alone.
-function Invoke-WslCommand {
+# Buffered output pattern to prevent log garbling when multiple native commands
+# run in loops. wsl.exe writes UTF-16 text with embedded NUL bytes; each chunk
+# can carry several lines. Collect all output first, then write clean lines.
+function Get-WslOutput {
     param([Parameter(Mandatory = $true)][string[]]$WslArguments)
 
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        # Merged stderr arrives as ErrorRecord objects, which the console host
-        # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Write-NativeLine turns each chunk into
-        # plain, properly terminated console lines.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
+        $output = & wsl.exe @WslArguments 2>&1
         $exitCode = $LASTEXITCODE
     }
     catch {
-        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
+        $output = @("wsl.exe could not be started: $($_.Exception.Message)")
         $exitCode = 9009
     }
     finally {
@@ -3275,7 +3189,27 @@ function Invoke-WslCommand {
     }
 
     if ($null -eq $exitCode) { $exitCode = 9009 }
-    return [int]$exitCode
+
+    # wsl.exe writes UTF-16 text with embedded NUL bytes; split into clean lines
+    $lines = @(
+        @($output) |
+            ForEach-Object { ([string]$_) -replace "`0", '' } |
+            ForEach-Object { $_ -split "`r?`n" } |
+            ForEach-Object { $_.TrimEnd("`r") } |
+            Where-Object { $_ -ne '' }
+    )
+
+    return [PSCustomObject]@{ ExitCode = $exitCode; Lines = $lines }
+}
+
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $result = Get-WslOutput -WslArguments $WslArguments
+    foreach ($line in $result.Lines) {
+        Write-Host $line
+    }
+    return $result.ExitCode
 }
 
 try {
@@ -3691,46 +3625,20 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# wsl.exe writes UTF-16 text and hands it over in whatever chunks the pipe
-# delivers, so one pipeline object can carry several lines and still contain the
-# NUL bytes of that encoding. Windows moves the console cursor down but not back
-# to column 0 for a bare line feed, which is what turned the tail of the
-# installer log into an ever deeper staircase, so every chunk is cleaned up and
-# split into real lines before it is printed.
-function Write-NativeLine {
-    param($InputObject)
-
-    $text = ([string]$InputObject) -replace "`0", ''
-    if ($text -eq '') {
-        Write-Host ''
-        return
-    }
-
-    foreach ($line in ($text -split "`r?`n")) {
-        Write-Host $line.TrimEnd("`r")
-    }
-}
-
-# Windows PowerShell turns anything a native command writes to stderr into a
-# terminating error while $ErrorActionPreference is 'Stop', even when that
-# stream is redirected. wsl.exe and the Linux side both use stderr for progress
-# and for harmless warnings, so every call runs with the preference relaxed and
-# is judged by its exit code alone.
-function Invoke-WslCommand {
+# Buffered output pattern to prevent log garbling when multiple native commands
+# run in loops. wsl.exe writes UTF-16 text with embedded NUL bytes; each chunk
+# can carry several lines. Collect all output first, then write clean lines.
+function Get-WslOutput {
     param([Parameter(Mandatory = $true)][string[]]$WslArguments)
 
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        # Merged stderr arrives as ErrorRecord objects, which the console host
-        # would render as a multi-line NativeCommandError block even for
-        # harmless progress messages. Write-NativeLine turns each chunk into
-        # plain, properly terminated console lines.
-        & wsl.exe @WslArguments 2>&1 | ForEach-Object { Write-NativeLine $_ }
+        $output = & wsl.exe @WslArguments 2>&1
         $exitCode = $LASTEXITCODE
     }
     catch {
-        Write-Host "  [WARN] wsl.exe could not be started: $($_.Exception.Message)"
+        $output = @("wsl.exe could not be started: $($_.Exception.Message)")
         $exitCode = 9009
     }
     finally {
@@ -3738,7 +3646,27 @@ function Invoke-WslCommand {
     }
 
     if ($null -eq $exitCode) { $exitCode = 9009 }
-    return [int]$exitCode
+
+    # wsl.exe writes UTF-16 text with embedded NUL bytes; split into clean lines
+    $lines = @(
+        @($output) |
+            ForEach-Object { ([string]$_) -replace "`0", '' } |
+            ForEach-Object { $_ -split "`r?`n" } |
+            ForEach-Object { $_.TrimEnd("`r") } |
+            Where-Object { $_ -ne '' }
+    )
+
+    return [PSCustomObject]@{ ExitCode = $exitCode; Lines = $lines }
+}
+
+function Invoke-WslCommand {
+    param([Parameter(Mandatory = $true)][string[]]$WslArguments)
+
+    $result = Get-WslOutput -WslArguments $WslArguments
+    foreach ($line in $result.Lines) {
+        Write-Host $line
+    }
+    return $result.ExitCode
 }
 
 try {
