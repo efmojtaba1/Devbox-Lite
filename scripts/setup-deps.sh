@@ -119,7 +119,8 @@ ensure_db() {
     while [ "$attempt" -le "$max_attempts" ]; do
         case "$db" in
             mysql)
-                if docker_timeout exec "$name" mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+                # TCP readiness via mysqladmin inside container (with explicit timeout)
+                if timeout 5 docker exec -i "$name" mysqladmin ping -h 127.0.0.1 -u root --silent 2>/dev/null | grep -q "alive"; then
                     echo "  [ok] $db is ready"
                     return 0
                 fi

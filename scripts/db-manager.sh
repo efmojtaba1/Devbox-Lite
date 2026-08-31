@@ -141,7 +141,6 @@ create_mysql() {
         --name devbox-mysql \
         --network "$NETWORK" \
         -e MYSQL_ALLOW_EMPTY_PASSWORD=yes \
-        -e MYSQL_ROOT_PASSWORD=devbox_pass \
         -v devbox-mysql-data:/var/lib/mysql \
         -p 3306:3306 \
         mysql:8.4; then
@@ -149,6 +148,10 @@ create_mysql() {
         return 1
     fi
     echo "MySQL ready on port 3306 (no auth)"
+    # Fix auth plugin for root (volume from old container may have auth_socket)
+    docker_timeout exec devbox-mysql mysql -u root -e "ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY ''; ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY ''; FLUSH PRIVILEGES;" 2>/dev/null || true
+    # Bootstrap devbox user for new-project compatibility
+    docker_timeout exec devbox-mysql mysql -u root -e "CREATE USER IF NOT EXISTS 'devbox'@'%' IDENTIFIED BY 'devbox_pass'; GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%'; FLUSH PRIVILEGES;" 2>/dev/null || true
 }
 
 create_postgres() {

@@ -613,8 +613,8 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' "$project_dir/.env"
-                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' "$project_dir/.env"
+                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=root/' "$project_dir/.env"
+                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=/' "$project_dir/.env"
                 ;;
             "SQLite")
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
