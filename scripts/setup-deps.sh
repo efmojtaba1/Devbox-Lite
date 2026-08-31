@@ -3,6 +3,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Source docker timeout / wait guard from db-manager
+source "$SCRIPT_DIR/db-manager.sh" 2>/dev/null || true
+DOCKER_TIMEOUT=30
 
 # Template → required databases mapping
 get_deps() {
@@ -71,12 +74,12 @@ detect_project_type() {
 
 # Check if a docker container is already running
 is_running() {
-    docker ps --format '{{.Names}}' | grep -q "^$1$"
+    docker_timeout ps --format '{{.Names}}' | grep -q "^$1$"
 }
 
 # Check if container exists (running or stopped)
 container_exists() {
-    docker ps -a --format '{{.Names}}' | grep -q "^$1$"
+    docker_timeout ps -a --format '{{.Names}}' | grep -q "^$1$"
 }
 
 # Start or create a database with operational readiness verification
@@ -86,6 +89,11 @@ ensure_db() {
     local max_attempts=30
     local attempt=1
 
+    if ! wait_for_docker; then
+        echo "  [error] Docker daemon not ready."
+        return 1
+    fi
+
     if is_running "$name"; then
         echo "  [skip] $db is already running"
         return 0
@@ -93,15 +101,15 @@ ensure_db() {
 
     if container_exists "$name"; then
         echo "  [start] $db exists, starting..."
-        if docker start "$name" 2>/dev/null; then
+        if docker_timeout start "$name" 2>/dev/null; then
             echo "  [ok] $db started"
         else
             echo "  [fix] $db failed to start, recreating..."
-            docker rm -f "$name" > /dev/null 2>&1 || true
+            docker_timeout rm -f "$name" > /dev/null 2>&1 || true
         fi
     fi
 
-    if ! docker ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
+    if ! docker_timeout ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "  [create] $db not found, creating..."
         "$SCRIPT_DIR/db-manager.sh" create "$db"
     fi
@@ -111,19 +119,19 @@ ensure_db() {
     while [ "$attempt" -le "$max_attempts" ]; do
         case "$db" in
             mysql)
-                if docker exec "$name" mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+                if docker_timeout exec "$name" mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
                     echo "  [ok] $db is ready"
                     return 0
                 fi
                 ;;
             postgres)
-                if docker exec "$name" psql -U postgres -d template1 -c "SELECT 1" >/dev/null 2>&1; then
+                if docker_timeout exec "$name" psql -U postgres -d template1 -c "SELECT 1" >/dev/null 2>&1; then
                     echo "  [ok] $db is ready"
                     return 0
                 fi
                 ;;
             redis)
-                if docker exec "$name" redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
+                if docker_timeout exec "$name" redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
                     echo "  [ok] $db is ready"
                     return 0
                 fi
@@ -147,6 +155,11 @@ ensure_gui() {
     local tool="$1"
     local name="devbox-${tool}"
 
+    if ! wait_for_docker; then
+        echo "  [error] Docker daemon not ready."
+        return 1
+    fi
+
     if is_running "$name"; then
         echo "  [skip] $tool is already running"
         return 0
@@ -154,12 +167,12 @@ ensure_gui() {
 
     if container_exists "$name"; then
         echo "  [start] $tool exists, starting..."
-        if docker start "$name" 2>/dev/null; then
+        if docker_timeout start "$name" 2>/dev/null; then
             echo "  [ok] $tool is running"
             return 0
         else
             echo "  [fix] $tool failed to start, recreating..."
-            docker rm -f "$name" > /dev/null 2>&1 || true
+            docker_timeout rm -f "$name" > /dev/null 2>&1 || true
         fi
     fi
 

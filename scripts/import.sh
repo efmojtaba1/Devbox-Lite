@@ -58,6 +58,18 @@ else
   echo "  [warn] prebuilt.tar.gz not found in package; skipping"
 fi
 
+# ── Ensure Docker daemon is running (offline target) ──
+if ! docker info >/dev/null 2>&1; then
+    echo "[import] Docker daemon not running. Attempting to start..."
+    if command -v service >/dev/null 2>&1; then sudo service docker start 2>/dev/null || true; fi
+    if command -v systemctl >/dev/null 2>&1; then sudo systemctl start docker 2>/dev/null || true; fi
+    if command -v dockerd >/dev/null 2>&1; then sudo dockerd --iptables=false --bridge=none >/dev/null 2>&1 & sleep 3; fi
+    for i in $(seq 1 15); do
+        if docker info >/dev/null 2>&1; then break; fi
+        sleep 1
+    done
+fi
+
 if [ -f "$WORKDIR/image.tar" ]; then
   echo "[import] Loading Docker image from $WORKDIR/image.tar"
   docker load -i "$WORKDIR/image.tar"

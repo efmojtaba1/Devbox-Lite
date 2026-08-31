@@ -141,6 +141,7 @@ create_mysql() {
         --name devbox-mysql \
         --network "$NETWORK" \
         -e MYSQL_ALLOW_EMPTY_PASSWORD=yes \
+        -e MYSQL_ROOT_PASSWORD=devbox_pass \
         -v devbox-mysql-data:/var/lib/mysql \
         -p 3306:3306 \
         mysql:8.4; then

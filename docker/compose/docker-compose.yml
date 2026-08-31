@@ -38,7 +38,7 @@ services:
       - ${PREBUILT_PATH:-../../prebuilt}:/prebuilt:ro
       - ${EXAMPLE_PATH:-../../example}:/example:ro
       - example-templates:/example-data
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /run/devbox-docker.sock:/run/devbox-docker.sock
       - bruno-config:/root/.config/bruno
       - bruno-collections:/root/bruno
       - pnpm-store:/root/.local/share/pnpm/store
@@ -47,6 +47,7 @@ services:
 
     environment:
       TZ: ${TZ:-Asia/Tehran}
+      DOCKER_HOST: unix:///run/devbox-docker.sock
 
     networks:
       - devbox-network
