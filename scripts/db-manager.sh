@@ -3,12 +3,53 @@
 set -euo pipefail
 
 NETWORK="devbox-network"
+DOCKER_TIMEOUT=30
+
+# ── Wait for Docker daemon to be ready ──────────────────
+# On target systems after reboot, the Docker daemon inside WSL
+# may not be running yet. Without this guard, docker commands
+# hang indefinitely instead of failing cleanly.
+wait_for_docker() {
+    local max_attempts=$((DOCKER_TIMEOUT / 2))
+    local attempt=1
+
+    if docker info >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "  [wait] Docker daemon not ready (attempt $attempt/$max_attempts)..."
+
+    while [ "$attempt" -lt "$max_attempts" ]; do
+        sleep 2
+        attempt=$((attempt + 1))
+
+        if docker info >/dev/null 2>&1; then
+            echo "  [ok] Docker daemon is ready."
+            return 0
+        fi
+
+        echo "  [retry] Waiting for Docker daemon (attempt $attempt/$max_attempts)..."
+    done
+
+    echo -e "${RED}[error] Docker daemon not ready after ${DOCKER_TIMEOUT}s.${NC}"
+    echo "  Start Docker Desktop or the Docker service inside WSL and retry."
+    return 1
+}
+
+# Run a docker command with a timeout so it doesn't hang forever
+# when the daemon is unresponsive.
+docker_timeout() {
+    timeout "$DOCKER_TIMEOUT" docker "$@"
+}
 
 # Ensure the network exists
 ensure_network() {
     if ! docker network inspect "$NETWORK" > /dev/null 2>&1; then
         echo "Creating network '$NETWORK'..."
-        docker network create "$NETWORK" > /dev/null 2>&1
+        if ! docker_timeout network create "$NETWORK" > /dev/null 2>&1; then
+            echo -e "${RED}[error] Failed to create network '$NETWORK'.${NC}"
+            return 1
+        fi
     fi
 }
 
@@ -58,7 +99,7 @@ image_to_tar() {
 # Check if image exists locally, if not try prebuilt, then pull
 ensure_image() {
     local image="$1"
-    if docker image inspect "$image" > /dev/null 2>&1; then
+    if docker_timeout image inspect "$image" > /dev/null 2>&1; then
         return 0
     fi
 
@@ -67,14 +108,14 @@ ensure_image() {
     tarfile=$(image_to_tar "$image")
     if [ -f "$PREBUILT_DIR/$tarfile" ]; then
         echo "Loading '$image' from prebuilt images..."
-        if docker load -i "$PREBUILT_DIR/$tarfile" 2>/dev/null; then
+        if docker_timeout load -i "$PREBUILT_DIR/$tarfile" 2>/dev/null; then
             echo "Image loaded from prebuilt cache"
             return 0
         fi
     fi
 
     echo "Image '$image' not found locally. Trying to pull..."
-    if docker pull "$image" 2>/dev/null; then
+    if docker_timeout pull "$image" 2>/dev/null; then
         echo "Image pulled successfully"
         return 0
     else
@@ -94,80 +135,99 @@ ensure_image() {
 # Database creation functions
 create_mysql() {
     ensure_image mysql:8.4 || return 1
-    docker volume create devbox-mysql-data 2>/dev/null || true
+    docker_timeout volume create devbox-mysql-data 2>/dev/null || true
     echo "Starting MySQL..."
-    docker run -d \
+    if ! docker_timeout run -d \
         --name devbox-mysql \
         --network "$NETWORK" \
         -e MYSQL_ALLOW_EMPTY_PASSWORD=yes \
         -v devbox-mysql-data:/var/lib/mysql \
         -p 3306:3306 \
-        mysql:8.4
+        mysql:8.4; then
+        echo -e "${RED}[error] Failed to start MySQL.${NC}"
+        return 1
+    fi
     echo "MySQL ready on port 3306 (no auth)"
 }
 
 create_postgres() {
     ensure_image postgres:17 || return 1
-    docker volume create devbox-postgres-data 2>/dev/null || true
+    docker_timeout volume create devbox-postgres-data 2>/dev/null || true
     echo "Starting PostgreSQL..."
-    docker run -d \
+    if ! docker_timeout run -d \
         --name devbox-postgres \
         --network "$NETWORK" \
         -e POSTGRES_HOST_AUTH_METHOD=trust \
         -v devbox-postgres-data:/var/lib/postgresql/data \
         -p 5433:5432 \
-        postgres:17
+        postgres:17; then
+        echo -e "${RED}[error] Failed to start PostgreSQL.${NC}"
+        return 1
+    fi
     echo "PostgreSQL ready on port 5433 (no auth)"
 }
 
 create_redis() {
     ensure_image redis:7 || return 1
-    docker volume create devbox-redis-data 2>/dev/null || true
+    docker_timeout volume create devbox-redis-data 2>/dev/null || true
     echo "Starting Redis..."
-    docker run -d \
+    if ! docker_timeout run -d \
         --name devbox-redis \
         --network "$NETWORK" \
         -v devbox-redis-data:/data \
         -p 6380:6379 \
-        redis:7
+        redis:7; then
+        echo -e "${RED}[error] Failed to start Redis.${NC}"
+        return 1
+    fi
     echo "Redis ready on port 6380 (no auth)"
 }
 
 create_mongo() {
     ensure_image mongo:7 || return 1
-    docker volume create devbox-mongo-data 2>/dev/null || true
+    docker_timeout volume create devbox-mongo-data 2>/dev/null || true
     echo "Starting MongoDB..."
-    docker run -d \
+    if ! docker_timeout run -d \
         --name devbox-mongo \
         --network "$NETWORK" \
         -v devbox-mongo-data:/data/db \
         -p 27017:27017 \
-        mongo:7
+        mongo:7; then
+        echo -e "${RED}[error] Failed to start MongoDB.${NC}"
+        return 1
+    fi
     echo "MongoDB ready on port 27017 (no auth)"
 }
 
 create_mariadb() {
     ensure_image mariadb:11 || return 1
-    docker volume create devbox-mariadb-data 2>/dev/null || true
+    docker_timeout volume create devbox-mariadb-data 2>/dev/null || true
     echo "Starting MariaDB..."
-    docker run -d \
+    if ! docker_timeout run -d \
         --name devbox-mariadb \
         --network "$NETWORK" \
         -e MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=yes \
         -v devbox-mariadb-data:/var/lib/mysql \
         -p 3308:3306 \
-        mariadb:11
+        mariadb:11; then
+        echo -e "${RED}[error] Failed to start MariaDB.${NC}"
+        return 1
+    fi
     echo "MariaDB ready on port 3308 (no auth)"
 }
 
 create_memcached() {
     ensure_image memcached:1 || return 1
+    docker_timeout volume create devbox-memcached-data 2>/dev/null || true
     echo "Starting Memcached..."
-    docker run -d \
+    if ! docker_timeout run -d \
         --name devbox-memcached \
         --network "$NETWORK" \
         -p 11211:11211 \
-        memcached:1
+        memcached:1; then
+        echo -e "${RED}[error] Failed to start Memcached.${NC}"
+        return 1
+    fi
     echo "Memcached ready on port 11211 (no auth)"
 }
 
@@ -175,9 +235,12 @@ create_memcached() {
 start_db() {
     local db="$1"
     local name="devbox-${db}"
-    if docker ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
+    if docker_timeout ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "Starting ${db}..."
-        docker start "$name"
+        if ! docker_timeout start "$name"; then
+            echo -e "${RED}[error] Failed to start ${db}.${NC}"
+            return 1
+        fi
         echo "${db} is running"
     else
         echo "Container '${name}' not found. Run: $0 create ${db}"
@@ -188,9 +251,12 @@ start_db() {
 stop_db() {
     local db="$1"
     local name="devbox-${db}"
-    if docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+    if docker_timeout ps --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "Stopping ${db}..."
-        docker stop "$name"
+        if ! docker_timeout stop "$name"; then
+            echo -e "${RED}[error] Failed to stop ${db}.${NC}"
+            return 1
+        fi
         echo "${db} stopped"
     else
         echo "Container '${name}' is not running"
@@ -200,7 +266,7 @@ stop_db() {
 # Connect functions
 connect_mysql() {
     local name="devbox-mysql"
-    if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+    if ! docker_timeout ps --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "MySQL is not running. Start it first: $0 start mysql"
         exit 1
     fi
@@ -210,7 +276,7 @@ connect_mysql() {
 
 connect_postgres() {
     local name="devbox-postgres"
-    if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+    if ! docker_timeout ps --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "PostgreSQL is not running. Start it first: $0 start postgres"
         exit 1
     fi
@@ -220,7 +286,7 @@ connect_postgres() {
 
 connect_redis() {
     local name="devbox-redis"
-    if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+    if ! docker_timeout ps --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "Redis is not running. Start it first: $0 start redis"
         exit 1
     fi
@@ -230,7 +296,7 @@ connect_redis() {
 
 connect_mongo() {
     local name="devbox-mongo"
-    if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+    if ! docker_timeout ps --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "MongoDB is not running. Start it first: $0 start mongo"
         exit 1
     fi
@@ -240,7 +306,7 @@ connect_mongo() {
 
 connect_mariadb() {
     local name="devbox-mariadb"
-    if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+    if ! docker_timeout ps --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "MariaDB is not running. Start it first: $0 start mariadb"
         exit 1
     fi
@@ -250,7 +316,7 @@ connect_mariadb() {
 
 connect_memcached() {
     local name="devbox-memcached"
-    if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+    if ! docker_timeout ps --format '{{.Names}}' | grep -q "^${name}$"; then
         echo "Memcached is not running. Start it first: $0 start memcached"
         exit 1
     fi
@@ -262,37 +328,46 @@ connect_memcached() {
 gui_phpmyadmin() {
     ensure_image phpmyadmin:latest || return 1
     echo "Starting phpMyAdmin..."
-    docker run -d \
+    if ! docker_timeout run -d \
         --name devbox-phpmyadmin \
         --network "$NETWORK" \
         -e PMA_HOST=devbox-mysql \
         -e PMA_PORT=3306 \
         -p 8081:80 \
-        phpmyadmin:latest
+        phpmyadmin:latest; then
+        echo -e "${RED}[error] Failed to start phpMyAdmin.${NC}"
+        return 1
+    fi
     echo "phpMyAdmin ready at http://localhost:8081"
 }
 
 gui_adminer() {
     ensure_image adminer:latest || return 1
     echo "Starting Adminer..."
-    docker run -d \
+    if ! docker_timeout run -d \
         --name devbox-adminer \
         --network "$NETWORK" \
         -p 8082:8080 \
-        adminer:latest
+        adminer:latest; then
+        echo -e "${RED}[error] Failed to start Adminer.${NC}"
+        return 1
+    fi
     echo "Adminer ready at http://localhost:8082"
 }
 
 gui_pgadmin() {
     ensure_image dpage/pgadmin4:latest || return 1
     echo "Starting pgAdmin..."
-    docker run -d \
+    if ! docker_timeout run -d \
         --name devbox-pgadmin \
         --network "$NETWORK" \
         -e PGADMIN_DEFAULT_EMAIL=admin@admin.com \
         -e PGADMIN_DEFAULT_PASSWORD=admin \
         -p 8083:80 \
-        dpage/pgadmin4:latest
+        dpage/pgadmin4:latest; then
+        echo -e "${RED}[error] Failed to start pgAdmin.${NC}"
+        return 1
+    fi
     echo "pgAdmin ready at http://localhost:8083"
     echo "  Email: admin@admin.com"
     echo "  Password: admin"
@@ -316,6 +391,9 @@ validate_gui() {
 }
 
 # Main
+if ! wait_for_docker; then
+    exit 1
+fi
 ensure_network
 
 if [ $# -lt 1 ]; then

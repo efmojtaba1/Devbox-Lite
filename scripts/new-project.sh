@@ -48,11 +48,48 @@ else
     echo -e "${YELLOW}[network] Offline mode detected.${NC}"
 fi
 
+# ── Wait for Docker daemon to be ready ──────────────────
+# On target systems after reboot, the Docker daemon inside WSL may
+# not be running yet. Without this guard, docker commands hang
+# indefinitely instead of failing cleanly.
+wait_for_docker() {
+    local max_attempts=30
+    local attempt=1
+
+    if docker info >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "  [wait] Docker daemon not ready (attempt $attempt/$max_attempts)..."
+
+    while [ "$attempt" -lt "$max_attempts" ]; do
+        sleep 2
+        attempt=$((attempt + 1))
+
+        if docker info >/dev/null 2>&1; then
+            echo "  [ok] Docker daemon is ready."
+            return 0
+        fi
+
+        echo "  [retry] Waiting for Docker daemon (attempt $attempt/$max_attempts)..."
+    done
+
+    echo -e "${RED}[error] Docker daemon not ready after $((max_attempts * 2))s.${NC}"
+    echo "  Start Docker Desktop or the Docker service inside WSL and retry."
+    return 1
+}
+
 ensure_container_running() {
     local name="$1"
     local kind="$2"
     local max_attempts=30
     local attempt=1
+
+    # ── Wait for Docker daemon to be ready ──────────────────
+    if ! wait_for_docker; then
+        echo -e "${RED}[error] Cannot proceed without Docker.${NC}"
+        return 1
+    fi
 
     # ── Check if already running ──────────────────────────────
     if docker ps --format '{{.Names}}' | grep -q "^$name$"; then
