@@ -13,7 +13,7 @@ wait_for_docker() {
     local max_attempts=$((DOCKER_TIMEOUT / 2))
     local attempt=1
 
-    if docker info >/dev/null 2>&1; then
+    if timeout "$DOCKER_TIMEOUT" docker info >/dev/null 2>&1; then
         return 0
     fi
 
@@ -23,7 +23,7 @@ wait_for_docker() {
         sleep 2
         attempt=$((attempt + 1))
 
-        if docker info >/dev/null 2>&1; then
+        if timeout "$DOCKER_TIMEOUT" docker info >/dev/null 2>&1; then
             echo "  [ok] Docker daemon is ready."
             return 0
         fi
@@ -135,7 +135,13 @@ ensure_image() {
 # Database creation functions
 create_mysql() {
     ensure_image mysql:8.4 || return 1
-    docker_timeout volume create devbox-mysql-data 2>/dev/null || true
+    docker_timeout volume create devbox-mysql-data >/dev/null 2>&1 || true
+
+    if docker_timeout ps -a --format '{{.Names}}' | grep -q '^devbox-mysql$'; then
+        echo "MySQL container already exists."
+        return 0
+    fi
+
     echo "Starting MySQL..."
     if ! docker_timeout run -d \
         --name devbox-mysql \
@@ -147,16 +153,53 @@ create_mysql() {
         echo -e "${RED}[error] Failed to start MySQL.${NC}"
         return 1
     fi
-    echo "MySQL ready on port 3306 (no auth)"
-    # Fix auth plugin for root (volume from old container may have auth_socket)
-    docker_timeout exec devbox-mysql mysql -u root -e "ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY ''; ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY ''; FLUSH PRIVILEGES;" 2>/dev/null || true
-    # Bootstrap devbox user for new-project compatibility
-    docker_timeout exec devbox-mysql mysql -u root -e "CREATE USER IF NOT EXISTS 'devbox'@'%' IDENTIFIED BY 'devbox_pass'; GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%'; FLUSH PRIVILEGES;" 2>/dev/null || true
+
+    echo "MySQL container created on port 3306."
+
+    local attempt=1
+    local max_attempts=30
+
+    # Wait until root is actually usable on a fresh DevBox volume.
+    while [ "$attempt" -le "$max_attempts" ]; do
+        if docker_timeout exec devbox-mysql \
+            mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+            break
+        fi
+
+        if [ "$attempt" -eq "$max_attempts" ]; then
+            echo -e "${RED}[error] MySQL started, but root authentication is unavailable.${NC}"
+            echo "  The existing MySQL volume may contain credentials from an older DevBox version."
+            echo "  No database data was deleted automatically."
+            return 1
+        fi
+
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+
+    # Stable application account for Laravel projects.
+    if ! docker_timeout exec devbox-mysql \
+        mysql -u root -e \
+        "CREATE USER IF NOT EXISTS 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
+         ALTER USER 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
+         GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%';
+         FLUSH PRIVILEGES;" >/dev/null 2>&1; then
+        echo -e "${RED}[error] MySQL is running, but the DevBox application user could not be created.${NC}"
+        return 1
+    fi
+
+    echo "MySQL initialized: root=no password, devbox/devbox_pass"
 }
 
 create_postgres() {
     ensure_image postgres:17 || return 1
-    docker_timeout volume create devbox-postgres-data 2>/dev/null || true
+    docker_timeout volume create devbox-postgres-data >/dev/null 2>&1 || true
+
+    if docker_timeout ps -a --format '{{.Names}}' | grep -q '^devbox-postgres$'; then
+        echo "PostgreSQL container already exists."
+        return 0
+    fi
+
     echo "Starting PostgreSQL..."
     if ! docker_timeout run -d \
         --name devbox-postgres \
@@ -168,7 +211,39 @@ create_postgres() {
         echo -e "${RED}[error] Failed to start PostgreSQL.${NC}"
         return 1
     fi
-    echo "PostgreSQL ready on port 5433 (no auth)"
+
+    local attempt=1
+    local max_attempts=30
+    while [ "$attempt" -le "$max_attempts" ]; do
+        if docker_timeout exec devbox-postgres \
+            psql -U postgres -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+            break
+        fi
+
+        if [ "$attempt" -eq "$max_attempts" ]; then
+            echo -e "${RED}[error] PostgreSQL started, but the server did not become queryable.${NC}"
+            return 1
+        fi
+
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+
+    if ! docker_timeout exec devbox-postgres psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
+        "DO \$\$
+         BEGIN
+           IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'devbox') THEN
+             CREATE ROLE devbox LOGIN PASSWORD 'devbox_pass' SUPERUSER;
+           ELSE
+             ALTER ROLE devbox WITH LOGIN PASSWORD 'devbox_pass' SUPERUSER;
+           END IF;
+         END
+         \$\$;" >/dev/null 2>&1; then
+        echo -e "${RED}[error] PostgreSQL is running, but the DevBox user could not be created.${NC}"
+        return 1
+    fi
+
+    echo "PostgreSQL initialized: devbox/devbox_pass"
 }
 
 create_redis() {
@@ -398,7 +473,9 @@ validate_gui() {
 if ! wait_for_docker; then
     exit 1
 fi
-ensure_network
+if ! ensure_network; then
+    exit 1
+fi
 
 if [ $# -lt 1 ]; then
     usage
