@@ -53,11 +53,11 @@ fi
 # not be running yet. Without this guard, docker commands hang
 # indefinitely instead of failing cleanly.
 wait_for_docker() {
-    local max_attempts=15
+    local max_attempts=30
     local attempt=1
-    local timeout_seconds=5
+    local command_timeout=5
 
-    if timeout "$timeout_seconds" docker info >/dev/null 2>&1; then
+    if timeout "$command_timeout" docker info >/dev/null 2>&1; then
         return 0
     fi
 
@@ -67,7 +67,7 @@ wait_for_docker() {
         sleep 2
         attempt=$((attempt + 1))
 
-        if timeout "$timeout_seconds" docker info >/dev/null 2>&1; then
+        if timeout "$command_timeout" docker info >/dev/null 2>&1; then
             echo "  [ok] Docker daemon is ready."
             return 0
         fi
@@ -84,11 +84,66 @@ docker_timeout() {
     timeout 30 docker "$@"
 }
 
+ensure_mysql_credentials() {
+    local name="devbox-mysql"
+
+    if docker_timeout exec "$name" mysql -u devbox -pdevbox_pass -e "SELECT 1" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if docker_timeout exec "$name" mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+        echo "  [repair] Creating/updating MySQL application user..."
+        if docker_timeout exec "$name" mysql -u root -e \
+            "DROP USER IF EXISTS 'devbox'@'%';
+             CREATE USER 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
+             GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%';
+             FLUSH PRIVILEGES;" >/dev/null 2>&1; then
+            echo "  [ok] MySQL application credentials configured."
+            return 0
+        fi
+    fi
+
+    echo "  [repair] Existing MySQL credentials are incompatible; repairing authentication without deleting data..."
+    if "$SCRIPT_DIR/db-manager.sh" repair mysql; then
+        return 0
+    fi
+
+    echo -e "${RED}[error] Could not establish DevBox MySQL credentials.${NC}"
+    echo "  Existing MySQL data volume was preserved."
+    return 1
+}
+
+ensure_postgres_credentials() {
+    local name="devbox-postgres"
+
+    if docker_timeout exec "$name" psql -U devbox -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if docker_timeout exec "$name" psql -U postgres -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+        echo "  [repair] Creating/updating PostgreSQL application user..."
+        if docker_timeout exec "$name" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
+            "DO \\$\$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'devbox') THEN
+                    ALTER ROLE devbox WITH LOGIN PASSWORD 'devbox_pass' SUPERUSER;
+                ELSE
+                    CREATE ROLE devbox LOGIN PASSWORD 'devbox_pass' SUPERUSER;
+                END IF;
+            END
+            \\$\$;" >/dev/null 2>&1; then
+            echo "  [ok] PostgreSQL application credentials configured."
+            return 0
+        fi
+    fi
+
+    echo -e "${RED}[error] Could not establish DevBox PostgreSQL credentials.${NC}"
+    return 1
+}
+
 ensure_container_running() {
     local name="$1"
     local kind="$2"
-    local max_attempts=30
-    local attempt=1
 
     if ! wait_for_docker; then
         echo -e "${RED}[error] Cannot proceed without Docker.${NC}"
@@ -107,53 +162,40 @@ ensure_container_running() {
         fi
     else
         echo "  [create] $kind not found, creating..."
-        [ -x "$SCRIPT_DIR/db-manager.sh" ] ||
-            { echo -e "${RED}[error] db-manager.sh not available; cannot create $kind${NC}"; return 1; }
-
+        [ -x "$SCRIPT_DIR/db-manager.sh" ] || {
+            echo -e "${RED}[error] db-manager.sh not available; cannot create $kind${NC}"
+            return 1
+        }
         if ! "$SCRIPT_DIR/db-manager.sh" create "$kind"; then
             echo -e "${RED}[error] Failed to create $kind container.${NC}"
             return 1
         fi
     fi
 
-    echo "  [wait] Waiting for $kind to become ready..."
+    case "$kind" in
+        mysql) ensure_mysql_credentials || return 1 ;;
+        postgres) ensure_postgres_credentials || return 1 ;;
+    esac
 
+    echo "  [wait] Waiting for $kind to become ready..."
+    local max_attempts=30
+    local attempt=1
     while [ "$attempt" -le "$max_attempts" ]; do
         case "$kind" in
             mysql)
-                if docker_timeout exec "$name" \
-                    mysql -u devbox -pdevbox_pass -e "SELECT 1" \
-                    >/dev/null 2>&1; then
+                if docker_timeout exec "$name" mysql -u devbox -pdevbox_pass -e "SELECT 1" >/dev/null 2>&1; then
                     echo "  [ok] $kind is ready"
-                    return 0
-                fi
-
-                # Backward compatibility for older passwordless-root containers.
-                if docker_timeout exec "$name" \
-                    mysql -u root -e "SELECT 1" \
-                    >/dev/null 2>&1; then
-                    echo "  [ok] $kind is ready (legacy root credentials)"
                     return 0
                 fi
                 ;;
             postgres)
-                if docker_timeout exec "$name" \
-                    psql -U devbox -d template1 -c "SELECT 1" \
-                    >/dev/null 2>&1; then
+                if docker_timeout exec "$name" psql -U postgres -d template1 -c "SELECT 1" >/dev/null 2>&1; then
                     echo "  [ok] $kind is ready"
-                    return 0
-                fi
-
-                if docker_timeout exec "$name" \
-                    psql -U postgres -d template1 -c "SELECT 1" \
-                    >/dev/null 2>&1; then
-                    echo "  [ok] $kind is ready (legacy postgres credentials)"
                     return 0
                 fi
                 ;;
             redis)
-                if docker_timeout exec "$name" \
-                    redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
+                if docker_timeout exec "$name" redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
                     echo "  [ok] $kind is ready"
                     return 0
                 fi
@@ -182,10 +224,6 @@ ensure_container_running() {
     done
 
     echo -e "${RED}[error] $kind did not become ready in $((max_attempts * 2))s.${NC}"
-    if [ "$kind" = "mysql" ]; then
-        echo "  Expected MySQL application credentials: user=devbox password=devbox_pass"
-        echo "  An old MySQL volume with an unknown root password must be reset manually."
-    fi
     return 1
 }
 
@@ -355,26 +393,26 @@ git config --global --add safe.directory '*' 2>/dev/null || true
 reset_mysql_database() {
     local db_name="$1"
     local host="$2"
+    local sql
+    sql=$(cat <<SQL_EOF
+DROP DATABASE IF EXISTS \`$db_name\`;
+CREATE DATABASE \`$db_name\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+SQL_EOF
+    )
 
     echo "  [db] Resetting MySQL database '$db_name'..."
 
-    local sql="DROP DATABASE IF EXISTS \`$db_name\`; CREATE DATABASE \`$db_name\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-
-    if docker_timeout exec -i devbox-mysql \
-        mysql -h 127.0.0.1 -u devbox -pdevbox_pass \
-        -e "$sql" >/dev/null 2>&1; then
+    if docker_timeout exec -i devbox-mysql mysql -h 127.0.0.1 -u devbox -pdevbox_pass -e "$sql" >/dev/null 2>&1; then
         echo "  [ok] MySQL database '$db_name' reset."
         return 0
     fi
 
-    if docker_timeout exec -i devbox-mysql \
-        mysql -h 127.0.0.1 -u root \
-        -e "$sql" >/dev/null 2>&1; then
+    if docker_timeout exec -i devbox-mysql mysql -h 127.0.0.1 -u root -e "$sql" >/dev/null 2>&1; then
         echo "  [ok] MySQL database '$db_name' reset using legacy root credentials."
         return 0
     fi
 
-    echo -e "${RED}[error] Cannot authenticate to MySQL as devbox or legacy passwordless root.${NC}"
+    echo -e "${RED}[error] Cannot authenticate to MySQL with DevBox credentials.${NC}"
     echo "  No database changes were made."
     return 1
 }
@@ -385,41 +423,24 @@ reset_postgres_database() {
 
     echo "  [db] Resetting PostgreSQL database '$db_name'..."
 
-    local terminate_sql="SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${db_name}' AND pid <> pg_backend_pid();"
-
     if docker_timeout exec -i devbox-postgres \
-        psql -U devbox -d postgres -v ON_ERROR_STOP=1 \
-        -c "$terminate_sql" >/dev/null 2>&1; then
-
+        psql -U devbox -d postgres \
+        -v ON_ERROR_STOP=1 \
+        -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${db_name}' AND pid <> pg_backend_pid();" >/dev/null 2>&1; then
         docker_timeout exec -i devbox-postgres \
-            psql -U devbox -d postgres -v ON_ERROR_STOP=1 \
-            -c "DROP DATABASE IF EXISTS \"${db_name}\";" >/dev/null 2>&1 || true
-
-        if docker_timeout exec -i devbox-postgres \
-            psql -U devbox -d postgres -v ON_ERROR_STOP=1 \
-            -c "CREATE DATABASE \"${db_name}\";" >/dev/null 2>&1; then
-            echo "  [ok] PostgreSQL database '$db_name' reset."
-            return 0
-        fi
+            psql -U devbox -d postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS \"${db_name}\";" >/dev/null
+        docker_timeout exec -i devbox-postgres \
+            psql -U devbox -d postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE \"${db_name}\";" >/dev/null
+        echo "  [ok] PostgreSQL database '$db_name' reset."
+        return 0
     fi
 
-    if docker_timeout exec -i devbox-postgres \
-        psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
-        -c "$terminate_sql" >/dev/null 2>&1; then
-
-        docker_timeout exec -i devbox-postgres \
-            psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
-            -c "DROP DATABASE IF EXISTS \"${db_name}\";" >/dev/null 2>&1 || true
-
-        if docker_timeout exec -i devbox-postgres \
-            psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
-            -c "CREATE DATABASE \"${db_name}\";" >/dev/null 2>&1; then
-            echo "  [ok] PostgreSQL database '$db_name' reset using legacy postgres credentials."
-            return 0
-        fi
-    fi
-
-    echo -e "${RED}[error] Cannot authenticate to PostgreSQL with DevBox or legacy credentials.${NC}"
+    echo -e "${RED}[error] Cannot authenticate to PostgreSQL with DevBox credentials.${NC}"
+    echo "  No database changes were made."
     return 1
 }
 
@@ -607,9 +628,6 @@ if [ "$TEMPLATE" = "laravel" ]; then
         case "$DB_CHOICE" in
             "MySQL")
                 MYSQL_HOST="devbox-mysql"
-                getent hosts "$MYSQL_HOST" >/dev/null 2>&1 ||
-                    { echo -e "${RED}[error] MySQL hostname '$MYSQL_HOST' is not resolvable on devbox-network.${NC}"; exit 1; }
-
                 reset_mysql_database "$PROJECT_NAME" "$MYSQL_HOST"
 
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' "$project_dir/.env"
@@ -623,9 +641,6 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 ;;
             "PostgreSQL")
                 PG_HOST="devbox-postgres"
-                getent hosts "$PG_HOST" >/dev/null 2>&1 ||
-                    { echo -e "${RED}[error] PostgreSQL hostname '$PG_HOST' is not resolvable on devbox-network.${NC}"; exit 1; }
-
                 reset_postgres_database "$PROJECT_NAME" "$PG_HOST"
 
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/' "$project_dir/.env"

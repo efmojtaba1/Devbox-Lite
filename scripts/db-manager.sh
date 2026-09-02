@@ -2,10 +2,6 @@
 
 set -euo pipefail
 
-# ── Colors ────────────────────────────────────────────
-RED='\033[0;31m'
-NC='\033[0m'
-
 NETWORK="devbox-network"
 DOCKER_TIMEOUT=30
 
@@ -65,6 +61,7 @@ usage() {
     echo "  start    <db>  - Start existing container"
     echo "  stop     <db>  - Stop running container"
     echo "  connect  <db>  - Connect to database (interactive shell)"
+    echo "  repair   mysql - Repair legacy MySQL authentication without deleting data"
     echo ""
     echo "GUI Tools (run directly):"
     echo "  phpmyadmin     - Start phpMyAdmin (MySQL/MariaDB)"
@@ -153,7 +150,7 @@ create_mysql() {
         -e MYSQL_ALLOW_EMPTY_PASSWORD=yes \
         -v devbox-mysql-data:/var/lib/mysql \
         -p 3306:3306 \
-        mysql:8.4; then
+        mysql:8.4 >/dev/null; then
         echo -e "${RED}[error] Failed to start MySQL.${NC}"
         return 1
     fi
@@ -162,48 +159,111 @@ create_mysql() {
 
     local attempt=1
     local max_attempts=30
-
-    # Wait until root is actually usable on a fresh DevBox volume.
     while [ "$attempt" -le "$max_attempts" ]; do
-        if docker_timeout exec devbox-mysql \
-            mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+        if docker_timeout exec devbox-mysql mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
             break
         fi
-
         if [ "$attempt" -eq "$max_attempts" ]; then
             echo -e "${RED}[error] MySQL started, but root authentication is unavailable.${NC}"
-            echo "  The existing MySQL volume may contain credentials from an older DevBox version."
             echo "  No database data was deleted automatically."
             return 1
         fi
-
         sleep 2
         attempt=$((attempt + 1))
     done
 
-    # Stable application account for Laravel projects.
-    if ! docker_timeout exec devbox-mysql \
-        mysql -u root -e \
-        "CREATE USER IF NOT EXISTS 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
-         ALTER USER 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
+    if ! docker_timeout exec devbox-mysql mysql -u root -e \
+        "DROP USER IF EXISTS 'devbox'@'%';
+         CREATE USER 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
          GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%';
          FLUSH PRIVILEGES;" >/dev/null 2>&1; then
         echo -e "${RED}[error] MySQL is running, but the DevBox application user could not be created.${NC}"
         return 1
     fi
 
-    echo "MySQL initialized: root=no password, devbox/devbox_pass"
+    echo "MySQL initialized: application user devbox/devbox_pass"
+}
+
+# Repair a legacy MySQL data volume without deleting its data.
+repair_mysql() {
+    local name="devbox-mysql"
+    local repair_name="devbox-mysql-auth-repair"
+    local repair_volume="devbox-mysql-data"
+
+    ensure_image mysql:8.4 || return 1
+
+    if ! docker_timeout volume inspect "$repair_volume" >/dev/null 2>&1; then
+        echo -e "${RED}[error] MySQL data volume '$repair_volume' does not exist.${NC}"
+        return 1
+    fi
+
+    docker_timeout rm -f "$repair_name" >/dev/null 2>&1 || true
+
+    if docker_timeout ps --format '{{.Names}}' | grep -q "^${name}$"; then
+        echo "  [repair] Stopping existing MySQL container..."
+        docker_timeout stop "$name" >/dev/null || return 1
+    fi
+
+    echo "  [repair] Starting temporary MySQL auth-repair container..."
+    if ! docker_timeout run -d \
+        --name "$repair_name" \
+        --network "$NETWORK" \
+        -v "$repair_volume:/var/lib/mysql" \
+        mysql:8.4 \
+        mysqld --skip-grant-tables --skip-networking=0 --bind-address=127.0.0.1 >/dev/null; then
+        echo -e "${RED}[error] Could not start the temporary MySQL repair container.${NC}"
+        docker_timeout start "$name" >/dev/null 2>&1 || true
+        return 1
+    fi
+
+    local attempt=1
+    local max_attempts=30
+    while [ "$attempt" -le "$max_attempts" ]; do
+        if docker_timeout exec "$repair_name" mysql --protocol=socket -u root -e "SELECT 1" >/dev/null 2>&1; then
+            break
+        fi
+        if [ "$attempt" -eq "$max_attempts" ]; then
+            echo -e "${RED}[error] Temporary MySQL repair server did not become ready.${NC}"
+            docker_timeout logs --tail 80 "$repair_name" 2>&1 || true
+            docker_timeout rm -f "$repair_name" >/dev/null 2>&1 || true
+            docker_timeout start "$name" >/dev/null 2>&1 || true
+            return 1
+        fi
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+
+    echo "  [repair] Restoring DevBox application credentials..."
+    local sql
+    sql="FLUSH PRIVILEGES;
+DROP USER IF EXISTS 'devbox'@'%';
+CREATE USER 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
+GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%';
+FLUSH PRIVILEGES;"
+
+    if ! docker_timeout exec "$repair_name" mysql --protocol=socket -u root -e "$sql" >/dev/null 2>&1; then
+        echo -e "${RED}[error] Could not restore MySQL application credentials.${NC}"
+        docker_timeout logs --tail 80 "$repair_name" 2>&1 || true
+        docker_timeout rm -f "$repair_name" >/dev/null 2>&1 || true
+        docker_timeout start "$name" >/dev/null 2>&1 || true
+        return 1
+    fi
+
+    docker_timeout rm -f "$repair_name" >/dev/null 2>&1 || true
+
+    echo "  [repair] Starting MySQL with the existing data volume..."
+    if ! docker_timeout start "$name" >/dev/null; then
+        echo -e "${RED}[error] MySQL could not be restarted after authentication repair.${NC}"
+        return 1
+    fi
+
+    echo "  [ok] Legacy MySQL authentication repaired; existing data preserved."
+    return 0
 }
 
 create_postgres() {
     ensure_image postgres:17 || return 1
-    docker_timeout volume create devbox-postgres-data >/dev/null 2>&1 || true
-
-    if docker_timeout ps -a --format '{{.Names}}' | grep -q '^devbox-postgres$'; then
-        echo "PostgreSQL container already exists."
-        return 0
-    fi
-
+    docker_timeout volume create devbox-postgres-data 2>/dev/null || true
     echo "Starting PostgreSQL..."
     if ! docker_timeout run -d \
         --name devbox-postgres \
@@ -215,39 +275,37 @@ create_postgres() {
         echo -e "${RED}[error] Failed to start PostgreSQL.${NC}"
         return 1
     fi
+    echo "PostgreSQL container created on port 5433."
 
     local attempt=1
     local max_attempts=30
     while [ "$attempt" -le "$max_attempts" ]; do
-        if docker_timeout exec devbox-postgres \
-            psql -U postgres -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+        if docker_timeout exec devbox-postgres psql -U postgres -d postgres -c "SELECT 1" >/dev/null 2>&1; then
             break
         fi
-
         if [ "$attempt" -eq "$max_attempts" ]; then
             echo -e "${RED}[error] PostgreSQL started, but the server did not become queryable.${NC}"
             return 1
         fi
-
         sleep 2
         attempt=$((attempt + 1))
     done
 
     if ! docker_timeout exec devbox-postgres psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
-        "DO \$\$
+        "DO \\$\$
          BEGIN
-           IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'devbox') THEN
-             CREATE ROLE devbox LOGIN PASSWORD 'devbox_pass' SUPERUSER;
-           ELSE
+           IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'devbox') THEN
              ALTER ROLE devbox WITH LOGIN PASSWORD 'devbox_pass' SUPERUSER;
+           ELSE
+             CREATE ROLE devbox LOGIN PASSWORD 'devbox_pass' SUPERUSER;
            END IF;
          END
-         \$\$;" >/dev/null 2>&1; then
-        echo -e "${RED}[error] PostgreSQL is running, but the DevBox user could not be created.${NC}"
+         \\$\$;" >/dev/null 2>&1; then
+        echo -e "${RED}[error] PostgreSQL is running, but the DevBox application user could not be created.${NC}"
         return 1
     fi
 
-    echo "PostgreSQL initialized: devbox/devbox_pass"
+    echo "PostgreSQL initialized: application user devbox/devbox_pass"
 }
 
 create_redis() {
@@ -353,8 +411,8 @@ connect_mysql() {
         echo "MySQL is not running. Start it first: $0 start mysql"
         exit 1
     fi
-    echo "Connecting to MySQL..."
-    docker exec -it "$name" mysql
+    echo "Connecting to MySQL as devbox..."
+    docker exec -it "$name" mysql -u devbox -pdevbox_pass
 }
 
 connect_postgres() {
@@ -488,7 +546,7 @@ fi
 COMMAND="$1"
 
 case "$COMMAND" in
-    create|start|stop|connect)
+    create|start|stop|connect|repair)
         if [ $# -lt 2 ]; then
             echo "Error: '$COMMAND' requires a database name"
             usage
@@ -500,6 +558,10 @@ case "$COMMAND" in
             start) start_db "$DB" ;;
             stop) stop_db "$DB" ;;
             connect) connect_${DB} ;;
+            repair)
+                [ "$DB" = "mysql" ] || { echo "Error: Only MySQL authentication repair is supported."; exit 1; }
+                repair_mysql
+                ;;
         esac
         ;;
     phpmyadmin) gui_phpmyadmin ;;
