@@ -85,15 +85,13 @@ docker_timeout() {
 }
 
 ensure_mysql_credentials() {
-    local name="devbox-mysql"
-
-    if docker_timeout exec "$name" mysql -u devbox -pdevbox_pass -e "SELECT 1" >/dev/null 2>&1; then
+    if docker_timeout exec devbox-mysql mysql -u devbox -pdevbox_pass -e "SELECT 1" >/dev/null 2>&1; then
         return 0
     fi
 
-    if docker_timeout exec "$name" mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+    if docker_timeout exec devbox-mysql mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
         echo "  [repair] Creating/updating MySQL application user..."
-        if docker_timeout exec "$name" mysql -u root -e \
+        if docker_timeout exec devbox-mysql mysql -u root -e \
             "DROP USER IF EXISTS 'devbox'@'%';
              CREATE USER 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
              GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%';
@@ -104,10 +102,20 @@ ensure_mysql_credentials() {
     fi
 
     echo "  [repair] Existing MySQL credentials are incompatible; repairing authentication without deleting data..."
-    if "$SCRIPT_DIR/db-manager.sh" repair mysql; then
+    if repair_mysql_credentials; then
         return 0
     fi
 
+    echo -e "${RED}[error] Could not establish DevBox MySQL credentials.${NC}"
+    echo "  Existing MySQL data volume was preserved."
+    return 1
+}
+
+# Shared helper: repair MySQL authentication via db-manager.sh.
+repair_mysql_credentials() {
+    if "$SCRIPT_DIR/db-manager.sh" repair mysql; then
+        return 0
+    fi
     echo -e "${RED}[error] Could not establish DevBox MySQL credentials.${NC}"
     echo "  Existing MySQL data volume was preserved."
     return 1
@@ -150,6 +158,8 @@ ensure_container_running() {
         return 1
     fi
 
+    local needs_credentials=0
+
     if docker_timeout ps --format '{{.Names}}' | grep -q "^$name$"; then
         echo "  [skip] $kind is already running"
     elif docker_timeout ps -a --format '{{.Names}}' | grep -q "^$name$"; then
@@ -160,6 +170,7 @@ ensure_container_running() {
             echo -e "${RED}[error] Failed to start existing $kind container.${NC}"
             return 1
         fi
+        needs_credentials=1
     else
         echo "  [create] $kind not found, creating..."
         [ -x "$SCRIPT_DIR/db-manager.sh" ] || {
@@ -170,12 +181,15 @@ ensure_container_running() {
             echo -e "${RED}[error] Failed to create $kind container.${NC}"
             return 1
         fi
+        needs_credentials=1
     fi
 
-    case "$kind" in
-        mysql) ensure_mysql_credentials || return 1 ;;
-        postgres) ensure_postgres_credentials || return 1 ;;
-    esac
+    if [ "$needs_credentials" -eq 1 ]; then
+        case "$kind" in
+            mysql) ensure_mysql_credentials || return 1 ;;
+            postgres) ensure_postgres_credentials || return 1 ;;
+        esac
+    fi
 
     echo "  [wait] Waiting for $kind to become ready..."
     local max_attempts=30
@@ -402,12 +416,12 @@ SQL_EOF
 
     echo "  [db] Resetting MySQL database '$db_name'..."
 
-    if docker_timeout exec -i devbox-mysql mysql -h 127.0.0.1 -u devbox -pdevbox_pass -e "$sql" >/dev/null 2>&1; then
+    if docker_timeout exec devbox-mysql mysql -h 127.0.0.1 -u devbox -pdevbox_pass -e "$sql" >/dev/null 2>&1; then
         echo "  [ok] MySQL database '$db_name' reset."
         return 0
     fi
 
-    if docker_timeout exec -i devbox-mysql mysql -h 127.0.0.1 -u root -e "$sql" >/dev/null 2>&1; then
+    if docker_timeout exec devbox-mysql mysql -h 127.0.0.1 -u root -e "$sql" >/dev/null 2>&1; then
         echo "  [ok] MySQL database '$db_name' reset using legacy root credentials."
         return 0
     fi
