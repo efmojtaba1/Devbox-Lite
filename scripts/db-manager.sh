@@ -161,38 +161,23 @@ create_mysql() {
         return 1
     fi
 
-    echo "MySQL container created on port 3306."
+    echo "MySQL container created on port 3306 (root / empty)."
 
+    # Dev-mode: root with empty password, no auth repair needed.
     local attempt=1
     local max_attempts=30
     while [ "$attempt" -le "$max_attempts" ]; do
-        if docker_timeout exec devbox-mysql mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
-            break
+        if docker_timeout exec devbox-mysql mysql -u root -h 127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
+            echo "[ok] MySQL ready with root/empty auth."
+            return 0
         fi
         if [ "$attempt" -eq "$max_attempts" ]; then
-            echo -e "${YELLOW}[warn] MySQL is running, but the existing root credentials are incompatible.${NC}"
-            echo "  Attempting in-place authentication repair without deleting the data volume..."
-            if repair_mysql; then
-                return 0
-            fi
-            echo -e "${RED}[error] MySQL started, but its authentication could not be repaired.${NC}"
-            echo "  No database data was deleted automatically."
+            echo -e "${RED}[error] MySQL did not become ready with root/empty auth.${NC}"
             return 1
         fi
         sleep 2
         attempt=$((attempt + 1))
     done
-
-    if ! docker_timeout exec devbox-mysql mysql -u root -e \
-        "DROP USER IF EXISTS 'devbox'@'%';
-         CREATE USER 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
-         GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%';
-         FLUSH PRIVILEGES;" >/dev/null 2>&1; then
-        echo -e "${RED}[error] MySQL is running, but the DevBox application user could not be created.${NC}"
-        return 1
-    fi
-
-    echo "MySQL initialized: application user devbox/devbox_pass"
 }
 
 # Repair a legacy MySQL data volume without deleting its data.
