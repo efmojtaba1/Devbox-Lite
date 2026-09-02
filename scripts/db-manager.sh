@@ -542,41 +542,43 @@ validate_gui() {
     esac
 }
 
-# Main
-if ! wait_for_docker; then
-    exit 1
-fi
-if ! ensure_network; then
-    exit 1
-fi
+# Main — only execute if called directly (not sourced)
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    if ! wait_for_docker; then
+        exit 1
+    fi
+    if ! ensure_network; then
+        exit 1
+    fi
 
-if [ $# -lt 1 ]; then
-    usage
+    if [ $# -lt 1 ]; then
+        usage
+    fi
+
+    COMMAND="$1"
+
+    case "$COMMAND" in
+        create|start|stop|connect|repair)
+            if [ $# -lt 2 ]; then
+                echo "Error: '$COMMAND' requires a database name"
+                usage
+            fi
+            DB="$2"
+            validate_db "$DB"
+            case "$COMMAND" in
+                create) create_${DB} ;;
+                start) start_db "$DB" ;;
+                stop) stop_db "$DB" ;;
+                connect) connect_${DB} ;;
+                repair)
+                    [ "$DB" = "mysql" ] || { echo "Error: Only MySQL authentication repair is supported."; exit 1; }
+                    repair_mysql
+                    ;;
+            esac
+            ;;
+        phpmyadmin) gui_phpmyadmin ;;
+        adminer) gui_adminer ;;
+        pgadmin) gui_pgadmin ;;
+        *) echo "Error: Unknown command '$COMMAND'"; usage ;;
+    esac
 fi
-
-COMMAND="$1"
-
-case "$COMMAND" in
-    create|start|stop|connect|repair)
-        if [ $# -lt 2 ]; then
-            echo "Error: '$COMMAND' requires a database name"
-            usage
-        fi
-        DB="$2"
-        validate_db "$DB"
-        case "$COMMAND" in
-            create) create_${DB} ;;
-            start) start_db "$DB" ;;
-            stop) stop_db "$DB" ;;
-            connect) connect_${DB} ;;
-            repair)
-                [ "$DB" = "mysql" ] || { echo "Error: Only MySQL authentication repair is supported."; exit 1; }
-                repair_mysql
-                ;;
-        esac
-        ;;
-    phpmyadmin) gui_phpmyadmin ;;
-    adminer) gui_adminer ;;
-    pgadmin) gui_pgadmin ;;
-    *) echo "Error: Unknown command '$COMMAND'"; usage ;;
-esac

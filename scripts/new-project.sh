@@ -704,6 +704,12 @@ if [ "$TEMPLATE" = "laravel" ]; then
             if grep -q '^DB_CONNECTION=sqlite' .env; then
                 touch database/database.sqlite
             fi
+            if [ "$DB_CHOICE" = "MySQL" ]; then
+                if grep -q '^DB_USERNAME=root' .env || ! grep -q '^DB_USERNAME=' .env; then
+                    sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' .env
+                    sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' .env
+                fi
+            fi
             php artisan migrate --force || true
         )
     fi
