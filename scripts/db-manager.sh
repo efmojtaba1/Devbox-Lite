@@ -167,7 +167,7 @@ create_mysql() {
     local attempt=1
     local max_attempts=30
     while [ "$attempt" -le "$max_attempts" ]; do
-        if docker_timeout exec devbox-mysql mysql -u root -h 127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
+        if timeout 5 docker exec devbox-mysql mysql -u root -h 127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
             echo "[ok] MySQL ready with root/empty auth."
             return 0
         fi
