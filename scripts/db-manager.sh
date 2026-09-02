@@ -229,12 +229,10 @@ repair_mysql() {
         attempt=$((attempt + 1))
     done
 
-    echo "  [repair] Restoring DevBox application credentials..."
+    echo "  [repair] Normalizing MySQL root authentication (legacy volume only)..."
     local sql
     sql="FLUSH PRIVILEGES;
-DROP USER IF EXISTS 'devbox'@'%';
-CREATE USER 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
-GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%';
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '';
 FLUSH PRIVILEGES;"
 
     if ! docker_timeout exec "$repair_name" mysql --protocol=socket -u root -e "$sql" >/dev/null 2>&1; then
@@ -253,7 +251,7 @@ FLUSH PRIVILEGES;"
         return 1
     fi
 
-    echo "  [ok] Legacy MySQL authentication repaired; existing data preserved."
+    echo "  [ok] MySQL root authentication normalized; existing data preserved."
     return 0
 }
 
@@ -407,8 +405,8 @@ connect_mysql() {
         echo "MySQL is not running. Start it first: $0 start mysql"
         exit 1
     fi
-    echo "Connecting to MySQL as devbox..."
-    docker exec -it "$name" mysql -u devbox -pdevbox_pass
+    echo "Connecting to MySQL as root..."
+    docker exec -it "$name" mysql -u root
 }
 
 connect_postgres() {

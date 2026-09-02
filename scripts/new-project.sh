@@ -84,39 +84,17 @@ docker_timeout() {
     timeout 30 docker "$@"
 }
 
-ensure_mysql_credentials() {
-    if docker_timeout exec devbox-mysql mysql -u devbox -pdevbox_pass -e "SELECT 1" >/dev/null 2>&1; then
-        return 0
-    fi
-
+ensure_mysql_root() {
     if docker_timeout exec devbox-mysql mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
-        echo "  [repair] Creating/updating MySQL application user..."
-        if docker_timeout exec devbox-mysql mysql -u root -e \
-            "DROP USER IF EXISTS 'devbox'@'%';
-             CREATE USER 'devbox'@'%' IDENTIFIED BY 'devbox_pass';
-             GRANT ALL PRIVILEGES ON *.* TO 'devbox'@'%';
-             FLUSH PRIVILEGES;" >/dev/null 2>&1; then
-            echo "  [ok] MySQL application credentials configured."
-            return 0
-        fi
-    fi
-
-    echo "  [repair] Existing MySQL credentials are incompatible; repairing authentication without deleting data..."
-    if repair_mysql_credentials; then
         return 0
     fi
 
-    echo -e "${RED}[error] Could not establish DevBox MySQL credentials.${NC}"
-    echo "  Existing MySQL data volume was preserved."
-    return 1
-}
-
-# Shared helper: repair MySQL authentication via db-manager.sh.
-repair_mysql_credentials() {
+    echo "  [repair] Normalizing legacy MySQL root authentication..."
     if "$SCRIPT_DIR/db-manager.sh" repair mysql; then
         return 0
     fi
-    echo -e "${RED}[error] Could not establish DevBox MySQL credentials.${NC}"
+
+    echo -e "${RED}[error] Could not establish MySQL root access.${NC}"
     echo "  Existing MySQL data volume was preserved."
     return 1
 }
@@ -186,7 +164,7 @@ ensure_container_running() {
 
     if [ "$needs_credentials" -eq 1 ]; then
         case "$kind" in
-            mysql) ensure_mysql_credentials || return 1 ;;
+            mysql) ensure_mysql_root || return 1 ;;
             postgres) ensure_postgres_credentials || return 1 ;;
         esac
     fi
@@ -416,17 +394,12 @@ SQL_EOF
 
     echo "  [db] Resetting MySQL database '$db_name'..."
 
-    if docker_timeout exec devbox-mysql mysql -h 127.0.0.1 -u devbox -pdevbox_pass -e "$sql" >/dev/null 2>&1; then
+    if docker_timeout exec devbox-mysql mysql -h 127.0.0.1 -u root -e "$sql" >/dev/null 2>&1; then
         echo "  [ok] MySQL database '$db_name' reset."
         return 0
     fi
 
-    if docker_timeout exec devbox-mysql mysql -h 127.0.0.1 -u root -e "$sql" >/dev/null 2>&1; then
-        echo "  [ok] MySQL database '$db_name' reset using legacy root credentials."
-        return 0
-    fi
-
-    echo -e "${RED}[error] Cannot authenticate to MySQL with DevBox credentials.${NC}"
+    echo -e "${RED}[error] Cannot authenticate to MySQL as root.${NC}"
     echo "  No database changes were made."
     return 1
 }
@@ -650,10 +623,10 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 sed -i 's/^DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
                 sed -i 's/^# DB_PORT=.*/DB_PORT=3306/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i "s/^DB_USERNAME=.*/DB_USERNAME=devbox/" "$project_dir/.env"
-                sed -i "s/^# DB_USERNAME=.*/DB_USERNAME=devbox/" "$project_dir/.env"
-                sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/" "$project_dir/.env"
-                sed -i "s/^# DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/" "$project_dir/.env"
+                sed -i "s/^DB_USERNAME=.*/DB_USERNAME=root/" "$project_dir/.env"
+                sed -i "s/^# DB_USERNAME=.*/DB_USERNAME=root/" "$project_dir/.env"
+                sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=/" "$project_dir/.env"
+                sed -i "s/^# DB_PASSWORD=.*/DB_PASSWORD=/" "$project_dir/.env"
                 ;;
             "PostgreSQL")
                 PG_HOST="devbox-postgres"
@@ -665,10 +638,10 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 sed -i 's/^DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i 's/^# DB_PORT=.*/DB_PORT=5432/' "$project_dir/.env"
                 sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${PROJECT_NAME}/" "$project_dir/.env"
-                sed -i "s/^DB_USERNAME=.*/DB_USERNAME=devbox/" "$project_dir/.env"
-                sed -i "s/^# DB_USERNAME=.*/DB_USERNAME=devbox/" "$project_dir/.env"
-                sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/" "$project_dir/.env"
-                sed -i "s/^# DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/" "$project_dir/.env"
+                sed -i "s/^DB_USERNAME=.*/DB_USERNAME=root/" "$project_dir/.env"
+                sed -i "s/^# DB_USERNAME=.*/DB_USERNAME=root/" "$project_dir/.env"
+                sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=/" "$project_dir/.env"
+                sed -i "s/^# DB_PASSWORD=.*/DB_PASSWORD=/" "$project_dir/.env"
                 ;;
             "SQLite")
                 sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' "$project_dir/.env"
@@ -709,10 +682,10 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 touch database/database.sqlite
             fi
             if [ "$DB_CHOICE" = "MySQL" ]; then
-                if grep -q '^DB_USERNAME=root' .env || ! grep -q '^DB_USERNAME=' .env; then
-                    sed -i 's/^DB_USERNAME=.*/DB_USERNAME=devbox/' .env
-                    sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=devbox_pass/' .env
-                fi
+                sed -i 's/^DB_USERNAME=.*/DB_USERNAME=root/' .env
+                sed -i 's/^# DB_USERNAME=.*/DB_USERNAME=root/' .env
+                sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=/' .env
+                sed -i 's/^# DB_PASSWORD=.*/DB_PASSWORD=/' .env
             fi
             php artisan migrate --force || true
         )
