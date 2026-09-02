@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# ── Colors ────────────────────────────────────────────
+RED='\033[0;31m'
+NC='\033[0m'
+
 NETWORK="devbox-network"
 DOCKER_TIMEOUT=30
 
