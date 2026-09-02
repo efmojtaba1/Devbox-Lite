@@ -1,6 +1,12 @@
-#!/bin/bash
+
 
 set -euo pipefail
+
+GREEN='\033[0;32m'
+NC='\033[0m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
 
 NETWORK="devbox-network"
 DOCKER_TIMEOUT=30
@@ -164,7 +170,12 @@ create_mysql() {
             break
         fi
         if [ "$attempt" -eq "$max_attempts" ]; then
-            echo -e "${RED}[error] MySQL started, but root authentication is unavailable.${NC}"
+            echo -e "${YELLOW}[warn] MySQL is running, but the existing root credentials are incompatible.${NC}"
+            echo "  Attempting in-place authentication repair without deleting the data volume..."
+            if repair_mysql; then
+                return 0
+            fi
+            echo -e "${RED}[error] MySQL started, but its authentication could not be repaired.${NC}"
             echo "  No database data was deleted automatically."
             return 1
         fi
