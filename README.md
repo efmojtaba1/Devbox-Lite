@@ -90,7 +90,7 @@ sudo bash -c 'echo -e "[boot]\nsystemd=true" > /etc/wsl.conf'
 # Start Docker service (compatible with or without active systemd)
 sudo service docker start || sudo systemctl enable --now docker
 
-# 3. Clone repository and build DevBox-Lite environment
+# Clone repository and build DevBox-Lite environment
 mkdir -p ~/projects && cd ~/projects
 git clone https://github.com/efmojtaba1/Devbox-Lite.git && cd Devbox-Lite
 
