@@ -76,14 +76,9 @@ Then open VS Code and connect to the container via Remote Explorer → Dev Conta
 > **Why WSL2?** File operations in Docker Desktop are 10-20x slower than native WSL2 filesystem. For serious development, WSL2 is strongly recommended.
 
 ```bash
-# 1. Install WSL2 (Execute in Windows PowerShell as Administrator)
+# Install WSL2 (Execute in Windows PowerShell as Administrator)
 wsl --install
 # Restart your computer afterwards
-
-# 2. Configure Fast Ubuntu Mirror & Install Native Docker (Execute in WSL Ubuntu Shell)
-# Switch APT sources to ArvanCloud mirror for maximum download speeds in Iran
-sudo sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirror.arvancloud.ir/ubuntu|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || sudo sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirror.arvancloud.ir/ubuntu|g' /etc/apt/sources.list 2>/dev/null || true
-sudo sed -i 's|http://security.ubuntu.com/ubuntu|http://mirror.arvancloud.ir/ubuntu|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || sudo sed -i 's|http://security.ubuntu.com/ubuntu|http://mirror.arvancloud.ir/ubuntu|g' /etc/apt/sources.list 2>/dev/null || true
 
 # Update package index and install Docker engine without Docker Desktop
 sudo apt update && sudo apt install -y docker.io docker-compose-v2 docker-buildx
@@ -95,7 +90,7 @@ sudo bash -c 'echo -e "[boot]\nsystemd=true" > /etc/wsl.conf'
 # Start Docker service (compatible with or without active systemd)
 sudo service docker start || sudo systemctl enable --now docker
 
-# 3. Clone repository and build DevBox-Lite environment
+# Clone repository and build DevBox-Lite environment
 mkdir -p ~/projects && cd ~/projects
 git clone https://github.com/efmojtaba1/Devbox-Lite.git && cd Devbox-Lite
 
