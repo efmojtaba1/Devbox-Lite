@@ -164,10 +164,12 @@ create_mysql() {
     echo "MySQL container created on port 3306 (root / empty)."
 
     # Dev-mode: root with empty password, no auth repair needed.
+    # Use --protocol=socket to avoid caching_sha2_password TCP auth issue
+    # that occurs with MySQL 8.x when connecting via -h 127.0.0.1.
     local attempt=1
     local max_attempts=30
     while [ "$attempt" -le "$max_attempts" ]; do
-        if timeout 5 docker exec devbox-mysql mysql -u root -h 127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
+        if timeout 5 docker exec devbox-mysql mysql --protocol=socket -u root -e "SELECT 1" >/dev/null 2>&1; then
             echo "[ok] MySQL ready with root/empty auth."
             return 0
         fi
@@ -206,7 +208,7 @@ repair_mysql() {
         --network "$NETWORK" \
         -v "$repair_volume:/var/lib/mysql" \
         mysql:8.4 \
-        mysqld --skip-grant-tables --skip-networking=0 --bind-address=127.0.0.1 >/dev/null; then
+        mysqld --skip-grant-tables >/dev/null; then
         echo -e "${RED}[error] Could not start the temporary MySQL repair container.${NC}"
         docker_timeout start "$name" >/dev/null 2>&1 || true
         return 1
@@ -232,10 +234,10 @@ repair_mysql() {
     echo "  [repair] Normalizing MySQL root authentication (legacy volume only)..."
     local sql
     sql="FLUSH PRIVILEGES;
-ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '';
+ALTER USER 'root'@'localhost' IDENTIFIED WITH caching_sha2_password BY '';
 FLUSH PRIVILEGES;"
 
-    if ! docker_timeout exec "$repair_name" mysql --protocol=socket -u root -e "$sql" >/dev/null 2>&1; then
+    if ! docker_timeout exec "$repair_name" mysql --protocol=socket -u root -e "$sql" 2>&1; then
         echo -e "${RED}[error] Could not restore MySQL application credentials.${NC}"
         docker_timeout logs --tail 80 "$repair_name" 2>&1 || true
         docker_timeout rm -f "$repair_name" >/dev/null 2>&1 || true

@@ -85,7 +85,7 @@ docker_timeout() {
 }
 
 ensure_mysql_root() {
-    if docker_timeout exec devbox-mysql mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+    if docker_timeout exec devbox-mysql mysql --protocol=socket -u root -e "SELECT 1" >/dev/null 2>&1; then
         return 0
     fi
 
@@ -96,6 +96,31 @@ ensure_mysql_root() {
 
     echo -e "${RED}[error] Could not establish MySQL root access.${NC}"
     echo "  Existing MySQL data volume was preserved."
+    return 1
+}
+
+# Wait for MySQL's TCP listener (port 3306) to actually accept connections.
+# During first-time initialization MySQL 8.x runs a temporary socket-only
+# server (started with --skip-networking) before the real server binds the
+# TCP port. A socket-based readiness check can therefore pass while TCP still
+# refuses connections. Laravel connects over TCP, so on a freshly created
+# volume `php artisan migrate` fails with "[2002] Connection refused" unless
+# we confirm the TCP port specifically.
+# `mysqladmin ping` returns success whenever the server answers — even on an
+# auth error — and fails only when the connection itself is refused, which is
+# exactly the readiness signal we need here (independent of credentials).
+wait_for_mysql_tcp() {
+    local name="devbox-mysql"
+    local max_attempts=30
+    local attempt=1
+    while [ "$attempt" -le "$max_attempts" ]; do
+        if docker_timeout exec "$name" \
+            mysqladmin ping -h 127.0.0.1 -P 3306 --protocol=TCP -u root >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+        attempt=$((attempt + 1))
+    done
     return 1
 }
 
@@ -175,10 +200,31 @@ ensure_container_running() {
     while [ "$attempt" -le "$max_attempts" ]; do
         case "$kind" in
             mysql)
-                if docker_timeout exec "$name" mysql -u devbox -pdevbox_pass -e "SELECT 1" >/dev/null 2>&1; then
+                # Verify root via socket first (MySQL 8.x with caching_sha2_password
+                # fails on TCP with empty password), then create devbox user if needed.
+                if docker_timeout exec "$name" mysql --protocol=socket -u root -e "SELECT 1" >/dev/null 2>&1; then
+                    # Socket is up, but clients (Laravel) connect over TCP. On a
+                    # freshly initialized volume the TCP listener lags the socket,
+                    # so confirm port 3306 actually accepts connections before
+                    # declaring readiness.
+                    if wait_for_mysql_tcp; then
+                        echo "  [ok] $kind is ready"
+                    else
+                        echo -e "${RED}[error] MySQL socket is ready but TCP port 3306 never opened.${NC}"
+                        return 1
+                    fi
+                elif docker_timeout exec "$name" mysql -u devbox -pdevbox_pass -e "SELECT 1" >/dev/null 2>&1; then
                     echo "  [ok] $kind is ready"
-                    return 0
+                else
+                    echo "  [warn] Neither root nor devbox auth succeeded; trying repair..."
+                    if "$SCRIPT_DIR/db-manager.sh" repair mysql; then
+                        echo "  [ok] $kind is ready after repair"
+                    else
+                        echo -e "${RED}[error] $kind did not become ready in $((max_attempts * 2))s.${NC}"
+                        return 1
+                    fi
                 fi
+                return 0
                 ;;
             postgres)
                 if docker_timeout exec "$name" psql -U postgres -d template1 -c "SELECT 1" >/dev/null 2>&1; then
@@ -394,8 +440,14 @@ SQL_EOF
 
     echo "  [db] Resetting MySQL database '$db_name'..."
 
-    if docker_timeout exec devbox-mysql mysql -h 127.0.0.1 -u root -e "$sql" >/dev/null 2>&1; then
+    if docker_timeout exec devbox-mysql mysql --protocol=socket -u root -e "$sql" >/dev/null 2>&1; then
         echo "  [ok] MySQL database '$db_name' reset."
+        return 0
+    fi
+
+    # Fallback to TCP for the `devbox` user (created after startup).
+    if docker_timeout exec devbox-mysql mysql -h 127.0.0.1 -u devbox -pdevbox_pass -e "$sql" >/dev/null 2>&1; then
+        echo "  [ok] MySQL database '$db_name' reset via devbox user."
         return 0
     fi
 
@@ -687,7 +739,11 @@ if [ "$TEMPLATE" = "laravel" ]; then
                 sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=/' .env
                 sed -i 's/^# DB_PASSWORD=.*/DB_PASSWORD=/' .env
             fi
-            php artisan migrate --force || true
+            if php artisan migrate --force; then
+                echo "  [ok] Database migrations applied."
+            else
+                echo -e "${YELLOW}[warn] Database migration failed. Project was created; run 'php artisan migrate' manually after checking the database.${NC}"
+            fi
         )
     fi
 

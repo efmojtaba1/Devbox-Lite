@@ -45,6 +45,14 @@ fi
 if [ -f "$WORKDIR/project-src.tar.gz" ]; then
   echo "[import] Restoring project source code to $PROJECT_ROOT..."
   tar xzf "$WORKDIR/project-src.tar.gz" -C "$PROJECT_ROOT"
+  # Restore the executable bit on shell scripts. When the package is produced
+  # or unpacked on a filesystem that does not carry POSIX permissions (e.g. a
+  # Windows/NTFS drive shared into WSL), the mode is lost and every script
+  # fails with "Permission denied" until the user runs chmod manually.
+  if [ -d "$PROJECT_ROOT/scripts" ]; then
+    chmod +x "$PROJECT_ROOT/scripts"/*.sh 2>/dev/null || true
+    echo "  [ok] Executable bit restored on scripts/*.sh"
+  fi
   echo "  [ok] Project source code restored."
 else
   echo "  [warn] project-src.tar.gz not found; skipping project files restoration."

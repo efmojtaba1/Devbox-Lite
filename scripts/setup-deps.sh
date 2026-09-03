@@ -119,8 +119,14 @@ ensure_db() {
     while [ "$attempt" -le "$max_attempts" ]; do
         case "$db" in
             mysql)
-                # TCP readiness via mysqladmin inside container (with explicit timeout)
-                if timeout 5 docker exec -i "$name" mysqladmin ping -h 127.0.0.1 -u root --silent 2>/dev/null | grep -q "alive"; then
+                # Socket readiness via mysqladmin (avoids caching_sha2_password
+                # TCP auth issue with MySQL 8.x and empty root password).
+                if timeout 5 docker exec -i "$name" mysqladmin --protocol=socket ping -u root --silent 2>/dev/null | grep -q "alive"; then
+                    echo "  [ok] $db is ready"
+                    return 0
+                fi
+                # Fallback: check via TCP using devbox user if created.
+                if timeout 5 docker exec -i "$name" mysqladmin ping -h 127.0.0.1 -u devbox -pdevbox_pass --silent 2>/dev/null | grep -q "alive"; then
                     echo "  [ok] $db is ready"
                     return 0
                 fi
